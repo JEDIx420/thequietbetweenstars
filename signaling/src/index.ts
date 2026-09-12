@@ -33,12 +33,32 @@ export class SignalingRoom {
       return new Response('Missing session or role', { status: 400 });
     }
 
-    // Set or check ephemeral session token
+    // Validate role
+    if (role !== 'desktop' && role !== 'companion') {
+      return new Response('Invalid role', { status: 400 });
+    }
+
+    // First connection must be desktop creating the session
     if (!this.sessionToken) {
+      if (role !== 'desktop') {
+        return new Response('Session not found or expired', { status: 404 });
+      }
+      if (!token || token.length < 16) {
+        return new Response('Invalid token length', { status: 400 });
+      }
       this.sessionToken = token;
       this.expiresAt = Date.now() + 10 * 60 * 1000; // 10 minute auto-expiration
-      // Set storage alarm for cleanup
       this.state.storage.setAlarm(this.expiresAt);
+    } else {
+      // Validate secret token for session
+      if (!token || token !== this.sessionToken) {
+        return new Response('Unauthorized: Invalid session token', { status: 403 });
+      }
+    }
+
+    // Prevent duplicate companion hijack
+    if (role === 'companion' && this.companionWs) {
+      return new Response('Conflict: Companion already paired with this session', { status: 409 });
     }
 
     const pair = new WebSocketPair();
@@ -58,9 +78,6 @@ export class SignalingRoom {
         server.send(JSON.stringify({ type: 'peer_ready', sessionId }));
       }
     } else if (role === 'companion') {
-      if (this.companionWs) {
-        try { this.companionWs.close(1000, 'Replaced by new companion connection'); } catch {}
-      }
       this.companionWs = server;
       this.setupSocket(server, 'companion');
 
@@ -80,16 +97,15 @@ export class SignalingRoom {
     ws.addEventListener('message', (event) => {
       try {
         const data = typeof event.data === 'string' ? event.data : new TextDecoder().decode(event.data);
-        const parsed = JSON.parse(data);
 
-        // Forward signal to the opposite peer
+        // Forward signal to opposite peer only
         if (role === 'desktop' && this.companionWs) {
           this.companionWs.send(data);
         } else if (role === 'companion' && this.desktopWs) {
           this.desktopWs.send(data);
         }
       } catch (err) {
-        console.warn('[SignalingRoom] Failed to parse message', err);
+        console.warn('[SignalingRoom] Failed to forward signal', err);
       }
     });
 
@@ -109,7 +125,6 @@ export class SignalingRoom {
   }
 
   async alarm(): Promise<void> {
-    // Session expired: close sockets and clear
     if (this.desktopWs) {
       try { this.desktopWs.close(1000, 'Session expired'); } catch {}
     }
@@ -124,7 +139,6 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    // CORS headers for preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         headers: {
@@ -147,7 +161,6 @@ export default {
         return new Response('Missing session parameter', { status: 400 });
       }
 
-      // Route to Durable Object room for this session
       const id = env.SIGNALING_ROOM.idFromName(sessionId.toUpperCase());
       const room = env.SIGNALING_ROOM.get(id);
       return room.fetch(request);

@@ -4,6 +4,8 @@ import { storage } from '../persistence/StorageManager';
 import { generateSessionCode, generateSecureToken } from '../connection/token';
 import { SignalingClient } from '../connection/signalingClient';
 import { PeerConnectionManager } from '../connection/peerConnection';
+import { getSignalingUrl } from '../connection/config';
+import { buildCompanionUrl } from '../connection/url';
 import { InputManager } from '../game/input/InputManager';
 import { GameRenderer } from '../game/rendering/renderer';
 import { SpaceScene } from '../game/scenes/spaceScene';
@@ -307,12 +309,16 @@ export class DesktopApp {
     this.sessionCode = generateSessionCode();
     this.sessionToken = generateSecureToken();
 
-    const baseUrl = window.location.origin + window.location.pathname;
-    const companionUrl = `${baseUrl}?mode=companion&session=${this.sessionCode}&token=${this.sessionToken}`;
+    const signalingUrl = getSignalingUrl();
 
-    const signalingUrl =
-      import.meta.env.VITE_SIGNALING_URL ||
-      (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws';
+    const companionUrl = buildCompanionUrl({
+      origin: window.location.origin,
+      pathname: window.location.pathname,
+      basePath: import.meta.env.BASE_URL,
+      session: this.sessionCode,
+      token: this.sessionToken,
+      signalingUrl: signalingUrl,
+    });
 
     this.uiContainer.innerHTML = `
       <div style="
@@ -386,15 +392,15 @@ export class DesktopApp {
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #facc15;
+            background: ${signalingUrl ? '#facc15' : '#ef4444'};
             display: inline-block;
-            animation: pulse 1.5s infinite;
+            animation: ${signalingUrl ? 'pulse 1.5s infinite' : 'none'};
           "></span>
-          <span id="pairing-status-text">Waiting for Companion...</span>
+          <span id="pairing-status-text">${signalingUrl ? 'Waiting for Companion...' : 'Signaling Offline (Unconfigured)'}</span>
         </div>
 
         <div id="pairing-offline-notice" style="
-          display: none;
+          display: ${signalingUrl ? 'none' : 'block'};
           max-width: 460px;
           padding: 12px 16px;
           background: rgba(234, 179, 8, 0.1);
@@ -406,7 +412,7 @@ export class DesktopApp {
           margin-bottom: 20px;
           line-height: 1.5;
         ">
-          Signaling server is currently offline. Remote companion pairing requires a live signaling service (see README). You can still play immediately with Keyboard & Mouse!
+          Remote companion pairing requires a live signaling server (VITE_SIGNALING_URL). You can still explore the universe immediately with Keyboard & Mouse!
         </div>
 
         <div style="display: flex; gap: 12px;">
@@ -466,25 +472,30 @@ export class DesktopApp {
       this.renderModeSelectScreen();
     });
 
-    this.signaling = new SignalingClient(signalingUrl, this.sessionCode, this.sessionToken, 'desktop');
-    this.peer = new PeerConnectionManager('desktop', this.signaling, {
-      onStateChange: (state) => this.handleConnectionStateChange(state),
-      onRealtimeInput: (input) => {
-        this.inputManager.getCompanionSource().handleRealtimeInput(input);
-      },
-      onAction: (action) => {
-        this.inputManager.getCompanionSource().handleAction(action);
-      },
-      onMetrics: (metrics) => {
-        this.debugOverlay.updateMetrics(metrics);
-      },
-    });
+    if (signalingUrl) {
+      this.signaling = new SignalingClient(signalingUrl, this.sessionCode, this.sessionToken, 'desktop');
+      this.peer = new PeerConnectionManager('desktop', this.signaling, {
+        onStateChange: (state) => this.handleConnectionStateChange(state),
+        onRealtimeInput: (input) => {
+          this.inputManager.getCompanionSource().handleRealtimeInput(input);
+        },
+        onAction: (action) => {
+          this.inputManager.getCompanionSource().handleAction(action);
+        },
+        onMetrics: (metrics) => {
+          this.debugOverlay.updateMetrics(metrics);
+        },
+      });
 
-    this.peer.start().catch((err) => {
-      console.warn('[Pairing] Signaling server connection failed:', err);
-      const notice = this.uiContainer.querySelector('#pairing-offline-notice') as HTMLElement;
-      if (notice) notice.style.display = 'block';
-    });
+      this.peer.start().catch((err) => {
+        console.warn('[Pairing] Signaling server connection failed:', err);
+        const notice = this.uiContainer.querySelector('#pairing-offline-notice') as HTMLElement;
+        if (notice) {
+          notice.textContent = `Signaling server at ${signalingUrl} is unreachable. Check network or server status. You can still play immediately with Keyboard & Mouse!`;
+          notice.style.display = 'block';
+        }
+      });
+    }
   }
 
   private handleConnectionStateChange(state: ConnectionState): void {

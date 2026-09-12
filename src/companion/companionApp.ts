@@ -2,6 +2,7 @@ import { SignalingClient } from '../connection/signalingClient';
 import { PeerConnectionManager } from '../connection/peerConnection';
 import { TouchControls } from './touchControls';
 import { getPairingParams, type PairingUrlParams } from './deviceDetection';
+import { getSignalingUrl } from '../connection/config';
 
 export class CompanionApp {
   private container: HTMLElement;
@@ -123,10 +124,15 @@ export class CompanionApp {
   }
 
   private initPairingFlow(sessionId: string, token: string, signalingOverride?: string): void {
-    const signalingUrl =
-      signalingOverride ||
-      import.meta.env.VITE_SIGNALING_URL ||
-      (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws';
+    const signalingUrl = getSignalingUrl(signalingOverride);
+
+    if (!signalingUrl) {
+      this.renderConnectionFailed(
+        sessionId,
+        'Remote signaling server is not configured for this deployment. The desktop game requires VITE_SIGNALING_URL configured to enable mobile pairing.'
+      );
+      return;
+    }
 
     this.renderConnecting(sessionId);
 
@@ -138,7 +144,7 @@ export class CompanionApp {
         } else if (state === 'reconnecting') {
           this.renderSignalLost(sessionId);
         } else if (state === 'failed') {
-          this.renderConnectionFailed(sessionId);
+          this.renderConnectionFailed(sessionId, 'WebRTC negotiation failed. Check network firewalls or signaling service status.');
         }
       },
       onMetrics: (metrics) => {
@@ -148,7 +154,7 @@ export class CompanionApp {
 
     this.peer.start().catch((err) => {
       console.warn('[Companion] Connection error:', err);
-      this.renderConnectionFailed(sessionId);
+      this.renderConnectionFailed(sessionId, err?.message || 'Failed to connect to signaling server.');
     });
   }
 
@@ -225,7 +231,7 @@ export class CompanionApp {
     });
   }
 
-  private renderConnectionFailed(sessionId: string): void {
+  private renderConnectionFailed(sessionId: string, reason?: string): void {
     this.container.innerHTML = `
       <div style="
         min-height: 100vh;
@@ -243,7 +249,7 @@ export class CompanionApp {
       ">
         <h2 style="font-size: 20px; font-weight: 400; margin: 0 0 12px 0; color: #facc15;">Signaling Unavailable</h2>
         <p style="font-size: 13px; color: #94a3b8; max-width: 320px; line-height: 1.6; margin-bottom: 24px;">
-          Could not establish connection to session <strong>${sessionId}</strong>. Ensure your signaling service is running or check your network.
+          ${reason || `Could not establish connection to session <strong>${sessionId}</strong>. Ensure your signaling service is running or check your network.`}
         </p>
         <button id="btn-retry" style="
           padding: 12px 24px;

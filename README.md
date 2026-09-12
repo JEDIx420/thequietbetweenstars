@@ -68,7 +68,7 @@ This milestone establishes the architectural foundation:
 ### Clean Subsystem Separation
 
 - `src/protocol/`: Versioned TypeScript protocol contracts, message schemas, and math helpers (deadband, clamp).
-- `src/connection/`: Ephemeral signaling client, token generator, and WebRTC PeerConnection dual-datachannel manager.
+- `src/connection/`: Ephemeral signaling client, token generator, URL helpers, config resolution, and WebRTC PeerConnection dual-datachannel manager.
 - `src/game/input/`: Normalized input abstraction (`InputSource`, `KeyboardInput`, `CompanionInput`, `InputManager`).
 - `src/game/core/`: Float-smooth flight physics model, velocity damping, and chase camera tracking.
 - `src/game/scenes/`: Procedural 3D starfield, sun corona, celestial bodies, and geometric craft.
@@ -143,9 +143,18 @@ To test phone pairing on your local network:
 
 ---
 
-## Signaling Service Deployment (Cloudflare Workers)
+## GitHub Pages Deployment & Configuration
 
-GitHub Pages serves static web files and cannot run a WebSocket server. To enable public phone pairing for the live GitHub Pages site, deploy the ephemeral signaling worker:
+The repository uses GitHub's official Actions-based deployment workflow (`.github/workflows/deploy.yml`).
+
+### 1. Enable GitHub Pages in Repository Settings
+In GitHub:
+1. Navigate to **Settings** → **Pages**.
+2. Under **Build and deployment** → **Source**, select **GitHub Actions**.
+3. *Visibility Notice*: GitHub Pages from private repositories requires a GitHub plan supporting private Pages (Pro, Team, or Enterprise). For standard accounts, the repository must be Public.
+
+### 2. Configure Signaling Endpoint (Optional for Mobile Pairing)
+GitHub Pages serves static web files and cannot host a WebSocket server. To enable public phone pairing for the live GitHub Pages site, deploy the ephemeral Cloudflare Worker in `signaling/`:
 
 1. Install Wrangler CLI and log in:
    ```bash
@@ -162,12 +171,12 @@ GitHub Pages serves static web files and cannot run a WebSocket server. To enabl
 3. Copy the deployed worker URL:
    `wss://thequietbetweenstars-signaling.<your-subdomain>.workers.dev/ws`
 
-4. Set the GitHub Actions secret or repository variable:
-   - Go to your GitHub repository -> **Settings** -> **Secrets and variables** -> **Actions** -> **Variables**.
+4. Set the GitHub Actions repository variable:
+   - Go to your GitHub repository → **Settings** → **Secrets and variables** → **Actions** → **Variables**.
    - Name: `VITE_SIGNALING_URL`
    - Value: `wss://thequietbetweenstars-signaling.<your-subdomain>.workers.dev/ws`
 
-*Note: If no signaling server is configured, the desktop game automatically informs the player that remote pairing is offline and allows immediate, uninterrupted play with Keyboard & Mouse.*
+*When unconfigured*: The production bundle detects that no signaling endpoint is defined and immediately explains to the player that remote pairing is offline, allowing immediate, seamless play with Keyboard & Mouse without attempting invalid connections.
 
 ---
 
