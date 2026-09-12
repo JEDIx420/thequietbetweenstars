@@ -1,55 +1,69 @@
 import * as THREE from 'three';
 import type { NormalizedInputState } from '../input/InputSource';
+import type { CelestialPhysicsSystem, CollisionResult } from './celestialPhysics';
 
 export class FlightModel {
   public shipGroup: THREE.Group;
   public position: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
   public velocity: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
-  public rotation: THREE.Euler = new THREE.Euler(0, 0, 0, 'YXZ');
   public quaternion: THREE.Quaternion = new THREE.Quaternion();
 
-  // Angular velocities
+  // Angular rates
   private pitchRate = 0;
   private yawRate = 0;
   private rollRate = 0;
   private currentThrottle = 0;
 
-  // Flight dynamics parameters
-  private readonly maxSpeed = 120;
-  private readonly acceleration = 60;
-  private readonly linearDamping = 0.985;
-  private readonly turnSpeed = 1.6;
-  private readonly angularDamping = 0.88;
-  private readonly autoBankFactor = 0.45;
+  // Visual bank angle (local ship tilt during yaw turns)
+  private currentBankAngle = 0;
 
-  // Camera follow vectors
-  private cameraTargetPos: THREE.Vector3 = new THREE.Vector3();
-  private cameraLookTarget: THREE.Vector3 = new THREE.Vector3();
+  // Refined flight dynamics parameters
+  private readonly maxCruiseSpeed = 160;
+  private readonly acceleration = 75;
+  private readonly linearDamping = 0.988; // Gentle glide
+  private readonly turnSpeed = 1.75;
+  private readonly angularDamping = 0.86;
+  private readonly autoBankFactor = 0.55;
 
-  constructor(shipGroup: THREE.Group) {
+  // Considered Chase Camera Follow
+  private cameraTargetPos: THREE.Vector3 = new THREE.Vector3(0, 3, 10);
+  private cameraLookTarget: THREE.Vector3 = new THREE.Vector3(0, 0, -20);
+  private currentFov = 64;
+
+  // Collision state
+  public lastCollision: CollisionResult = { hasCollided: false, penetrationDepth: 0 };
+  private physicsSystem: CelestialPhysicsSystem | null = null;
+
+  constructor(shipGroup: THREE.Group, physicsSystem?: CelestialPhysicsSystem) {
     this.shipGroup = shipGroup;
-    this.quaternion.setFromEuler(this.rotation);
+    this.physicsSystem = physicsSystem || null;
+    this.quaternion.setFromEuler(new THREE.Euler(0, 0, 0, 'YXZ'));
+  }
+
+  public setPhysicsSystem(physics: CelestialPhysicsSystem): void {
+    this.physicsSystem = physics;
   }
 
   public update(input: NormalizedInputState, dt: number, camera: THREE.PerspectiveCamera): void {
-    // Clamp delta time to avoid huge leaps during lag
-    const clampedDt = Math.min(dt, 0.1);
+    const clampedDt = Math.min(dt, 0.06);
 
-    // Update throttle smoothly towards input throttle
-    const throttleTarget = input.throttle;
-    this.currentThrottle += (throttleTarget - this.currentThrottle) * Math.min(1, clampedDt * 4);
+    // 1. Smooth Throttle Response
+    const throttleTarget = Math.max(0, Math.min(1, input.throttle));
+    // Responsive ramp-up, slightly smoother deceleration
+    const throttleRampSpeed = throttleTarget > this.currentThrottle ? 3.5 : 2.5;
+    this.currentThrottle += (throttleTarget - this.currentThrottle) * Math.min(1, clampedDt * throttleRampSpeed);
 
-    // Apply angular inputs (axes.y = pitch, axes.x = yaw)
-    // Note: in 3D flight, pitch down = negative X rotation or vice versa
+    // 2. Coordinated Angular Steering
     const targetPitchRate = input.axes.y * this.turnSpeed;
     const targetYawRate = -input.axes.x * this.turnSpeed;
-    const targetRollRate = (-input.roll - input.axes.x * this.autoBankFactor) * this.turnSpeed;
+    const targetRollRate = (-input.roll) * this.turnSpeed;
 
-    this.pitchRate += (targetPitchRate - this.pitchRate) * (1 - Math.pow(this.angularDamping, clampedDt * 60));
-    this.yawRate += (targetYawRate - this.yawRate) * (1 - Math.pow(this.angularDamping, clampedDt * 60));
-    this.rollRate += (targetRollRate - this.rollRate) * (1 - Math.pow(this.angularDamping, clampedDt * 60));
+    const angularEase = 1 - Math.pow(this.angularDamping, clampedDt * 60);
+    this.pitchRate += (targetPitchRate - this.pitchRate) * angularEase;
+    this.yawRate += (targetYawRate - this.yawRate) * angularEase;
+    this.rollRate += (targetRollRate - this.rollRate) * angularEase;
 
-    // Incremental rotation quaternions
+    // Apply incremental rotation to ship quaternion
     const deltaRot = new THREE.Quaternion();
     const eulerDelta = new THREE.Euler(
       this.pitchRate * clampedDt,
@@ -59,55 +73,81 @@ export class FlightModel {
     );
     deltaRot.setFromEuler(eulerDelta);
     this.quaternion.multiply(deltaRot);
-    this.shipGroup.quaternion.copy(this.quaternion);
 
-    // Forward direction from ship orientation
+    // 3. Visual Banking Tilt into Turns
+    const targetBank = -input.axes.x * this.autoBankFactor;
+    this.currentBankAngle += (targetBank - this.currentBankAngle) * Math.min(1, clampedDt * 6);
+
+    // Combine base orientation with aesthetic banking tilt
+    const bankQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), this.currentBankAngle);
+    const finalVisualQuat = this.quaternion.clone().multiply(bankQuat);
+    this.shipGroup.quaternion.copy(finalVisualQuat);
+
+    // 4. Momentum & Thrust Vector
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
 
-    // Apply engine thrust along forward vector
-    const thrust = forward.clone().multiplyScalar(this.currentThrottle * this.acceleration * clampedDt);
-    this.velocity.add(thrust);
+    // Nonlinear throttle response: low throttle gives precise docking feel, high throttle surges into cruise
+    const effectiveThrust = Math.pow(this.currentThrottle, 1.3) * this.acceleration;
+    this.velocity.addScaledVector(forward, effectiveThrust * clampedDt);
 
-    // Apply subtle atmospheric/space drag
+    // Space inertia damping
     this.velocity.multiplyScalar(Math.pow(this.linearDamping, clampedDt * 60));
 
     // Cap velocity
-    if (this.velocity.length() > this.maxSpeed) {
-      this.velocity.setLength(this.maxSpeed);
+    const speed = this.velocity.length();
+    if (speed > this.maxCruiseSpeed) {
+      this.velocity.setLength(this.maxCruiseSpeed);
     }
 
-    // Update position
+    // 5. Update Position and Resolve Celestial Collisions
     this.position.addScaledVector(this.velocity, clampedDt);
+
+    if (this.physicsSystem) {
+      this.lastCollision = this.physicsSystem.resolvePhysics(this.position, this.velocity, clampedDt);
+    }
+
     this.shipGroup.position.copy(this.position);
 
-    // Smooth Chase Camera
-    this.updateCamera(camera, clampedDt, forward);
+    // 6. Considered Chase Camera Follow
+    this.updateCamera(camera, clampedDt, forward, speed);
   }
 
-  private updateCamera(camera: THREE.PerspectiveCamera, dt: number, forward: THREE.Vector3): void {
+  private updateCamera(
+    camera: THREE.PerspectiveCamera,
+    dt: number,
+    forward: THREE.Vector3,
+    speed: number
+  ): void {
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);
 
-    // Camera offset behind and slightly above ship
-    // Pulls back subtly with throttle for dynamic feeling of speed
-    const distanceBehind = 7.5 + this.currentThrottle * 2.0;
-    const heightAbove = 2.2 + this.currentThrottle * 0.4;
+    // Dynamic camera distance: expands back slightly with speed
+    const speedRatio = Math.min(1, speed / this.maxCruiseSpeed);
+    const distanceBehind = 7.8 + speedRatio * 3.2;
+    const heightAbove = 2.4 + speedRatio * 0.6;
 
     const desiredCamPos = this.position
       .clone()
       .sub(forward.clone().multiplyScalar(distanceBehind))
       .add(up.clone().multiplyScalar(heightAbove));
 
-    // Camera look target ahead of ship
-    const desiredLookTarget = this.position.clone().add(forward.clone().multiplyScalar(15));
+    // Look-ahead target ahead of craft
+    const lookAheadDist = 18 + speedRatio * 12;
+    const desiredLookTarget = this.position.clone().add(forward.clone().multiplyScalar(lookAheadDist));
 
-    // Smooth lerp
-    const camLerp = 1 - Math.pow(0.005, dt);
-    this.cameraTargetPos.lerp(desiredCamPos, camLerp);
-    this.cameraLookTarget.lerp(desiredLookTarget, camLerp);
+    // Smooth spring-damper lerp
+    const camFollowLerp = 1 - Math.pow(0.002, dt);
+    this.cameraTargetPos.lerp(desiredCamPos, camFollowLerp);
+    this.cameraLookTarget.lerp(desiredLookTarget, camFollowLerp);
 
     camera.position.copy(this.cameraTargetPos);
     camera.up.copy(up);
     camera.lookAt(this.cameraLookTarget);
+
+    // Dynamic FOV for speed sensation (63° to 71°)
+    const targetFov = 63 + speedRatio * 8;
+    this.currentFov += (targetFov - this.currentFov) * Math.min(1, dt * 3);
+    camera.fov = this.currentFov;
+    camera.updateProjectionMatrix();
   }
 
   public getSpeed(): number {
@@ -116,5 +156,9 @@ export class FlightModel {
 
   public getThrottle(): number {
     return this.currentThrottle;
+  }
+
+  public getSteeringRates(): { yaw: number; pitch: number; roll: number } {
+    return { yaw: this.yawRate, pitch: this.pitchRate, roll: this.rollRate };
   }
 }

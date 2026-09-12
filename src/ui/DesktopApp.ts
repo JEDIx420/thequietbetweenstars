@@ -34,6 +34,7 @@ export class DesktopApp {
   private uiState: UIState = 'title';
   private lastTime = performance.now();
   private isRunning = false;
+  private lastDeflectionSoundTime = 0;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -60,7 +61,7 @@ export class DesktopApp {
   private initGameEngine(): void {
     this.renderer = new GameRenderer(this.canvasContainer);
     this.scene = new SpaceScene();
-    this.flightModel = new FlightModel(this.scene.shipGroup);
+    this.flightModel = new FlightModel(this.scene.shipGroup, this.scene.physics);
     this.inputManager = new InputManager();
     this.debugOverlay = new DebugOverlay();
 
@@ -72,7 +73,7 @@ export class DesktopApp {
   private gameLoop(time: number): void {
     if (!this.isRunning) return;
 
-    const dt = Math.min((time - this.lastTime) * 0.001, 0.1);
+    const dt = Math.min((time - this.lastTime) * 0.001, 0.06);
     this.lastTime = time;
 
     const input = this.inputManager.getNormalizedInput();
@@ -80,21 +81,46 @@ export class DesktopApp {
 
     const shipPos = this.flightModel.position;
     const throttle = this.flightModel.getThrottle();
-    this.scene.update(dt, shipPos, throttle);
-    audio.updateThrottle(throttle);
 
+    // Pass steering inputs to SurveyCraft for thruster vectoring
+    this.scene.update(dt, shipPos, throttle, input.axes.x, input.axes.y);
+
+    if (this.uiState === 'playing') {
+      audio.updateThrottle(throttle);
+    }
+
+    // Celestial Proximity & Exclusion Feedback
+    const nearest = this.scene.physics.getNearestBody(shipPos);
+    this.updateProximityHUD(nearest);
+
+    // Collision deflection audio and visual feedback
+    if (this.flightModel.lastCollision.hasCollided) {
+      const now = performance.now();
+      if (now - this.lastDeflectionSoundTime > 400) {
+        this.lastDeflectionSoundTime = now;
+        audio.playCollisionDeflection(this.flightModel.lastCollision.isDanger);
+        const bodyName = this.flightModel.lastCollision.collidedBody?.name || 'CELESTIAL BODY';
+        if (this.flightModel.lastCollision.isDanger) {
+          this.showHudNotice(`⚠ SOLAR RADIATION BARRIER — DEFLECTING FROM ${bodyName}`);
+        } else {
+          this.showHudNotice(`EXCLUSION SHELL ENGAGED — ORBITAL DEFLECTION ALONG ${bodyName}`);
+        }
+      }
+    }
+
+    // Actions handling
     if (this.inputManager.consumeAction('scan')) {
       this.scene.triggerScan(shipPos);
       audio.playScanEffect();
-      this.showHudNotice('SCAN INITIATED - ACOUSTIC RESONANCE EMITTED');
+      this.showHudNotice('SCAN INITIATED — ACOUSTIC RESONANCE EMITTED');
     }
     if (this.inputManager.consumeAction('map')) {
       audio.playBlip();
-      this.showHudNotice('STELLAR CARTOGRAPHY - SECTOR UNCHARTED');
+      this.showHudNotice('STELLAR CARTOGRAPHY — SECTOR AURELIA RECORDED');
     }
     if (this.inputManager.consumeAction('autopilot')) {
       audio.playBlip();
-      this.showHudNotice('AUTOPILOT ENGAGED - DRIFTING WITH SOLAR TIDES');
+      this.showHudNotice('AUTOPILOT ENGAGED — DRIFTING WITH SOLAR TIDES');
     }
 
     this.debugOverlay.updateFrame();
@@ -103,6 +129,27 @@ export class DesktopApp {
     this.renderer.render(this.scene.scene);
 
     requestAnimationFrame((t) => this.gameLoop(t));
+  }
+
+  private updateProximityHUD(
+    nearest: { body: any; distance: number; altitude: number; inAtmosphere: boolean; inExclusion: boolean } | null
+  ): void {
+    const el = this.uiContainer.querySelector('#proximity-indicator') as HTMLElement;
+    if (!el) return;
+
+    if (nearest && nearest.inAtmosphere && this.uiState === 'playing') {
+      el.style.display = 'flex';
+      const status = nearest.inExclusion ? 'ORBITAL EXCLUSION' : 'APPROACH ENVELOPE';
+      el.innerHTML = `
+        <span style="color: #38bdf8; font-weight: 700;">PROXIMITY: ${nearest.body.name.toUpperCase()}</span>
+        <span style="color: #64748b;">│</span>
+        <span style="color: ${nearest.inExclusion ? '#f87171' : '#fde047'}; font-weight: 600;">${status}</span>
+        <span style="color: #64748b;">│</span>
+        <span>${Math.round(nearest.altitude)} KM ALT</span>
+      `;
+    } else {
+      el.style.display = 'none';
+    }
   }
 
   private renderTitleScreen(): void {
@@ -120,68 +167,72 @@ export class DesktopApp {
         font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
         color: #f8fafc;
         pointer-events: auto;
-        background: radial-gradient(circle at 50% 50%, rgba(13, 21, 39, 0.45) 0%, rgba(3, 3, 7, 0.75) 100%);
+        background: radial-gradient(circle at 50% 50%, rgba(13, 21, 39, 0.45) 0%, rgba(3, 3, 7, 0.8) 100%);
       ">
         <div style="
           font-size: 13px;
-          letter-spacing: 0.3em;
+          letter-spacing: 0.35em;
           color: #38bdf8;
           text-transform: uppercase;
           margin-bottom: 16px;
-          font-weight: 500;
-          opacity: 0.9;
+          font-weight: 600;
+          text-shadow: 0 0 16px rgba(56, 189, 248, 0.6);
         ">THE QUIET BETWEEN STARS</div>
 
         <h1 style="
-          font-size: clamp(32px, 6vw, 64px);
+          font-size: clamp(34px, 6.5vw, 68px);
           font-weight: 200;
-          letter-spacing: 0.12em;
-          margin: 0 0 16px 0;
+          letter-spacing: 0.14em;
+          margin: 0 0 18px 0;
           text-align: center;
-          color: #f1f5f9;
-          text-shadow: 0 0 40px rgba(56, 189, 248, 0.35);
+          color: #f8fafc;
+          text-shadow: 0 0 45px rgba(56, 189, 248, 0.4);
         ">A Peaceful Space RPG</h1>
 
         <p style="
           font-size: clamp(14px, 2vw, 17px);
           font-weight: 300;
           color: #94a3b8;
-          max-width: 520px;
+          max-width: 540px;
           text-align: center;
-          line-height: 1.7;
+          line-height: 1.75;
           margin: 0 0 48px 0;
+          letter-spacing: 0.02em;
         ">
-          A cosmic road trip through the gentle strange. No combat. No ticking clocks. Just silence, wonder, and the warm hum of your craft.
+          A cosmic road trip into the gentle strange. No combat. No ticking clocks. Just silence, wonder, and the warm hum of your craft.
         </p>
 
         <button id="btn-begin" style="
-          padding: 16px 48px;
-          background: rgba(14, 165, 233, 0.15);
-          border: 1px solid rgba(56, 189, 248, 0.5);
+          padding: 18px 54px;
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.25), rgba(56, 189, 248, 0.12));
+          border: 1px solid rgba(56, 189, 248, 0.65);
           border-radius: 9999px;
           color: #f8fafc;
           font-size: 15px;
           font-weight: 600;
-          letter-spacing: 0.2em;
+          letter-spacing: 0.22em;
           cursor: pointer;
-          transition: all 0.2s ease;
-          box-shadow: 0 0 25px rgba(56, 189, 248, 0.2);
+          transition: all 0.25s ease;
+          box-shadow: 0 0 35px rgba(56, 189, 248, 0.3);
         ">BEGIN</button>
       </div>
     `;
 
     const btn = this.uiContainer.querySelector('#btn-begin') as HTMLElement;
     btn.addEventListener('mouseenter', () => {
-      btn.style.background = 'rgba(14, 165, 233, 0.35)';
+      btn.style.background = 'linear-gradient(135deg, rgba(14, 165, 233, 0.45), rgba(56, 189, 248, 0.25))';
       btn.style.transform = 'scale(1.04)';
+      btn.style.boxShadow = '0 0 50px rgba(56, 189, 248, 0.5)';
     });
     btn.addEventListener('mouseleave', () => {
-      btn.style.background = 'rgba(14, 165, 233, 0.15)';
+      btn.style.background = 'linear-gradient(135deg, rgba(14, 165, 233, 0.25), rgba(56, 189, 248, 0.12))';
       btn.style.transform = 'scale(1.0)';
+      btn.style.boxShadow = '0 0 35px rgba(56, 189, 248, 0.3)';
     });
 
     btn.addEventListener('click', async () => {
       await audio.start();
+      audio.playTitleMusic();
       await storage.updateSettings({ introSeen: true });
       this.renderModeSelectScreen();
     });
@@ -203,14 +254,15 @@ export class DesktopApp {
         color: #f8fafc;
         pointer-events: auto;
         background: rgba(3, 3, 7, 0.65);
-        backdrop-filter: blur(6px);
+        backdrop-filter: blur(8px);
       ">
         <div style="
           font-size: 11px;
-          letter-spacing: 0.25em;
+          letter-spacing: 0.3em;
           color: #38bdf8;
           text-transform: uppercase;
           margin-bottom: 12px;
+          font-weight: 600;
         ">CONTROLLER SELECTION</div>
 
         <h2 style="
@@ -226,7 +278,7 @@ export class DesktopApp {
             min-width: 260px;
             max-width: 320px;
             padding: 32px 24px;
-            background: rgba(15, 23, 42, 0.65);
+            background: rgba(15, 23, 42, 0.7);
             border: 1px solid rgba(56, 189, 248, 0.4);
             border-radius: 16px;
             cursor: pointer;
@@ -237,7 +289,7 @@ export class DesktopApp {
             text-align: center;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
           ">
-            <div style="font-size: 32px; margin-bottom: 16px;">📱</div>
+            <div style="font-size: 34px; margin-bottom: 16px;">📱</div>
             <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 10px 0; color: #38bdf8;">PAIR COMPANION</h3>
             <p style="font-size: 13px; color: #94a3b8; line-height: 1.6; margin: 0 0 20px 0;">
               Turn your smartphone into an in-universe flight terminal with virtual touch joystick, throttle, and scanner.
@@ -250,8 +302,8 @@ export class DesktopApp {
             min-width: 260px;
             max-width: 320px;
             padding: 32px 24px;
-            background: rgba(15, 23, 42, 0.45);
-            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid rgba(148, 163, 184, 0.25);
             border-radius: 16px;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -261,7 +313,7 @@ export class DesktopApp {
             text-align: center;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
           ">
-            <div style="font-size: 32px; margin-bottom: 16px;">⌨️</div>
+            <div style="font-size: 34px; margin-bottom: 16px;">⌨️</div>
             <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 10px 0; color: #e2e8f0;">KEYBOARD & MOUSE</h3>
             <p style="font-size: 13px; color: #94a3b8; line-height: 1.6; margin: 0 0 20px 0;">
               Fly directly on your computer using W/S pitch, A/D yaw, Shift/Ctrl throttle, and Space scan.
@@ -293,14 +345,14 @@ export class DesktopApp {
       kbCard.style.transform = 'translateY(-4px)';
     });
     kbCard.addEventListener('mouseleave', () => {
-      kbCard.style.borderColor = 'rgba(148, 163, 184, 0.2)';
+      kbCard.style.borderColor = 'rgba(148, 163, 184, 0.25)';
       kbCard.style.transform = 'translateY(0)';
     });
     kbCard.addEventListener('click', () => {
       audio.playBlip();
       this.inputManager.setMode('keyboard');
       this.debugOverlay.setInputSource('keyboard');
-      this.renderFlightHUD('keyboard');
+      this.enterFlightMode('keyboard');
     });
   }
 
@@ -464,7 +516,7 @@ export class DesktopApp {
       this.cancelPairing();
       this.inputManager.setMode('keyboard');
       this.debugOverlay.setInputSource('keyboard');
-      this.renderFlightHUD('keyboard');
+      this.enterFlightMode('keyboard');
     });
 
     this.uiContainer.querySelector('#btn-cancel-pairing')?.addEventListener('click', () => {
@@ -505,7 +557,7 @@ export class DesktopApp {
       audio.playConnectChime();
       this.inputManager.setMode('companion');
       this.debugOverlay.setInputSource('companion');
-      this.renderFlightHUD('companion');
+      this.enterFlightMode('companion');
     } else if (state === 'reconnecting') {
       this.showDisconnectBanner(true);
     } else if (state === 'disconnected') {
@@ -525,8 +577,13 @@ export class DesktopApp {
     this.signaling = null;
   }
 
-  private renderFlightHUD(mode: 'companion' | 'keyboard'): void {
+  private enterFlightMode(mode: 'companion' | 'keyboard'): void {
     this.uiState = 'playing';
+    audio.playInFlightAmbience();
+    this.renderFlightHUD(mode);
+  }
+
+  private renderFlightHUD(mode: 'companion' | 'keyboard'): void {
     this.uiContainer.innerHTML = `
       <div style="
         position: absolute;
@@ -534,7 +591,7 @@ export class DesktopApp {
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        padding: 20px 24px;
+        padding: 22px 28px;
         box-sizing: border-box;
         pointer-events: none;
         font-family: ui-sans-serif, system-ui, sans-serif;
@@ -542,20 +599,21 @@ export class DesktopApp {
         <div style="display: flex; justify-content: space-between; align-items: center; pointer-events: auto;">
           <div style="
             font-size: 11px;
-            letter-spacing: 0.25em;
+            letter-spacing: 0.3em;
             color: #38bdf8;
             font-weight: 600;
           ">THE QUIET BETWEEN STARS</div>
 
           <div style="display: flex; gap: 12px; align-items: center;">
             <button id="btn-audio-mute" style="
-              background: rgba(15, 23, 42, 0.7);
-              border: 1px solid rgba(148, 163, 184, 0.2);
+              background: rgba(15, 23, 42, 0.75);
+              border: 1px solid rgba(148, 163, 184, 0.25);
               border-radius: 8px;
               color: #cbd5e1;
-              padding: 6px 12px;
+              padding: 7px 14px;
               font-size: 12px;
               cursor: pointer;
+              letter-spacing: 0.05em;
             ">${audio.getIsMuted() ? '🔇 MUTED' : '🔊 SOUND'}</button>
           </div>
         </div>
@@ -589,19 +647,35 @@ export class DesktopApp {
           ">USE KEYBOARD INSTEAD</button>
         </div>
 
-        <div id="hud-notice" style="
-          align-self: center;
-          font-size: 13px;
-          letter-spacing: 0.15em;
-          color: #38bdf8;
-          background: rgba(15, 23, 42, 0.7);
-          border: 1px solid rgba(56, 189, 248, 0.3);
-          padding: 6px 16px;
-          border-radius: 20px;
-          opacity: 0;
-          transition: opacity 0.3s;
-          pointer-events: none;
-        "></div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; align-self: center;">
+          <div id="proximity-indicator" style="
+            display: none;
+            align-items: center;
+            gap: 10px;
+            font-family: ui-monospace, SFMono-Regular, monospace;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            padding: 6px 16px;
+            border-radius: 20px;
+            color: #e2e8f0;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+          "></div>
+
+          <div id="hud-notice" style="
+            font-size: 13px;
+            letter-spacing: 0.12em;
+            color: #38bdf8;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            padding: 6px 18px;
+            border-radius: 20px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+          "></div>
+        </div>
 
         <div style="display: flex; justify-content: space-between; align-items: flex-end;">
           <div id="hud-controls-hint" style="
@@ -649,7 +723,7 @@ export class DesktopApp {
       this.inputManager.setMode('keyboard');
       this.debugOverlay.setInputSource('keyboard');
       this.showDisconnectBanner(false);
-      this.renderFlightHUD('keyboard');
+      this.enterFlightMode('keyboard');
     });
   }
 
@@ -667,7 +741,7 @@ export class DesktopApp {
     el.style.opacity = '1';
     setTimeout(() => {
       if (el) el.style.opacity = '0';
-    }, 2500);
+    }, 2800);
   }
 
   public dispose(): void {
