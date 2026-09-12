@@ -1,5 +1,6 @@
 import type { ConnectionMetrics } from '../../connection/connectionState';
 import type { NormalizedInputState } from '../input/InputSource';
+import { getSignalingUrl } from '../../connection/config';
 
 export class DebugOverlay {
   private container: HTMLElement;
@@ -23,6 +24,11 @@ export class DebugOverlay {
   };
   private speed = 0;
 
+  // Additional diagnostics
+  private flightPhase = 'CRUISE';
+  private worldPosInfo = 'Sector [0,0,0]';
+  private signalingUrl = getSignalingUrl() || 'UNCONFIGURED';
+
   constructor() {
     this.container = document.createElement('div');
     this.container.id = 'debug-overlay';
@@ -30,21 +36,21 @@ export class DebugOverlay {
       position: fixed;
       top: 16px;
       right: 16px;
-      padding: 12px 16px;
-      background: rgba(10, 15, 26, 0.82);
+      padding: 14px 18px;
+      background: rgba(10, 15, 26, 0.88);
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
-      border: 1px solid rgba(147, 197, 253, 0.25);
-      border-radius: 8px;
+      border: 1px solid rgba(147, 197, 253, 0.3);
+      border-radius: 10px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 11px;
-      line-height: 1.5;
+      line-height: 1.55;
       color: #e2e8f0;
       z-index: 10000;
       display: none;
       pointer-events: none;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-      min-width: 240px;
+      min-width: 270px;
     `;
     document.body.appendChild(this.container);
 
@@ -70,6 +76,16 @@ export class DebugOverlay {
 
   public setInputSource(source: string): void {
     this.inputSource = source;
+    if (this.isVisible) this.render();
+  }
+
+  public setFlightPhase(phase: string): void {
+    this.flightPhase = phase;
+    if (this.isVisible) this.render();
+  }
+
+  public setWorldPos(sectorStr: string): void {
+    this.worldPosInfo = sectorStr;
     if (this.isVisible) this.render();
   }
 
@@ -102,12 +118,17 @@ export class DebugOverlay {
 
     this.container.innerHTML = `
       <div style="font-weight: 700; color: #38bdf8; margin-bottom: 6px; letter-spacing: 0.05em;">
-        FLIGHT TELEMETRY [${this.fps} FPS]
+        TELEMETRY & DIAGNOSTICS [${this.fps} FPS]
       </div>
+      <div>Flight Phase: <span style="color: #38bdf8; font-weight: 600;">${this.flightPhase}</span></div>
+      <div>Coordinates: <span style="color: #cbd5e1;">${this.worldPosInfo}</span></div>
       <div>Input Source: <span style="color: #fbbf24; font-weight: 600;">${this.inputSource.toUpperCase()}</span></div>
-      <div>Peer State: <span style="color: ${stateColor}; font-weight: 600;">${state.toUpperCase()}</span></div>
-      <div>RTT Latency: <span style="color: ${rttMs < 60 ? '#4ade80' : '#facc15'};">${rttMs} ms</span></div>
-      <div>Realtime Rate: <span>${realtimePacketRateHz} Hz</span> (total: ${packetsReceived})</div>
+      <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1);">
+        <div>Signaling Server: <span style="color: ${this.signalingUrl === 'UNCONFIGURED' ? '#f87171' : '#4ade80'};">${this.signalingUrl}</span></div>
+        <div>Peer Connection: <span style="color: ${stateColor}; font-weight: 600;">${state.toUpperCase()}</span></div>
+        <div>RTT Latency: <span style="color: ${rttMs < 60 ? '#4ade80' : '#facc15'};">${rttMs} ms</span></div>
+        <div>Packet Rate: <span>${realtimePacketRateHz} Hz</span> (total: ${packetsReceived})</div>
+      </div>
       <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1);">
         <div>Steering (Yaw/Pitch): [${axes.x.toFixed(2)}, ${axes.y.toFixed(2)}]</div>
         <div>Roll: ${roll.toFixed(2)}</div>

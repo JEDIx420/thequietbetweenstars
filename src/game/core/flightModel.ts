@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { NormalizedInputState } from '../input/InputSource';
 import type { CelestialPhysicsSystem, CollisionResult } from './celestialPhysics';
+import type { ApproachController } from '../flight/ApproachController';
 
 export class FlightModel {
   public shipGroup: THREE.Group;
@@ -30,13 +31,19 @@ export class FlightModel {
   private cameraLookTarget: THREE.Vector3 = new THREE.Vector3(0, 0, -20);
   private currentFov = 64;
 
-  // Collision state
+  // Collision & safety state
   public lastCollision: CollisionResult = { hasCollided: false, penetrationDepth: 0 };
   private physicsSystem: CelestialPhysicsSystem | null = null;
+  private approachController: ApproachController | null = null;
 
-  constructor(shipGroup: THREE.Group, physicsSystem?: CelestialPhysicsSystem) {
+  constructor(
+    shipGroup: THREE.Group,
+    physicsSystem?: CelestialPhysicsSystem,
+    approachController?: ApproachController
+  ) {
     this.shipGroup = shipGroup;
     this.physicsSystem = physicsSystem || null;
+    this.approachController = approachController || null;
     this.quaternion.setFromEuler(new THREE.Euler(0, 0, 0, 'YXZ'));
   }
 
@@ -44,12 +51,21 @@ export class FlightModel {
     this.physicsSystem = physics;
   }
 
+  public setApproachController(controller: ApproachController): void {
+    this.approachController = controller;
+  }
+
+  public onRebase(offset: THREE.Vector3): void {
+    // When floating origin rebases, camera offsets shift cleanly
+    this.cameraTargetPos.add(offset);
+    this.cameraLookTarget.add(offset);
+  }
+
   public update(input: NormalizedInputState, dt: number, camera: THREE.PerspectiveCamera): void {
     const clampedDt = Math.min(dt, 0.06);
 
     // 1. Smooth Throttle Response
     const throttleTarget = Math.max(0, Math.min(1, input.throttle));
-    // Responsive ramp-up, slightly smoother deceleration
     const throttleRampSpeed = throttleTarget > this.currentThrottle ? 3.5 : 2.5;
     this.currentThrottle += (throttleTarget - this.currentThrottle) * Math.min(1, clampedDt * throttleRampSpeed);
 
@@ -78,20 +94,22 @@ export class FlightModel {
     const targetBank = -input.axes.x * this.autoBankFactor;
     this.currentBankAngle += (targetBank - this.currentBankAngle) * Math.min(1, clampedDt * 6);
 
-    // Combine base orientation with aesthetic banking tilt
     const bankQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), this.currentBankAngle);
     const finalVisualQuat = this.quaternion.clone().multiply(bankQuat);
     this.shipGroup.quaternion.copy(finalVisualQuat);
 
     // 4. Momentum & Thrust Vector
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
-
-    // Nonlinear throttle response: low throttle gives precise docking feel, high throttle surges into cruise
     const effectiveThrust = Math.pow(this.currentThrottle, 1.3) * this.acceleration;
     this.velocity.addScaledVector(forward, effectiveThrust * clampedDt);
 
     // Space inertia damping
     this.velocity.multiplyScalar(Math.pow(this.linearDamping, clampedDt * 60));
+
+    // Approach envelope intelligent speed braking
+    if (this.approachController) {
+      this.approachController.applyApproachBraking(this.velocity, this.position);
+    }
 
     // Cap velocity
     const speed = this.velocity.length();

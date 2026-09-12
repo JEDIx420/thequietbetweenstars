@@ -9,6 +9,9 @@ export interface AppSettings {
   preferredInputMode: 'companion' | 'keyboard';
   introSeen: boolean;
   lastSessionTime: number;
+  universeSeed?: string;
+  lastSector?: { x: number; y: number; z: number };
+  lastFlightPhase?: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -18,6 +21,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   preferredInputMode: 'keyboard',
   introSeen: false,
   lastSessionTime: 0,
+  universeSeed: 'QUIET-DEFAULT-001',
+  lastSector: { x: 0, y: 0, z: 0 },
+  lastFlightPhase: 'SYSTEM_CRUISE',
 };
 
 const DB_NAME = 'thequietbetweenstars_db';
@@ -79,42 +85,38 @@ export class StorageManager {
     }
   }
 
-  public async updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+  public async updateSettings(partial: Partial<AppSettings>): Promise<AppSettings> {
     const current = await this.getSettings();
-    const updated: AppSettings = {
-      ...current,
-      ...patch,
-      lastSessionTime: Date.now(),
-    };
-
+    const updated: AppSettings = { ...current, ...partial, lastSessionTime: Date.now() };
     this.memoryFallback = { ...updated };
-    this.saveToLocalStorageFallback(updated);
 
-    if (this.db) {
-      try {
-        await new Promise<void>((resolve, reject) => {
-          const tx = this.db!.transaction(STORE_SETTINGS, 'readwrite');
-          const store = tx.objectStore(STORE_SETTINGS);
-          const req = store.put(updated, 'app_settings');
-          req.onsuccess = () => resolve();
-          req.onerror = () => reject(req.error);
-        });
-      } catch (e) {
-        console.warn('[Storage] Failed to write to IndexedDB', e);
-      }
+    if (!this.db) {
+      this.saveToLocalStorageFallback(updated);
+      return updated;
     }
 
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = this.db!.transaction(STORE_SETTINGS, 'readwrite');
+        const store = tx.objectStore(STORE_SETTINGS);
+        const req = store.put(updated, 'app_settings');
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    } catch {
+      this.saveToLocalStorageFallback(updated);
+    }
     return updated;
   }
 
   private loadFromLocalStorageFallback(): void {
     try {
-      const raw = localStorage.getItem('tqbs_settings');
-      if (raw) {
-        this.memoryFallback = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      const val = localStorage.getItem('tqbs_settings');
+      if (val) {
+        this.memoryFallback = { ...DEFAULT_SETTINGS, ...JSON.parse(val) };
       }
     } catch {
-      // In-memory fallback
+      // Ignore
     }
   }
 
@@ -122,7 +124,7 @@ export class StorageManager {
     try {
       localStorage.setItem('tqbs_settings', JSON.stringify(settings));
     } catch {
-      // Ignore storage quota or disabled localStorage
+      // Ignore
     }
   }
 }

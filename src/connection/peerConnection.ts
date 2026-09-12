@@ -293,6 +293,15 @@ export class PeerConnectionManager {
     }
   }
 
+  public sendContextChange(context: any, layout: any): void {
+    this.sendReliable({
+      type: 'context_change',
+      context,
+      layout,
+      timestamp: Date.now(),
+    });
+  }
+
   private startHeartbeat(): void {
     this.stopHeartbeat();
     this.lastActivityTimestamp = Date.now();
