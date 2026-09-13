@@ -10,6 +10,8 @@ export interface LandingSite {
   terrainType: string;
   safetyRating: 'Stable' | 'Moderate Winds' | 'Thermal Activity' | 'Rough Terrain';
   interestingSignals: string[];
+  localHeightScale: number; // Modifies chunk elevation per site
+  localRoughness: number;   // Modifies surface roughness
 }
 
 export class LandingSiteGenerator {
@@ -19,18 +21,72 @@ export class LandingSiteGenerator {
     const rng = new SeededRandom(planet.seed + 9876);
     const count = rng.rangeInt(3, 5);
     const sites: LandingSite[] = [];
+    const family = planet.profile.family;
 
-    const biomesByType: Record<string, string[]> = {
-      'terrestrial-temperate': ['Coastal Plain', 'Verdant Basin', 'Highland Steppe', 'River Delta', 'Forest Canopy Valley'],
-      'terrestrial-ocean': ['Volcanic Archipelago', 'Coral Shelf Atoll', 'Deep Ridge Shallows', 'Pelagic Sandbar'],
-      'terrestrial-desert': ['Dune Sea Oasis', 'Sunken Canyon Bed', 'Mesa Plateau', 'Crystalline Dry Lake'],
-      'terrestrial-ice': ['Glacial Shelf', 'Sub-Zero Geyser Field', 'Blue Ice Crevasse Basin', 'Frozen Fjord Basin'],
-      'volcanic': ['Basalt Obsidian Plain', 'Caldera Rim Landing Zone', 'Cooled Lava Field', 'Ash Valley Terrace'],
-      'exotic': ['Luminescent Flora Basin', 'Resonant Crystal Spire Plain', 'Harmonic Rift Valley', 'Ethereal Terrace'],
-      'barren-moon': ['Impact Basin Rim', 'Regolith Sea', 'Central Peak Shelf', 'Lava Tube Skylight'],
+    const biomesByFamily: Record<string, Array<{ name: string; hScale: number; roughness: number }>> = {
+      'temperate-terrestrial': [
+        { name: 'Coastal Shelf Basin', hScale: 0.8, roughness: 0.5 },
+        { name: 'Alpine Ridge Valley', hScale: 1.4, roughness: 0.85 },
+        { name: 'Inland Timberland Plain', hScale: 1.0, roughness: 0.6 },
+        { name: 'River Delta Shallows', hScale: 0.6, roughness: 0.4 },
+      ],
+      'desert-dune': [
+        { name: 'Equatorial Dune Sea', hScale: 0.9, roughness: 0.4 },
+        { name: 'Eolian Canyon Province', hScale: 1.5, roughness: 0.9 },
+        { name: 'Bleached Salt Basin', hScale: 0.5, roughness: 0.3 },
+        { name: 'Sunken Mesa Terrace', hScale: 1.2, roughness: 0.7 },
+      ],
+      'cryogenic-ice': [
+        { name: 'Glacial Crevasse Rift', hScale: 1.3, roughness: 0.8 },
+        { name: 'Polar Cryo-Plateau', hScale: 0.7, roughness: 0.4 },
+        { name: 'Sub-Zero Geyser Basin', hScale: 1.1, roughness: 0.7 },
+        { name: 'Permafrost Coastal Shelf', hScale: 0.9, roughness: 0.5 },
+      ],
+      'volcanic-basalt': [
+        { name: 'Pyroclastic Fissure Field', hScale: 1.4, roughness: 0.95 },
+        { name: 'Obsidian Basalt Plain', hScale: 0.8, roughness: 0.5 },
+        { name: 'Caldera Rim Landing Zone', hScale: 1.6, roughness: 0.85 },
+        { name: 'Cooled Magma Terrace', hScale: 1.0, roughness: 0.65 },
+      ],
+      'oceanic-water': [
+        { name: 'Pelagic Atoll Shallows', hScale: 0.7, roughness: 0.4 },
+        { name: 'Volcanic Island Shelf', hScale: 1.3, roughness: 0.8 },
+        { name: 'Coral Shoal Sandbar', hScale: 0.5, roughness: 0.35 },
+        { name: 'Deep Archipelago Bay', hScale: 0.9, roughness: 0.6 },
+      ],
+      'toxic-chemical': [
+        { name: 'Sulfur Fluvial Basin', hScale: 0.9, roughness: 0.7 },
+        { name: 'Caustic Badlands Ridge', hScale: 1.4, roughness: 0.9 },
+        { name: 'Hydrocarbon Chimney Shelf', hScale: 1.1, roughness: 0.8 },
+      ],
+      'crystalline-mineral': [
+        { name: 'Faceted Quartz Plain', hScale: 0.9, roughness: 0.5 },
+        { name: 'Resonant Crystal Canyon', hScale: 1.5, roughness: 0.85 },
+        { name: 'Amethyst Mesa Shelf', hScale: 1.2, roughness: 0.65 },
+      ],
+      'high-biosignature': [
+        { name: 'Bioluminescent Marshes', hScale: 0.7, roughness: 0.45 },
+        { name: 'Spore Canopy Basin', hScale: 1.1, roughness: 0.65 },
+        { name: 'Phosphor Highland Plateau', hScale: 1.3, roughness: 0.75 },
+      ],
+      'metallic-iron': [
+        { name: 'Hematite Valley Ridge', hScale: 1.5, roughness: 0.9 },
+        { name: 'Oxidized Rust Basin', hScale: 0.8, roughness: 0.5 },
+        { name: 'Copper Spire Plateau', hScale: 1.3, roughness: 0.8 },
+      ],
+      'barren-moon': [
+        { name: 'Impact Basin Floor', hScale: 0.7, roughness: 0.6 },
+        { name: 'Central Crater Peak', hScale: 1.6, roughness: 0.9 },
+        { name: 'Regolith Highland Shelf', hScale: 1.1, roughness: 0.75 },
+        { name: 'Ancient Ejecta Field', hScale: 1.3, roughness: 0.85 },
+      ],
     };
 
-    const biomes = biomesByType[planet.type] || ['Uncharted Sector', 'Smooth Basin', 'Plateau Shelf'];
+    const biomeDefs = biomesByFamily[family] || [
+      { name: 'Smooth Survey Plain', hScale: 1.0, roughness: 0.6 },
+      { name: 'Highland Ridge', hScale: 1.3, roughness: 0.8 },
+      { name: 'Lowland Basin', hScale: 0.7, roughness: 0.5 },
+    ];
 
     const signalPool = [
       'Weak electromagnetic pulse detected',
@@ -45,7 +101,7 @@ export class LandingSiteGenerator {
     const safetyPool: LandingSite['safetyRating'][] = ['Stable', 'Moderate Winds', 'Thermal Activity', 'Rough Terrain'];
 
     for (let i = 0; i < count; i++) {
-      const biome = biomes[i % biomes.length];
+      const bDef = biomeDefs[i % biomeDefs.length];
       const lat = Math.round(rng.range(-65, 65) * 10) / 10;
       const lon = Math.round(rng.range(-170, 170) * 10) / 10;
 
@@ -54,13 +110,15 @@ export class LandingSiteGenerator {
 
       sites.push({
         id: `site-${planet.id}-${i + 1}`,
-        name: `${biome} Site ${['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'][i]}`,
+        name: `${bDef.name} ${['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'][i]}`,
         latitude: lat,
         longitude: lon,
-        biome,
-        terrainType: planet.type,
+        biome: bDef.name,
+        terrainType: family,
         safetyRating: rng.pick(safetyPool),
         interestingSignals: signals,
+        localHeightScale: bDef.hScale,
+        localRoughness: bDef.roughness,
       });
     }
 

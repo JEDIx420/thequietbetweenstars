@@ -1,17 +1,16 @@
 import { SeededRandom } from '../universe/SeededRandom';
+import { PlanetEnvironmentGenerator } from '../planets/PlanetEnvironmentProfile';
 import type {
   StarSystemDescriptor,
   StarDescriptor,
   PlanetDescriptor,
-  PlanetType,
-  PlanetPalette,
 } from './PlanetDescriptor';
 
 const GREEK_PREFIXES = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta', 'Eta', 'Theta', 'Sigma', 'Omicron'];
-const SYSTEM_NAMES = ['Aurelia', 'Solara', 'Cygnus', 'Vespera', 'Kaelum', 'Zephyria', 'Elysium', 'Nocturna', 'Nirvana', 'Orionis'];
-const PLANET_SYLLABLES_1 = ['Au', 'Ze', 'Kae', 'Lu', 'Va', 'Syr', 'O', 'Tha', 'My', 'Vel'];
-const PLANET_SYLLABLES_2 = ['re', 'phy', 'lum', 'na', 'nor', 'ra', 'mi', 'lon', 'dis', 'tis'];
-const PLANET_SYLLABLES_3 = ['lia', 'ros', 'ia', 'tis', 'nus', 'dani', 'cron', 'va', 'ter', 'ion'];
+const SYSTEM_NAMES = ['Aurelia', 'Solara', 'Cygnus', 'Vespera', 'Kaelum', 'Zephyria', 'Elysium', 'Nocturna', 'Nirvana', 'Orionis', 'Zenith', 'Astraea', 'Hyperion', 'Caelestis'];
+const PLANET_SYLLABLES_1 = ['Au', 'Ze', 'Kae', 'Lu', 'Va', 'Syr', 'O', 'Tha', 'My', 'Vel', 'Cri', 'Xan', 'Pry'];
+const PLANET_SYLLABLES_2 = ['re', 'phy', 'lum', 'na', 'nor', 'ra', 'mi', 'lon', 'dis', 'tis', 'da', 'vo', 'sen'];
+const PLANET_SYLLABLES_3 = ['lia', 'ros', 'ia', 'tis', 'nus', 'dani', 'cron', 'va', 'ter', 'ion', 'ra', 'thea', 'gon'];
 
 export class StarSystemGenerator {
   public static generateSystem(universeSeed: string | number, sx: number, sy: number, sz: number): StarSystemDescriptor {
@@ -27,8 +26,17 @@ export class StarSystemGenerator {
     const numPlanets = rng.rangeInt(2, 5);
     const planets: PlanetDescriptor[] = [];
 
+    // Anti-repetition: track used families in this system to guarantee visual contrast
+    const usedFamilies = new Set<string>();
+
     for (let i = 0; i < numPlanets; i++) {
-      planets.push(this.generatePlanet(rng, name, i + 1));
+      let planet = this.generatePlanet(rng, name, i + 1, star.spectralClass);
+      // If family was already used, re-roll once with seed offset to maximize contrast
+      if (usedFamilies.has(planet.profile.family)) {
+        planet = this.generatePlanet(new SeededRandom(planet.seed + 104729), name, i + 1, star.spectralClass);
+      }
+      usedFamilies.add(planet.profile.family);
+      planets.push(planet);
     }
 
     return {
@@ -68,7 +76,12 @@ export class StarSystemGenerator {
     };
   }
 
-  private static generatePlanet(rng: SeededRandom, sysName: string, index: number): PlanetDescriptor {
+  public static generatePlanet(
+    rng: SeededRandom,
+    sysName: string,
+    index: number,
+    starClass: string = 'G'
+  ): PlanetDescriptor {
     const pSeed = rng.rangeInt(1000, 999999);
     const pRng = new SeededRandom(pSeed);
 
@@ -78,174 +91,48 @@ export class StarSystemGenerator {
     const letter = ['b', 'c', 'd', 'e', 'f'][index - 1] || String(index);
     const pName = `${sysName} ${s1}${s2}${s3} ${letter}`;
 
-    const types: PlanetType[] = [
-      'terrestrial-temperate',
-      'terrestrial-ocean',
-      'terrestrial-desert',
-      'terrestrial-ice',
-      'volcanic',
-      'gas-giant',
-      'barren-moon',
-      'exotic',
-    ];
+    // Generate full coherent environment profile
+    const profile = PlanetEnvironmentGenerator.generateProfile(pSeed, starClass);
 
-    const type = pRng.pick(types);
-    const radius = type === 'gas-giant' ? pRng.range(180, 260) : pRng.range(120, 175);
-    const isLandable = type !== 'gas-giant';
+    const radius = profile.family === 'gas-giant'
+      ? pRng.range(180, 260)
+      : profile.family === 'barren-moon'
+      ? pRng.range(40, 75)
+      : pRng.range(120, 175);
 
-    const palette = this.createPalette(type);
-    const hasRings = type === 'gas-giant' ? pRng.chance(0.65) : pRng.chance(0.15);
-    const moonsCount = type === 'gas-giant' ? pRng.rangeInt(2, 6) : pRng.rangeInt(0, 2);
-
-    let oceanCoverage = 0;
-    let cloudCoverage = pRng.range(0.2, 0.7);
-    let temp = 280;
-    let biosig: PlanetDescriptor['biosignature'] = 'none';
-
-    switch (type) {
-      case 'terrestrial-temperate':
-        oceanCoverage = pRng.range(0.45, 0.75);
-        temp = pRng.rangeInt(275, 305);
-        biosig = pRng.pick(['primitive-flora', 'complex-ecosystem']);
-        break;
-      case 'terrestrial-ocean':
-        oceanCoverage = pRng.range(0.8, 0.98);
-        temp = pRng.rangeInt(280, 315);
-        biosig = pRng.pick(['microbial', 'primitive-flora']);
-        break;
-      case 'terrestrial-desert':
-        oceanCoverage = pRng.range(0.0, 0.1);
-        temp = pRng.rangeInt(310, 360);
-        biosig = pRng.pick(['none', 'microbial']);
-        cloudCoverage = pRng.range(0.05, 0.25);
-        break;
-      case 'terrestrial-ice':
-        oceanCoverage = 0.85;
-        temp = pRng.rangeInt(180, 250);
-        biosig = pRng.pick(['none', 'microbial']);
-        break;
-      case 'volcanic':
-        oceanCoverage = 0.05;
-        temp = pRng.rangeInt(420, 680);
-        biosig = 'none';
-        break;
-      case 'gas-giant':
-        oceanCoverage = 0;
-        cloudCoverage = 1.0;
-        temp = pRng.rangeInt(120, 210);
-        biosig = 'none';
-        break;
-      case 'exotic':
-        oceanCoverage = pRng.range(0.3, 0.6);
-        temp = pRng.rangeInt(250, 320);
-        biosig = 'anomalous';
-        break;
-      default:
-        oceanCoverage = 0;
-        biosig = 'none';
-        break;
-    }
-
-    const shortDesc = this.createShortDesc(type, oceanCoverage, biosig);
+    const moonsCount = profile.family === 'gas-giant'
+      ? pRng.rangeInt(2, 6)
+      : profile.family === 'barren-moon'
+      ? 0
+      : pRng.rangeInt(0, 2);
 
     return {
       id: `p-${pName.toLowerCase().replace(/\s+/g, '-')}`,
       seed: pSeed,
       name: pName,
-      type,
+      type: profile.family,
       radius,
-      gravity: Math.round(pRng.range(6.5, 14.2) * 10) / 10,
-      hasAtmosphere: type !== 'barren-moon',
-      atmosphereDensity: type === 'barren-moon' ? 0 : pRng.range(0.6, 1.4),
-      temperatureKelvin: temp,
-      surfacePressureAtm: type === 'barren-moon' ? 0 : Math.round(pRng.range(0.4, 2.1) * 100) / 100,
-      oceanCoverage,
-      cloudCoverage,
-      biosignature: biosig,
-      hasRings,
+      gravity: profile.gravity,
+      hasAtmosphere: profile.atmosphere.hasAtmosphere,
+      atmosphereDensity: profile.atmosphere.density,
+      temperatureKelvin: profile.temperatureKelvin,
+      surfacePressureAtm: profile.surfacePressureAtm,
+      oceanCoverage: profile.oceanCoverage,
+      cloudCoverage: profile.cloudCoverage,
+      biosignature: profile.biosignature,
+      hasRings: profile.hasRings,
       moonsCount,
-      palette,
-      shortDescription: shortDesc,
-      isLandable,
+      palette: {
+        primary: profile.palette.surfaceMidland,
+        secondary: profile.palette.surfaceHighland,
+        ocean: profile.terrain.hasLiquid ? profile.palette.surfaceLowland : undefined,
+        atmosphereGlow: profile.palette.atmosphereGlow,
+        cloudColor: profile.palette.cloudColor,
+        ringColor: profile.palette.ringColor,
+      },
+      shortDescription: profile.description,
+      isLandable: profile.isLandable,
+      profile,
     };
-  }
-
-  private static createPalette(type: PlanetType): PlanetPalette {
-    switch (type) {
-      case 'terrestrial-temperate':
-        return {
-          primary: '#2e7d32', // Verdant green
-          secondary: '#795548', // Continental brown
-          ocean: '#1565c0', // Deep ocean blue
-          atmosphereGlow: '#38bdf8', // Cyan horizon
-          cloudColor: '#ffffff',
-        };
-      case 'terrestrial-ocean':
-        return {
-          primary: '#0284c7',
-          secondary: '#0369a1',
-          ocean: '#0c4a6e',
-          atmosphereGlow: '#67e8f9',
-          cloudColor: '#e0f2fe',
-        };
-      case 'terrestrial-desert':
-        return {
-          primary: '#d97706', // Amber sand
-          secondary: '#b45309', // Red rock
-          ocean: '#78350f',
-          atmosphereGlow: '#fcd34d',
-          cloudColor: '#fef3c7',
-        };
-      case 'terrestrial-ice':
-        return {
-          primary: '#e0f2fe', // Glacial white
-          secondary: '#bae6fd', // Ice blue
-          ocean: '#0284c7',
-          atmosphereGlow: '#a5f3fc',
-          cloudColor: '#ffffff',
-        };
-      case 'volcanic':
-        return {
-          primary: '#1c1917', // Obsidian basalt
-          secondary: '#dc2626', // Molten lava
-          atmosphereGlow: '#ea580c',
-          cloudColor: '#78716c',
-        };
-      case 'gas-giant':
-        return {
-          primary: '#6366f1', // Indigo storm band
-          secondary: '#a855f7', // Violet swirl
-          atmosphereGlow: '#818cf8',
-          cloudColor: '#c084fc',
-          ringColor: '#c4b5fd',
-        };
-      case 'exotic':
-        return {
-          primary: '#8b5cf6', // Mystic purple
-          secondary: '#06b6d4', // Bioluminescent teal
-          ocean: '#312e81',
-          atmosphereGlow: '#c084fc',
-          cloudColor: '#fae8ff',
-        };
-      case 'barren-moon':
-      default:
-        return {
-          primary: '#64748b', // Slate crater
-          secondary: '#94a3b8', // Regolith dust
-          atmosphereGlow: '#334155',
-          cloudColor: '#cbd5e1',
-        };
-    }
-  }
-
-  private static createShortDesc(type: PlanetType, ocean: number, bio: string): string {
-    if (type === 'gas-giant') return 'Turbulent gas giant with dense atmospheric storm belts and ring system.';
-    if (type === 'volcanic') return 'Active tectonic world with widespread volcanic rift valleys and magma oceans.';
-    if (type === 'terrestrial-ice') return 'Glacial cryo-world shrouded in thick permafrost sheets and sub-ice oceans.';
-    if (type === 'terrestrial-desert') return 'Arid expanse characterized by sweeping dune seas and ancient dry canyons.';
-    if (type === 'terrestrial-ocean') return 'Water world dominated by global oceans with scattered volcanic atolls.';
-    if (type === 'exotic') return 'Unusual planetary body emitting anomalous harmonic frequencies.';
-    if (type === 'barren-moon') return 'Tidally locked vacuum body scarred by ancient celestial impacts.';
-    return `Balanced terrestrial world with ${(ocean * 100).toFixed(0)}% hydrosphere and ${bio} biosignatures.`;
   }
 }

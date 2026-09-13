@@ -3,6 +3,7 @@ import { FlightStateMachine, FlightPhase } from '../src/game/flight/FlightStateM
 import { ApproachController } from '../src/game/flight/ApproachController';
 import * as THREE from 'three';
 import type { PlanetDescriptor } from '../src/game/systems/PlanetDescriptor';
+import { PlanetEnvironmentGenerator } from '../src/game/planets/PlanetEnvironmentProfile';
 
 describe('FlightStateMachine & ApproachController', () => {
   it('allows valid sequential flight transitions', () => {
@@ -37,11 +38,12 @@ describe('FlightStateMachine & ApproachController', () => {
 
   it('detects planet approach and triggers inspection eligibility', () => {
     const controller = new ApproachController();
+    const profile = PlanetEnvironmentGenerator.generateProfile(1234, 'G', 'temperate-terrestrial');
     const planet: PlanetDescriptor = {
       id: 'p-test',
       seed: 1234,
       name: 'Test Planet',
-      type: 'terrestrial-temperate',
+      type: 'temperate-terrestrial',
       radius: 160,
       gravity: 9.8,
       hasAtmosphere: true,
@@ -56,6 +58,7 @@ describe('FlightStateMachine & ApproachController', () => {
       palette: { primary: '#111', secondary: '#222', atmosphereGlow: '#333', cloudColor: '#fff' },
       shortDescription: 'Test',
       isLandable: true,
+      profile,
     };
 
     const planetPos = new THREE.Vector3(0, 0, 0);

@@ -1,12 +1,6 @@
-export type PlanetType =
-  | 'terrestrial-temperate'
-  | 'terrestrial-ocean'
-  | 'terrestrial-desert'
-  | 'terrestrial-ice'
-  | 'volcanic'
-  | 'gas-giant'
-  | 'barren-moon'
-  | 'exotic';
+import type { PlanetEnvironmentProfile, PlanetFamily } from '../planets/PlanetEnvironmentProfile';
+
+export type PlanetType = PlanetFamily;
 
 export interface PlanetPalette {
   primary: string;       // Primary surface / band color
@@ -36,6 +30,7 @@ export interface PlanetDescriptor {
   palette: PlanetPalette;
   shortDescription: string;
   isLandable: boolean;
+  profile: PlanetEnvironmentProfile; // Full coherent environmental profile
 }
 
 export interface StarDescriptor {

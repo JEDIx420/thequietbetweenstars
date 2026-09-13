@@ -3,6 +3,7 @@ import { SurveyCraft } from './spaceCraft';
 import { CelestialPhysicsSystem, type CelestialBody } from '../core/celestialPhysics';
 import { InfiniteBackground } from '../universe/InfiniteBackground';
 import { PlanetVisualGenerator } from '../planets/PlanetVisualGenerator';
+import { PlanetEnvironmentGenerator } from '../planets/PlanetEnvironmentProfile';
 import type { PlanetDescriptor } from '../systems/PlanetDescriptor';
 
 export class SpaceScene {
@@ -47,7 +48,7 @@ export class SpaceScene {
   constructor() {
     this.scene = new THREE.Scene();
 
-    // 1. Camera-Centered Infinite Star & Nebula Background (No black edges)
+    // 1. Camera-Centered Infinite Star & Nebula Background
     this.infiniteBackground = new InfiniteBackground();
     this.scene.add(this.infiniteBackground.group);
 
@@ -74,33 +75,35 @@ export class SpaceScene {
     this.sunLight = sunData.light;
     this.scene.add(sunData.group);
 
-    // 5. Procedurally Generated Planet Aurelia
+    // 5. Procedurally Generated Planet Aurelia (Temperate-Terrestrial Profile)
+    const aureliaProfile = PlanetEnvironmentGenerator.generateProfile(42077, 'G');
     this.aureliaDescriptor = {
       id: 'planet-aurelia',
       seed: 42077,
       name: 'Aurelia',
-      type: 'terrestrial-temperate',
+      type: aureliaProfile.family,
       radius: 160,
-      gravity: 9.8,
-      hasAtmosphere: true,
-      atmosphereDensity: 1.1,
-      temperatureKelvin: 288,
-      surfacePressureAtm: 1.02,
-      oceanCoverage: 0.65,
-      cloudCoverage: 0.45,
-      biosignature: 'complex-ecosystem',
-      hasRings: true,
+      gravity: aureliaProfile.gravity,
+      hasAtmosphere: aureliaProfile.atmosphere.hasAtmosphere,
+      atmosphereDensity: aureliaProfile.atmosphere.density,
+      temperatureKelvin: aureliaProfile.temperatureKelvin,
+      surfacePressureAtm: aureliaProfile.surfacePressureAtm,
+      oceanCoverage: aureliaProfile.oceanCoverage,
+      cloudCoverage: aureliaProfile.cloudCoverage,
+      biosignature: aureliaProfile.biosignature,
+      hasRings: aureliaProfile.hasRings,
       moonsCount: 1,
       palette: {
-        primary: '#1e3a8a',
-        secondary: '#0284c7',
-        ocean: '#0f172a',
-        atmosphereGlow: '#38bdf8',
-        cloudColor: '#ffffff',
-        ringColor: '#c4b5fd',
+        primary: aureliaProfile.palette.surfaceMidland,
+        secondary: aureliaProfile.palette.surfaceHighland,
+        ocean: aureliaProfile.terrain.hasLiquid ? aureliaProfile.palette.surfaceLowland : undefined,
+        atmosphereGlow: aureliaProfile.palette.atmosphereGlow,
+        cloudColor: aureliaProfile.palette.cloudColor,
+        ringColor: aureliaProfile.palette.ringColor,
       },
-      shortDescription: 'Lush oceanic terrestrial world with rich biosphere and equatorial ring system.',
-      isLandable: true,
+      shortDescription: aureliaProfile.description,
+      isLandable: aureliaProfile.isLandable,
+      profile: aureliaProfile,
     };
 
     const aureliaVisual = PlanetVisualGenerator.createPlanetMesh(this.aureliaDescriptor);
@@ -111,31 +114,33 @@ export class SpaceScene {
     this.cloudAureliaMesh = aureliaVisual.cloudMesh;
     this.scene.add(aureliaVisual.group);
 
-    // 6. Procedurally Generated Moon Zephyr
+    // 6. Procedurally Generated Moon Zephyr (Barren-Moon Profile)
+    const zephyrProfile = PlanetEnvironmentGenerator.generateProfile(8812, 'G');
     this.zephyrDescriptor = {
       id: 'moon-zephyr',
       seed: 8812,
       name: 'Zephyr',
-      type: 'barren-moon',
+      type: zephyrProfile.family,
       radius: 42,
-      gravity: 2.1,
-      hasAtmosphere: false,
-      atmosphereDensity: 0,
-      temperatureKelvin: 185,
-      surfacePressureAtm: 0,
-      oceanCoverage: 0,
-      cloudCoverage: 0,
-      biosignature: 'none',
-      hasRings: false,
+      gravity: zephyrProfile.gravity,
+      hasAtmosphere: zephyrProfile.atmosphere.hasAtmosphere,
+      atmosphereDensity: zephyrProfile.atmosphere.density,
+      temperatureKelvin: zephyrProfile.temperatureKelvin,
+      surfacePressureAtm: zephyrProfile.surfacePressureAtm,
+      oceanCoverage: zephyrProfile.oceanCoverage,
+      cloudCoverage: zephyrProfile.cloudCoverage,
+      biosignature: zephyrProfile.biosignature,
+      hasRings: zephyrProfile.hasRings,
       moonsCount: 0,
       palette: {
-        primary: '#64748b',
-        secondary: '#94a3b8',
-        atmosphereGlow: '#334155',
-        cloudColor: '#cbd5e1',
+        primary: zephyrProfile.palette.surfaceMidland,
+        secondary: zephyrProfile.palette.surfaceHighland,
+        atmosphereGlow: zephyrProfile.palette.atmosphereGlow,
+        cloudColor: zephyrProfile.palette.cloudColor,
       },
-      shortDescription: 'Barren silicate moon with ancient impact craters.',
-      isLandable: true,
+      shortDescription: zephyrProfile.description,
+      isLandable: zephyrProfile.isLandable,
+      profile: zephyrProfile,
     };
 
     const zephyrVisual = PlanetVisualGenerator.createPlanetMesh(this.zephyrDescriptor);

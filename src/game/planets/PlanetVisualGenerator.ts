@@ -5,12 +5,17 @@ import type { PlanetDescriptor } from '../systems/PlanetDescriptor';
 /**
  * PlanetVisualGenerator
  * Dynamically builds procedural multi-layer planetary meshes:
- * 1. Procedural canvas texture with continents, elevation noise, cloud swirls, and oceans
- * 2. MeshStandardMaterial with realistic roughness and metalness
- * 3. Atmospheric Rayleigh limb glow shell with additive blending
- * 4. Saturn-style concentric rings with opacity gaps when present
+ * 1. Procedural canvas texture consuming PlanetEnvironmentProfile (continents, basins, polar caps, canyons)
+ * 2. MeshStandardMaterial with realistic roughness and normal/bump variation
+ * 3. Atmospheric Rayleigh limb glow shell with additive blending and color matched to atmosphere
+ * 4. Concentric rings with Cassini gaps when present
+ * 5. Independent rotating cloud layer
  */
 export class PlanetVisualGenerator {
+  // Texture cache by planet seed
+  private static textureCache: Map<number, THREE.CanvasTexture> = new Map();
+  private static cloudCache: Map<number, THREE.CanvasTexture> = new Map();
+
   public static createPlanetMesh(planet: PlanetDescriptor): {
     group: THREE.Group;
     planetMesh: THREE.Mesh;
@@ -19,15 +24,30 @@ export class PlanetVisualGenerator {
     cloudMesh: THREE.Mesh | null;
   } {
     const group = new THREE.Group();
+    const profile = planet.profile;
 
     // 1. Procedural surface texture canvas
-    const texture = this.generateSurfaceTexture(planet);
+    const texture = this.getOrCreateSurfaceTexture(planet);
     const geometry = new THREE.SphereGeometry(planet.radius, 64, 48);
+
+    const roughness = profile.family === 'cryogenic-ice'
+      ? 0.25
+      : profile.family === 'metallic-iron'
+      ? 0.35
+      : profile.terrain.hasLiquid
+      ? 0.45
+      : 0.82;
+
+    const metalness = profile.family === 'metallic-iron'
+      ? 0.65
+      : profile.family === 'crystalline-mineral'
+      ? 0.4
+      : 0.08;
 
     const material = new THREE.MeshStandardMaterial({
       map: texture,
-      roughness: planet.type === 'terrestrial-ocean' ? 0.3 : 0.8,
-      metalness: 0.1,
+      roughness,
+      metalness,
     });
 
     const planetMesh = new THREE.Mesh(geometry, material);
@@ -35,13 +55,13 @@ export class PlanetVisualGenerator {
 
     // 2. Cloud Sphere layer (for atmospheric planets)
     let cloudMesh: THREE.Mesh | null = null;
-    if (planet.hasAtmosphere && planet.cloudCoverage > 0.1) {
-      const cloudTex = this.generateCloudTexture(planet);
+    if (profile.atmosphere.hasAtmosphere && profile.cloudCoverage > 0.08) {
+      const cloudTex = this.getOrCreateCloudTexture(planet);
       const cloudGeo = new THREE.SphereGeometry(planet.radius * 1.018, 48, 36);
       const cloudMat = new THREE.MeshStandardMaterial({
         map: cloudTex,
         transparent: true,
-        opacity: Math.min(0.85, planet.cloudCoverage * 1.2),
+        opacity: Math.min(0.85, profile.cloudCoverage * 1.15),
         blending: THREE.NormalBlending,
         roughness: 0.9,
       });
@@ -51,12 +71,12 @@ export class PlanetVisualGenerator {
 
     // 3. Rayleigh Atmospheric Limb Glow Shell
     let atmosphereMesh: THREE.Mesh | null = null;
-    if (planet.hasAtmosphere) {
+    if (profile.atmosphere.hasAtmosphere) {
       const atmoGeo = new THREE.SphereGeometry(planet.radius * 1.055, 48, 48);
       const atmoMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(planet.palette.atmosphereGlow),
+        color: new THREE.Color(profile.palette.atmosphereGlow),
         transparent: true,
-        opacity: 0.32 * planet.atmosphereDensity,
+        opacity: 0.34 * Math.min(1.8, profile.atmosphere.density),
         side: THREE.BackSide,
         blending: THREE.AdditiveBlending,
       });
@@ -66,17 +86,17 @@ export class PlanetVisualGenerator {
 
     // 4. Ring System
     let ringMesh: THREE.Mesh | null = null;
-    if (planet.hasRings) {
+    if (profile.hasRings) {
       const inner = planet.radius * 1.35;
-      const outer = planet.radius * 2.25;
+      const outer = planet.radius * 2.3;
       const ringGeo = new THREE.RingGeometry(inner, outer, 96);
       const ringMat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(planet.palette.ringColor || planet.palette.secondary),
+        color: new THREE.Color(profile.palette.ringColor || profile.palette.surfaceHighland),
         roughness: 0.8,
         metalness: 0.2,
         side: THREE.DoubleSide,
         transparent: true,
-        opacity: 0.68,
+        opacity: 0.72,
       });
       ringMesh = new THREE.Mesh(ringGeo, ringMat);
       ringMesh.rotation.x = Math.PI / 2.3;
@@ -85,6 +105,24 @@ export class PlanetVisualGenerator {
     }
 
     return { group, planetMesh, atmosphereMesh, ringMesh, cloudMesh };
+  }
+
+  private static getOrCreateSurfaceTexture(planet: PlanetDescriptor): THREE.CanvasTexture {
+    if (this.textureCache.has(planet.seed)) {
+      return this.textureCache.get(planet.seed)!;
+    }
+    const tex = this.generateSurfaceTexture(planet);
+    this.textureCache.set(planet.seed, tex);
+    return tex;
+  }
+
+  private static getOrCreateCloudTexture(planet: PlanetDescriptor): THREE.CanvasTexture {
+    if (this.cloudCache.has(planet.seed)) {
+      return this.cloudCache.get(planet.seed)!;
+    }
+    const tex = this.generateCloudTexture(planet);
+    this.cloudCache.set(planet.seed, tex);
+    return tex;
   }
 
   private static generateSurfaceTexture(planet: PlanetDescriptor): THREE.CanvasTexture {
@@ -97,61 +135,101 @@ export class PlanetVisualGenerator {
     }
 
     const rng = new SeededRandom(planet.seed);
-    const { primary, secondary, ocean } = planet.palette;
+    const profile = planet.profile;
+    const { surfaceLowland, surfaceMidland, surfaceHighland, surfacePeak, accentMineral } = profile.palette;
 
-    // Fill base background
-    ctx.fillStyle = ocean || primary;
+    // Base background: lowland / ocean
+    ctx.fillStyle = surfaceLowland;
     ctx.fillRect(0, 0, 512, 256);
 
-    if (planet.type === 'gas-giant') {
-      // Atmospheric Jovian bands
-      const bands = 24;
+    if (profile.family === 'gas-giant') {
+      // Atmospheric Jovian bands with turbulence
+      const bands = 28;
       const bandHeight = 256 / bands;
+      const bandColors = [surfaceLowland, surfaceMidland, surfaceHighland, surfacePeak];
+
       for (let i = 0; i < bands; i++) {
         const y = i * bandHeight;
-        const color = i % 2 === 0 ? primary : secondary;
-        ctx.fillStyle = color;
+        ctx.fillStyle = bandColors[i % bandColors.length];
         ctx.fillRect(0, y, 512, bandHeight);
 
-        // Subtle storm swirls
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+        // Storm vortices
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
         ctx.beginPath();
-        ctx.ellipse(rng.range(50, 460), y + bandHeight / 2, rng.range(30, 80), rng.range(4, 10), 0, 0, Math.PI * 2);
+        const vortexX = rng.range(60, 450);
+        ctx.ellipse(vortexX, y + bandHeight / 2, rng.range(35, 90), rng.range(5, 12), 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (profile.family === 'barren-moon') {
+      // Regolith dust + high-contrast impact craters
+      ctx.fillStyle = surfaceMidland;
+      ctx.fillRect(0, 0, 512, 256);
+
+      const numCraters = rng.rangeInt(24, 45);
+      for (let c = 0; c < numCraters; c++) {
+        const cx = rng.range(20, 490);
+        const cy = rng.range(20, 235);
+        const r = rng.range(6, 28);
+
+        // Crater rim
+        ctx.fillStyle = surfacePeak;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r + 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Crater basin
+        ctx.fillStyle = surfaceLowland;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Central peak
+        ctx.fillStyle = accentMineral;
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(1, r * 0.2), 0, Math.PI * 2);
         ctx.fill();
       }
     } else {
-      // Terrestrial continents / landmasses
-      const numContinents = rng.rangeInt(5, 12);
-      ctx.fillStyle = primary;
+      // Terrestrial / Exotic Continents with elevation layering
+      const numContinents = rng.rangeInt(6, 14);
+      ctx.fillStyle = surfaceMidland;
 
       for (let c = 0; c < numContinents; c++) {
-        const cx = rng.range(40, 470);
-        const cy = rng.range(40, 210);
-        const rx = rng.range(30, 90);
-        const ry = rng.range(20, 60);
+        const cx = rng.range(30, 480);
+        const cy = rng.range(30, 220);
+        const rx = rng.range(35, 100);
+        const ry = rng.range(20, 65);
+        const rot = rng.range(-0.5, 0.5);
 
         ctx.beginPath();
-        ctx.ellipse(cx, cy, rx, ry, rng.range(-0.4, 0.4), 0, Math.PI * 2);
+        ctx.ellipse(cx, cy, rx, ry, rot, 0, Math.PI * 2);
         ctx.fill();
 
-        // Secondary mountainous / desert interior
-        ctx.fillStyle = secondary;
+        // Highlands / Mountain spine
+        ctx.fillStyle = surfaceHighland;
         ctx.beginPath();
-        ctx.ellipse(cx, cy, rx * 0.55, ry * 0.55, 0, 0, Math.PI * 2);
+        ctx.ellipse(cx, cy, rx * 0.55, ry * 0.55, rot, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = primary;
+
+        // Mountain ridge peaks
+        ctx.fillStyle = surfacePeak;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, rx * 0.25, ry * 0.25, rot, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = surfaceMidland;
       }
 
-      // Polar ice caps
-      if (planet.temperatureKelvin < 320) {
-        ctx.fillStyle = '#ffffff';
-        // North pole
+      // Polar ice or cryo caps
+      if (profile.temperatureKelvin < 315 || profile.family === 'cryogenic-ice') {
+        ctx.fillStyle = profile.palette.surfacePeak;
+        // North cap
         ctx.beginPath();
-        ctx.ellipse(256, 12, 256, 22, 0, 0, Math.PI * 2);
+        ctx.ellipse(256, 14, 256, profile.family === 'cryogenic-ice' ? 65 : 28, 0, 0, Math.PI * 2);
         ctx.fill();
-        // South pole
+        // South cap
         ctx.beginPath();
-        ctx.ellipse(256, 244, 256, 22, 0, 0, Math.PI * 2);
+        ctx.ellipse(256, 242, 256, profile.family === 'cryogenic-ice' ? 65 : 28, 0, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -170,18 +248,18 @@ export class PlanetVisualGenerator {
     if (!ctx) return new THREE.CanvasTexture(canvas);
 
     ctx.clearRect(0, 0, 512, 256);
-    const rng = new SeededRandom(planet.seed + 101);
-    ctx.fillStyle = planet.palette.cloudColor || '#ffffff';
+    const rng = new SeededRandom(planet.seed + 202);
+    ctx.fillStyle = planet.profile.palette.cloudColor || '#ffffff';
 
-    const cloudCount = Math.floor(planet.cloudCoverage * 35);
-    for (let i = 0; i < cloudCount; i++) {
+    const count = Math.floor(planet.profile.cloudCoverage * 42);
+    for (let i = 0; i < count; i++) {
       const cx = rng.range(0, 512);
-      const cy = rng.range(25, 230);
-      const rx = rng.range(20, 70);
-      const ry = rng.range(8, 24);
+      const cy = rng.range(20, 235);
+      const rx = rng.range(25, 85);
+      const ry = rng.range(8, 26);
 
       ctx.beginPath();
-      ctx.ellipse(cx, cy, rx, ry, rng.range(-0.2, 0.2), 0, Math.PI * 2);
+      ctx.ellipse(cx, cy, rx, ry, rng.range(-0.25, 0.25), 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -189,5 +267,16 @@ export class PlanetVisualGenerator {
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
     return tex;
+  }
+
+  public static clearCache(): void {
+    for (const [, tex] of this.textureCache) {
+      tex.dispose();
+    }
+    for (const [, tex] of this.cloudCache) {
+      tex.dispose();
+    }
+    this.textureCache.clear();
+    this.cloudCache.clear();
   }
 }
