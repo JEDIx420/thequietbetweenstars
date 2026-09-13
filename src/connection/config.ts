@@ -12,18 +12,51 @@ export function getSignalingUrl(override?: string): string | null {
     return override.trim();
   }
 
+  // 1. URL query param override (?signaling=...)
+  if (typeof window !== 'undefined' && window.location) {
+    try {
+      const urlParam = new URLSearchParams(window.location.search).get('signaling');
+      if (urlParam && urlParam.trim().length > 0) {
+        return urlParam.trim();
+      }
+    } catch {}
+  }
+
+  // 2. Local storage override (set via Companion Diagnostics UI)
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('tqbs_signaling_url');
+      if (stored && stored.trim().length > 0) {
+        return stored.trim();
+      }
+    } catch {}
+  }
+
+  // 3. Build-time environment variable
   const envUrl = import.meta.env.VITE_SIGNALING_URL?.trim();
   if (envUrl && envUrl.length > 0) {
     return envUrl;
   }
 
-  // Local development fallback
+  // 4. Local development fallback
   if (import.meta.env.DEV) {
     return 'ws://localhost:8787/ws';
   }
 
   // In production (GitHub Pages), signaling is unavailable unless explicitly configured
   return null;
+}
+
+export function setCustomSignalingUrl(url: string | null): void {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      if (url && url.trim().length > 0) {
+        localStorage.setItem('tqbs_signaling_url', url.trim());
+      } else {
+        localStorage.removeItem('tqbs_signaling_url');
+      }
+    } catch {}
+  }
 }
 
 export function isSignalingAvailable(override?: string): boolean {

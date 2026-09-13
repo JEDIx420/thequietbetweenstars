@@ -8,9 +8,12 @@ async function bootstrap() {
   // Initialize persistence layer
   await storage.init();
 
-  // Route between Developer Planet Gallery, Companion Controller, and Desktop 3D Experience
+  // Route between Developer World Lab, Planet Gallery, Companion Controller, and Desktop 3D Experience
   const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get('debug') === 'planet-gallery') {
+  if (urlParams.get('debug') === 'world-lab') {
+    const { WorldLabApp } = await import('./ui/WorldLabApp');
+    new WorldLabApp(appContainer);
+  } else if (urlParams.get('debug') === 'planet-gallery') {
     const { PlanetGalleryApp } = await import('./ui/PlanetGalleryApp');
     new PlanetGalleryApp(appContainer);
   } else if (isExplicitCompanionMode() || isMobileOrPhoneDevice()) {

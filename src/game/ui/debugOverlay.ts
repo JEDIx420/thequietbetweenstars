@@ -24,9 +24,9 @@ export class DebugOverlay {
   };
   private speed = 0;
 
-  // Additional diagnostics
   private flightPhase = 'CRUISE';
   private worldPosInfo = 'Sector [0,0,0]';
+  private rebaseCount = 0;
   private signalingUrl = getSignalingUrl() || 'UNCONFIGURED';
 
   constructor() {
@@ -89,6 +89,11 @@ export class DebugOverlay {
     if (this.isVisible) this.render();
   }
 
+  public setRebaseCount(count: number): void {
+    this.rebaseCount = count;
+    if (this.isVisible) this.render();
+  }
+
   public updateInputState(input: NormalizedInputState, speed: number): void {
     this.inputState = input;
     this.speed = speed;
@@ -122,6 +127,7 @@ export class DebugOverlay {
       </div>
       <div>Flight Phase: <span style="color: #38bdf8; font-weight: 600;">${this.flightPhase}</span></div>
       <div>Coordinates: <span style="color: #cbd5e1;">${this.worldPosInfo}</span></div>
+      <div>Rebase Count: <span style="color: #a78bfa; font-weight: 600;">${this.rebaseCount}</span></div>
       <div>Input Source: <span style="color: #fbbf24; font-weight: 600;">${this.inputSource.toUpperCase()}</span></div>
       <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1);">
         <div>Signaling Server: <span style="color: ${this.signalingUrl === 'UNCONFIGURED' ? '#f87171' : '#4ade80'};">${this.signalingUrl}</span></div>

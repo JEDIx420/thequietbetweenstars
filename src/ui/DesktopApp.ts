@@ -19,6 +19,7 @@ import { WorldPosition } from '../game/universe/WorldPosition';
 import { FloatingOrigin } from '../game/universe/FloatingOrigin';
 import { SectorManager } from '../game/universe/SectorManager';
 import { LandingSiteGenerator, type LandingSite } from '../game/systems/LandingSiteGenerator';
+import { CompanionDiagnosticsModal } from './CompanionDiagnosticsModal';
 import type { ConnectionState } from '../connection/connectionState';
 
 export type UIState = 'title' | 'mode_select' | 'pairing' | 'playing';
@@ -87,10 +88,11 @@ export class DesktopApp {
     this.inputManager = new InputManager();
     this.debugOverlay = new DebugOverlay();
 
-    // Register camera rebase listener
+    // Register floating-origin rebase listener
     this.floatingOrigin.registerListener({
       onRebase: (offset) => {
-        this.flightModel.onRebase(offset);
+        this.flightModel.onRebase(offset, this.renderer.camera);
+        this.spaceScene.onRebase(offset);
       },
     });
 
@@ -210,10 +212,11 @@ export class DesktopApp {
       const rebased = this.floatingOrigin.checkAndRebase(
         shipPos,
         this.worldPosition,
-        [this.spaceScene.scene]
+        []
       );
       if (rebased) {
         this.sectorManager.update(this.worldPosition);
+        this.debugOverlay.setRebaseCount(this.floatingOrigin.rebaseCount);
         this.debugOverlay.setWorldPos(
           `Sector [${this.worldPosition.sector.x},${this.worldPosition.sector.y},${this.worldPosition.sector.z}]`
         );
@@ -569,13 +572,50 @@ export class DesktopApp {
           </div>
         </div>
 
-        <div id="pairing-status-text" style="font-size: 13px; color: #cbd5e1; margin-bottom: 24px;">
-          Waiting for phone connection...
-        </div>
+        ${!signalingUrl ? `
+          <div style="
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            border-radius: 8px;
+            padding: 10px 16px;
+            margin-bottom: 20px;
+            font-size: 12px;
+            color: #fca5a5;
+            text-align: center;
+            max-width: 440px;
+          ">
+            <b>Signaling Server Unconfigured</b><br/>
+            Live GitHub Pages requires a deployed Cloudflare Worker or custom WebSocket endpoint.
+            <button id="btn-banner-diag" style="
+              margin-top: 6px;
+              background: #0284c7;
+              border: none;
+              color: white;
+              padding: 4px 12px;
+              border-radius: 4px;
+              font-size: 11px;
+              cursor: pointer;
+            ">Open Diagnostics & Setup</button>
+          </div>
+        ` : `
+          <div id="pairing-status-text" style="font-size: 13px; color: #cbd5e1; margin-bottom: 20px;">
+            Waiting for phone connection...
+          </div>
+        `}
 
-        <div style="display: flex; gap: 16px;">
+        <div style="display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;">
+          <button id="btn-open-diagnostics" style="
+            padding: 10px 18px;
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            border-radius: 8px;
+            color: #38bdf8;
+            font-size: 13px;
+            cursor: pointer;
+          ">⚙️ DIAGNOSTICS</button>
+
           <button id="btn-cancel-pairing" style="
-            padding: 10px 24px;
+            padding: 10px 18px;
             background: rgba(30, 41, 59, 0.6);
             border: 1px solid rgba(148, 163, 184, 0.3);
             border-radius: 8px;
@@ -585,14 +625,14 @@ export class DesktopApp {
           ">CANCEL</button>
 
           <button id="btn-play-keyboard-fallback" style="
-            padding: 10px 24px;
+            padding: 10px 18px;
             background: rgba(14, 165, 233, 0.2);
             border: 1px solid rgba(56, 189, 248, 0.4);
             border-radius: 8px;
-            color: #38bdf8;
+            color: #f8fafc;
             font-size: 13px;
             cursor: pointer;
-          ">PLAY WITH KEYBOARD INSTEAD</button>
+          ">KEYBOARD INSTEAD</button>
         </div>
       </div>
     `;
@@ -601,6 +641,21 @@ export class DesktopApp {
     if (canvas) {
       await QRCode.toCanvas(canvas, companionUrl, { width: 200, margin: 1 });
     }
+
+    const openDiag = () => {
+      new CompanionDiagnosticsModal({
+        signalingClient: this.signaling,
+        peerManager: this.peer,
+        onReconnect: () => {
+          this.cancelPairing();
+          this.renderPairingScreen();
+        },
+        onClose: () => {},
+      });
+    };
+
+    this.uiContainer.querySelector('#btn-banner-diag')?.addEventListener('click', openDiag);
+    this.uiContainer.querySelector('#btn-open-diagnostics')?.addEventListener('click', openDiag);
 
     this.uiContainer.querySelector('#btn-play-keyboard-fallback')?.addEventListener('click', () => {
       this.cancelPairing();

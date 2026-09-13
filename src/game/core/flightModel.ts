@@ -55,10 +55,13 @@ export class FlightModel {
     this.approachController = controller;
   }
 
-  public onRebase(offset: THREE.Vector3): void {
-    // When floating origin rebases, camera offsets shift cleanly
+  public onRebase(offset: THREE.Vector3, camera?: THREE.PerspectiveCamera): void {
+    // When floating origin rebases, camera offsets and camera itself shift cleanly
     this.cameraTargetPos.add(offset);
     this.cameraLookTarget.add(offset);
+    if (camera) {
+      camera.position.add(offset);
+    }
   }
 
   public update(input: NormalizedInputState, dt: number, camera: THREE.PerspectiveCamera): void {

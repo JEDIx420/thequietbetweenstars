@@ -13,6 +13,10 @@ export class SpaceScene {
   public physics: CelestialPhysicsSystem;
   public infiniteBackground: InfiniteBackground;
 
+  public backgroundRoot: THREE.Group;
+  public worldRoot: THREE.Group;
+  public shipRoot: THREE.Group;
+
   // Local velocity motes
   private dustPoints: THREE.Points;
   private dustPositions: Float32Array;
@@ -20,6 +24,9 @@ export class SpaceScene {
   private dustBoxSize = 300;
 
   // Solar illumination & corona
+  public sunGroup: THREE.Group;
+  public sunDirLight: THREE.DirectionalLight;
+  public sunPos = new THREE.Vector3(1200, 500, -2200);
   private sunCore: THREE.Mesh;
   private sunCoronaInner: THREE.Mesh;
   private sunCoronaOuter: THREE.Mesh;
@@ -31,12 +38,14 @@ export class SpaceScene {
   public zephyrDescriptor: PlanetDescriptor;
   public activePlanetList: Array<{ descriptor: PlanetDescriptor; position: THREE.Vector3 }> = [];
 
+  public aureliaGroup: THREE.Group;
   private planetAureliaMesh: THREE.Mesh;
   private atmosphereAureliaMesh: THREE.Mesh | null;
   private ringAureliaMesh: THREE.Mesh | null;
   private cloudAureliaMesh: THREE.Mesh | null;
   public planetAureliaPos = new THREE.Vector3(-1000, -300, -1800);
 
+  public zephyrGroup: THREE.Group;
   private moonZephyrMesh: THREE.Mesh;
   public moonZephyrPos = new THREE.Vector3(-720, -180, -1550);
 
@@ -48,32 +57,46 @@ export class SpaceScene {
   constructor() {
     this.scene = new THREE.Scene();
 
+    // Establish explicit 3-tier coordinate architecture:
+    // Scene
+    // ├── backgroundRoot (camera-relative / never world-rebased)
+    // ├── worldRoot      (stars, planets, lights, cosmic particles)
+    // └── shipRoot       (player craft, scan wave)
+    this.backgroundRoot = new THREE.Group();
+    this.worldRoot = new THREE.Group();
+    this.shipRoot = new THREE.Group();
+
+    this.scene.add(this.backgroundRoot);
+    this.scene.add(this.worldRoot);
+    this.scene.add(this.shipRoot);
+
     // 1. Camera-Centered Infinite Star & Nebula Background
     this.infiniteBackground = new InfiniteBackground();
-    this.scene.add(this.infiniteBackground.group);
+    this.backgroundRoot.add(this.infiniteBackground.group);
 
     // 2. Ambient and Key Directional Lighting
     const ambient = new THREE.AmbientLight(0x1a2236, 1.4);
-    this.scene.add(ambient);
+    this.worldRoot.add(ambient);
 
-    const sunDirLight = new THREE.DirectionalLight(0xfff3d6, 2.2);
-    sunDirLight.position.set(1200, 500, -2200);
-    this.scene.add(sunDirLight);
+    this.sunDirLight = new THREE.DirectionalLight(0xfff3d6, 2.2);
+    this.sunDirLight.position.copy(this.sunPos);
+    this.worldRoot.add(this.sunDirLight);
 
     // 3. Local Space Velocity Dust Particles
     const dustObj = this.createCosmicDust();
     this.dustPoints = dustObj.points;
     this.dustPositions = dustObj.positions;
-    this.scene.add(this.dustPoints);
+    this.worldRoot.add(this.dustPoints);
 
     // 4. Primary Star Solara
     const sunData = this.createProceduralSun();
+    this.sunGroup = sunData.group;
     this.sunCore = sunData.core;
     this.sunCoronaInner = sunData.coronaInner;
     this.sunCoronaOuter = sunData.coronaOuter;
     this.sunSpikes = sunData.spikes;
     this.sunLight = sunData.light;
-    this.scene.add(sunData.group);
+    this.worldRoot.add(this.sunGroup);
 
     // 5. Procedurally Generated Planet Aurelia (Temperate-Terrestrial Profile)
     const aureliaProfile = PlanetEnvironmentGenerator.generateProfile(42077, 'G');
@@ -107,12 +130,13 @@ export class SpaceScene {
     };
 
     const aureliaVisual = PlanetVisualGenerator.createPlanetMesh(this.aureliaDescriptor);
-    aureliaVisual.group.position.copy(this.planetAureliaPos);
+    this.aureliaGroup = aureliaVisual.group;
+    this.aureliaGroup.position.copy(this.planetAureliaPos);
     this.planetAureliaMesh = aureliaVisual.planetMesh;
     this.atmosphereAureliaMesh = aureliaVisual.atmosphereMesh;
     this.ringAureliaMesh = aureliaVisual.ringMesh;
     this.cloudAureliaMesh = aureliaVisual.cloudMesh;
-    this.scene.add(aureliaVisual.group);
+    this.worldRoot.add(this.aureliaGroup);
 
     // 6. Procedurally Generated Moon Zephyr (Barren-Moon Profile)
     const zephyrProfile = PlanetEnvironmentGenerator.generateProfile(8812, 'G');
@@ -144,9 +168,10 @@ export class SpaceScene {
     };
 
     const zephyrVisual = PlanetVisualGenerator.createPlanetMesh(this.zephyrDescriptor);
-    zephyrVisual.group.position.copy(this.moonZephyrPos);
+    this.zephyrGroup = zephyrVisual.group;
+    this.zephyrGroup.position.copy(this.moonZephyrPos);
     this.moonZephyrMesh = zephyrVisual.planetMesh;
-    this.scene.add(zephyrVisual.group);
+    this.worldRoot.add(this.zephyrGroup);
 
     this.activePlanetList = [
       { descriptor: this.aureliaDescriptor, position: this.planetAureliaPos },
@@ -156,11 +181,11 @@ export class SpaceScene {
     // 7. Survey Spacecraft
     this.surveyCraft = new SurveyCraft();
     this.shipGroup = this.surveyCraft.group;
-    this.scene.add(this.shipGroup);
+    this.shipRoot.add(this.shipGroup);
 
     // 8. Holographic Scanner Pulse
     this.scanWave = this.createScanWave();
-    this.scene.add(this.scanWave);
+    this.shipRoot.add(this.scanWave);
 
     // 9. Celestial Safety Physics Shells
     const bodies: CelestialBody[] = [
@@ -168,7 +193,7 @@ export class SpaceScene {
         id: 'star-solara',
         name: 'Solara',
         type: 'star',
-        position: new THREE.Vector3(1200, 500, -2200),
+        position: this.sunPos,
         physicalRadius: 130,
         exclusionRadius: 165,
         atmosphereRadius: 450,
@@ -195,6 +220,39 @@ export class SpaceScene {
     ];
 
     this.physics = new CelestialPhysicsSystem(bodies);
+  }
+
+  /**
+   * Floating-origin rebase handler
+   * Shifts all celestial bodies, physics envelopes, lights, and particles by offset.
+   */
+  public onRebase(offset: THREE.Vector3): void {
+    // 1. Shift celestial 3D groups directly
+    this.sunGroup.position.add(offset);
+    this.sunDirLight.position.add(offset);
+    this.aureliaGroup.position.add(offset);
+    this.zephyrGroup.position.add(offset);
+
+    // 2. Shift logical positions for approach controller and physics
+    this.sunPos.add(offset);
+    this.planetAureliaPos.add(offset);
+    this.moonZephyrPos.add(offset);
+
+    for (const body of this.physics.bodies) {
+      body.position.add(offset);
+    }
+    for (const planet of this.activePlanetList) {
+      planet.position.add(offset);
+    }
+
+    // 3. Shift local dust particle positions
+    const attr = this.dustPoints.geometry.attributes.position;
+    for (let i = 0; i < this.dustCount; i++) {
+      this.dustPositions[i * 3] += offset.x;
+      this.dustPositions[i * 3 + 1] += offset.y;
+      this.dustPositions[i * 3 + 2] += offset.z;
+    }
+    attr.needsUpdate = true;
   }
 
   private createProceduralSun(): {
