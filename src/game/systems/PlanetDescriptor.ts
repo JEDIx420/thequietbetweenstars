@@ -43,6 +43,33 @@ export interface StarDescriptor {
   coronaColor: number;
 }
 
+export interface ResonanceSignature {
+  frequency: number; // Harmonic kHz
+  intensity: number; // 0.0 to 1.0
+  harmonicPattern: string; // e.g. "Phi-3.141-Oscillation"
+  loreFragment?: string;
+}
+
+export type SpaceAnomalyType =
+  | 'derelict_probe'
+  | 'cometary_nucleus'
+  | 'dense_asteroid_cluster'
+  | 'resonance_monolith'
+  | 'drifting_beacon'
+  | 'nebula_pocket';
+
+export interface SpaceAnomalyDescriptor {
+  id: string;
+  name: string;
+  type: SpaceAnomalyType;
+  distanceFromStar: number; // Approximate AU / units from primary
+  angle: number;
+  description: string;
+  scanned: boolean;
+  hasResonance: boolean;
+  resonance?: ResonanceSignature;
+}
+
 export interface StarSystemDescriptor {
   id: string;
   seed: number;
@@ -52,4 +79,5 @@ export interface StarSystemDescriptor {
   sectorZ: number;
   star: StarDescriptor;
   planets: PlanetDescriptor[];
+  anomalies?: SpaceAnomalyDescriptor[];
 }

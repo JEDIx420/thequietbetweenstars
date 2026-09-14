@@ -151,13 +151,31 @@ export class InfiniteBackground {
   }
 
   /**
-   * Update background position to perfectly follow the camera
+   * Update background position to perfectly follow the camera.
+   * warpFactor > 0 stretches the background into hyperspace streaks along travel heading.
    */
-  public update(cameraPos: THREE.Vector3, clock: number): void {
+  public update(cameraPos: THREE.Vector3, clock: number, warpFactor: number = 0, warpHeading?: THREE.Vector3): void {
     this.group.position.copy(cameraPos);
 
     // Subtle twinkling shimmer
     const twinkleMat = this.twinkleStarfield.material as THREE.PointsMaterial;
     twinkleMat.opacity = 0.65 + Math.sin(clock * 3.5) * 0.25;
+
+    if (warpFactor > 0 && warpHeading) {
+      // Warp stretch: scale points along velocity vector
+      const deepMat = this.deepStarfield.material as THREE.PointsMaterial;
+      deepMat.size = 2.0 + warpFactor * 5.5;
+      twinkleMat.size = 3.5 + warpFactor * 8.0;
+      this.deepStarfield.scale.set(
+        1 + Math.abs(warpHeading.x) * warpFactor * 1.5,
+        1 + Math.abs(warpHeading.y) * warpFactor * 1.5,
+        1 + Math.abs(warpHeading.z) * warpFactor * 1.5
+      );
+    } else {
+      const deepMat = this.deepStarfield.material as THREE.PointsMaterial;
+      deepMat.size = 2.0;
+      twinkleMat.size = 3.5;
+      this.deepStarfield.scale.set(1, 1, 1);
+    }
   }
 }

@@ -40,6 +40,11 @@ export class KeyboardInput implements InputSource {
       this.triggeredActions.add('scan');
     } else if (code === 'KeyM') {
       this.triggeredActions.add('map');
+    } else if (code === 'KeyJ') {
+      this.triggeredActions.add('journal');
+    } else if (code === 'Tab') {
+      e.preventDefault();
+      this.triggeredActions.add('cycle_target');
     } else if (code === 'KeyX') {
       this.triggeredActions.add('autopilot');
     } else if (code === 'KeyP' || code === 'Escape') {

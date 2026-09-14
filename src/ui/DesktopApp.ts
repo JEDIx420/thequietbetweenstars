@@ -20,7 +20,14 @@ import { FloatingOrigin } from '../game/universe/FloatingOrigin';
 import { SectorManager } from '../game/universe/SectorManager';
 import { LandingSiteGenerator, type LandingSite } from '../game/systems/LandingSiteGenerator';
 import { CompanionDiagnosticsModal } from './CompanionDiagnosticsModal';
+import { StarChartModal } from './StarChartModal';
+import { JournalModal } from './JournalModal';
+import { NavRadar } from '../game/ui/NavRadar';
+import { DeepCruiseController } from '../game/flight/DeepCruiseController';
+import { AutopilotController } from '../game/flight/AutopilotController';
+import { saveManager, type PlayerSaveSlot } from '../persistence/SaveManager';
 import type { ConnectionState } from '../connection/connectionState';
+import type { StarSystemDescriptor } from '../game/systems/PlanetDescriptor';
 
 export type UIState = 'title' | 'mode_select' | 'pairing' | 'playing';
 
@@ -47,6 +54,15 @@ export class DesktopApp {
   // Active Orbit / Inspection State
   public activeOrbitSites: LandingSite[] = [];
   public selectedSiteIndex = 0;
+
+  // Navigation, Cruise & Autopilot Systems
+  public deepCruiseController!: DeepCruiseController;
+  public autopilotController!: AutopilotController;
+  public navRadar!: NavRadar;
+  public starChartModal!: StarChartModal;
+  public journalModal!: JournalModal;
+  private hasSavedJourney = false;
+  private lastAutosaveTime = 0;
 
   private signaling: SignalingClient | null = null;
   private peer: PeerConnectionManager | null = null;
@@ -96,11 +112,44 @@ export class DesktopApp {
       },
     });
 
+    // 1. Navigation & Autopilot subsystems
+    this.autopilotController = new AutopilotController(this.flightModel);
+    this.navRadar = new NavRadar(this.canvasContainer, this.autopilotController);
+    this.navRadar.setPlanets(this.spaceScene.activePlanetList);
+
+    // 2. Interstellar Deep Cruise subsystem
+    this.deepCruiseController = new DeepCruiseController(
+      this.stateMachine,
+      this.flightModel,
+      this.spaceScene
+    );
+    this.deepCruiseController.setOnArrival((targetSys) => {
+      this.navRadar.setPlanets(this.spaceScene.activePlanetList);
+      this.showHudNotice(`ARRIVED // STAR SYSTEM: ${targetSys.name.toUpperCase()}`);
+      audio.playConnectChime();
+      this.recordArrivalDiscovery(targetSys);
+      this.saveCurrentJourney();
+    });
+
+    // 3. Modals: Star Chart (M) & Ship Log Journal (J)
+    this.starChartModal = new StarChartModal(
+      this.container,
+      this.sectorManager,
+      this.worldPosition,
+      (targetSys) => {
+        this.engageInterstellarCruise(targetSys);
+      }
+    );
+
+    this.journalModal = new JournalModal(this.container);
+
     // Wire music contexts to state machine
     this.stateMachine.onPhaseChange((_from, to) => {
       this.debugOverlay.setFlightPhase(to);
       if (to === FlightPhase.SYSTEM_CRUISE || to === FlightPhase.DEEP_SPACE) {
         audio.setContext('cruise');
+      } else if (to === FlightPhase.STELLAR_CRUISE) {
+        audio.setContext('deep_cruise');
       } else if (to === FlightPhase.PLANET_APPROACH) {
         audio.setContext('approach');
       } else if (to === FlightPhase.ORBIT) {
@@ -208,6 +257,24 @@ export class DesktopApp {
         }
       }
 
+      // Update Autopilot orientation alignment
+      if (this.autopilotController.isActive) {
+        this.autopilotController.update(dt, shipPos);
+      }
+
+      // Update Interstellar Deep Cruise
+      if (phase === FlightPhase.STELLAR_CRUISE && this.deepCruiseController.state.isActive) {
+        this.deepCruiseController.update(dt, this.worldPosition);
+        const p = Math.round(this.deepCruiseController.state.cruiseProgress * 100);
+        const targetName = this.deepCruiseController.state.targetSystem?.name || 'DESTINATION';
+        this.updateContextPrompt(`INTERSTELLAR CRUISE // TRANSIT TO ${targetName.toUpperCase()} [${p}%]`);
+      }
+
+      // Update Local Nav Radar
+      if (this.navRadar && this.uiState === 'playing') {
+        this.navRadar.update(shipPos, this.flightModel.quaternion, this.spaceScene.sunPos);
+      }
+
       // Floating-Origin Rebasing check (keeps coordinates within 2500 units)
       const rebased = this.floatingOrigin.checkAndRebase(
         shipPos,
@@ -220,6 +287,13 @@ export class DesktopApp {
         this.debugOverlay.setWorldPos(
           `Sector [${this.worldPosition.sector.x},${this.worldPosition.sector.y},${this.worldPosition.sector.z}]`
         );
+      }
+
+      // Periodic autosave (every 30 seconds)
+      const nowMs = performance.now();
+      if (nowMs - this.lastAutosaveTime > 30000 && this.uiState === 'playing') {
+        this.lastAutosaveTime = nowMs;
+        this.saveCurrentJourney();
       }
 
       // Celestial collision feedback
@@ -236,9 +310,37 @@ export class DesktopApp {
       this.renderer.render(this.spaceScene.scene);
     }
 
+    // Modal & Control Actions
     if (this.inputManager.consumeAction('map')) {
       audio.playBlip();
-      this.showHudNotice(`STELLAR CARTOGRAPHY — SECTOR [${this.worldPosition.sector.x},${this.worldPosition.sector.y},${this.worldPosition.sector.z}] RECORDED`);
+      this.starChartModal.toggle();
+    }
+
+    if (this.inputManager.consumeAction('journal')) {
+      audio.playBlip();
+      this.journalModal.toggle();
+    }
+
+    if (this.inputManager.consumeAction('cycle_target')) {
+      audio.playBlip();
+      this.navRadar.cycleTarget();
+      const p = this.navRadar.getSelectedPlanet();
+      if (p) {
+        this.showHudNotice(`NAVIGATION TARGET // ${p.descriptor.name.toUpperCase()}`);
+      }
+    }
+
+    if (this.inputManager.consumeAction('autopilot')) {
+      audio.playBlip();
+      const active = this.autopilotController.toggle();
+      if (active) {
+        const targetDesc = this.autopilotController.currentTarget?.type === 'planet'
+          ? this.autopilotController.currentTarget.descriptor.name
+          : 'DESTINATION';
+        this.showHudNotice(`AUTOPILOT ENGAGED // ALIGNING WITH ${targetDesc.toUpperCase()}`);
+      } else {
+        this.showHudNotice('AUTOPILOT DISENGAGED // MANUAL FLIGHT RESUMED');
+      }
     }
 
     this.debugOverlay.updateFrame();
@@ -348,8 +450,10 @@ export class DesktopApp {
     this.peer.sendContextChange(context as any, layout as any);
   }
 
-  private renderTitleScreen(): void {
+  private async renderTitleScreen(): Promise<void> {
     this.uiState = 'title';
+    this.hasSavedJourney = await saveManager.hasSavedJourney();
+
     this.uiContainer.innerHTML = `
       <div style="
         position: absolute;
@@ -389,35 +493,142 @@ export class DesktopApp {
           max-width: 540px;
           text-align: center;
           line-height: 1.75;
-          margin: 0 0 48px 0;
+          margin: 0 0 44px 0;
           letter-spacing: 0.02em;
         ">
           A cosmic road trip into the gentle strange. No combat. No ticking clocks. Just silence, wonder, and the warm hum of your craft.
         </p>
 
-        <button id="btn-begin" style="
-          padding: 18px 54px;
-          background: linear-gradient(135deg, rgba(14, 165, 233, 0.25), rgba(56, 189, 248, 0.12));
-          border: 1px solid rgba(56, 189, 248, 0.65);
-          border-radius: 9999px;
-          color: #f8fafc;
-          font-size: 15px;
-          font-weight: 600;
-          letter-spacing: 0.22em;
-          cursor: pointer;
-          transition: all 0.25s ease;
-          box-shadow: 0 0 35px rgba(56, 189, 248, 0.3);
-        ">BEGIN JOURNEY</button>
+        <div style="display: flex; flex-direction: column; gap: 14px; align-items: center;">
+          ${
+            this.hasSavedJourney
+              ? `
+            <button id="btn-continue" style="
+              padding: 16px 54px;
+              background: linear-gradient(135deg, rgba(56, 189, 248, 0.35), rgba(14, 165, 233, 0.2));
+              border: 1px solid rgba(56, 189, 248, 0.8);
+              border-radius: 9999px;
+              color: #f8fafc;
+              font-size: 14px;
+              font-weight: 600;
+              letter-spacing: 0.2em;
+              cursor: pointer;
+              transition: all 0.25s ease;
+              box-shadow: 0 0 35px rgba(56, 189, 248, 0.35);
+              min-width: 260px;
+            ">CONTINUE JOURNEY</button>
+          `
+              : ''
+          }
+
+          <button id="btn-begin" style="
+            padding: ${this.hasSavedJourney ? '12px 42px' : '18px 54px'};
+            background: ${this.hasSavedJourney ? 'rgba(30, 41, 59, 0.6)' : 'linear-gradient(135deg, rgba(14, 165, 233, 0.25), rgba(56, 189, 248, 0.12))'};
+            border: 1px solid ${this.hasSavedJourney ? 'rgba(148, 163, 184, 0.3)' : 'rgba(56, 189, 248, 0.65)'};
+            border-radius: 9999px;
+            color: ${this.hasSavedJourney ? '#cbd5e1' : '#f8fafc'};
+            font-size: ${this.hasSavedJourney ? '12px' : '15px'};
+            font-weight: 600;
+            letter-spacing: 0.2em;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            box-shadow: 0 0 35px rgba(56, 189, 248, 0.25);
+            min-width: 260px;
+          ">${this.hasSavedJourney ? 'NEW JOURNEY' : 'BEGIN JOURNEY'}</button>
+        </div>
       </div>
     `;
 
-    const btn = this.uiContainer.querySelector('#btn-begin') as HTMLElement;
-    btn.addEventListener('click', async () => {
+    this.uiContainer.querySelector('#btn-continue')?.addEventListener('click', async () => {
+      await audio.start();
+      audio.playTitleMusic();
+      await this.loadSavedJourney();
+      this.renderModeSelectScreen();
+    });
+
+    const btnBegin = this.uiContainer.querySelector('#btn-begin') as HTMLElement;
+    btnBegin.addEventListener('click', async () => {
       await audio.start();
       audio.playTitleMusic();
       await storage.updateSettings({ introSeen: true });
       this.renderModeSelectScreen();
     });
+  }
+
+  public async loadSavedJourney(): Promise<void> {
+    const slot = await saveManager.getSaveSlot();
+    if (!slot) return;
+
+    // Restore player sector & local position
+    this.worldPosition.sector.x = slot.playerSector.x;
+    this.worldPosition.sector.y = slot.playerSector.y;
+    this.worldPosition.sector.z = slot.playerSector.z;
+    this.worldPosition.localOffset.set(slot.playerLocalPos.x, slot.playerLocalPos.y, slot.playerLocalPos.z);
+
+    this.flightModel.position.set(slot.playerLocalPos.x, slot.playerLocalPos.y, slot.playerLocalPos.z);
+    this.flightModel.velocity.set(0, 0, 0);
+
+    // If a non-origin star system was active, load it into SpaceScene
+    if (slot.currentSystem) {
+      this.spaceScene.loadSystem(slot.currentSystem);
+      this.navRadar.setPlanets(this.spaceScene.activePlanetList);
+    }
+  }
+
+  public async saveCurrentJourney(): Promise<void> {
+    const slot: PlayerSaveSlot = {
+      slotId: 'current_journey',
+      saveVersion: 2,
+      updatedAt: Date.now(),
+      universeSeed: this.sectorManager.universeSeed,
+      playerSector: { ...this.worldPosition.sector },
+      playerLocalPos: {
+        x: this.flightModel.position.x,
+        y: this.flightModel.position.y,
+        z: this.flightModel.position.z,
+      },
+      currentSystem: this.spaceScene.currentSystem,
+      flightPhase: this.stateMachine.getPhase(),
+      stats: {
+        systemsVisited: 1,
+        planetsScanned: 0,
+        anomaliesFound: 0,
+        flightTimeSeconds: 0,
+      },
+    };
+
+    await saveManager.saveJourney(slot);
+    this.showSaveIndicator();
+  }
+
+  public recordArrivalDiscovery(system: StarSystemDescriptor): void {
+    saveManager.recordDiscovery({
+      id: `system-${system.id}`,
+      type: 'system',
+      name: system.name,
+      systemName: system.name,
+      sector: { x: system.sectorX, y: system.sectorY, z: system.sectorZ },
+      timestamp: Date.now(),
+      details: `Stellar class ${system.star.spectralClass}. ${system.planets.length} orbital bodies surveyed.`,
+      category: 'SYSTEMS',
+    });
+  }
+
+  public engageInterstellarCruise(targetSys: StarSystemDescriptor): void {
+    const engaged = this.deepCruiseController.engage(targetSys, this.worldPosition);
+    if (engaged) {
+      this.showHudNotice(`WARP DRIVE CHARGING // HEADING SET TO ${targetSys.name.toUpperCase()}`);
+    }
+  }
+
+  private showSaveIndicator(): void {
+    const el = this.uiContainer.querySelector('#hud-save-indicator') as HTMLElement;
+    if (el) {
+      el.style.opacity = '1';
+      setTimeout(() => {
+        el.style.opacity = '0';
+      }, 1500);
+    }
   }
 
   private renderModeSelectScreen(): void {
@@ -739,7 +950,37 @@ export class DesktopApp {
             THE QUIET BETWEEN STARS
           </div>
 
-          <div style="display: flex; gap: 12px; align-items: center;">
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <div id="hud-save-indicator" style="
+              font-family: ui-monospace, monospace;
+              font-size: 10px;
+              letter-spacing: 0.1em;
+              color: #4ade80;
+              opacity: 0;
+              transition: opacity 0.3s ease;
+            ">● SAVED</div>
+
+            <button id="btn-open-chart" style="
+              background: rgba(15, 23, 42, 0.75);
+              border: 1px solid rgba(56, 189, 248, 0.35);
+              border-radius: 8px;
+              color: #38bdf8;
+              padding: 7px 14px;
+              font-size: 11px;
+              font-weight: 600;
+              cursor: pointer;
+            ">MAP [M]</button>
+
+            <button id="btn-open-journal" style="
+              background: rgba(15, 23, 42, 0.75);
+              border: 1px solid rgba(148, 163, 184, 0.25);
+              border-radius: 8px;
+              color: #cbd5e1;
+              padding: 7px 14px;
+              font-size: 11px;
+              cursor: pointer;
+            ">LOG [J]</button>
+
             <button id="btn-audio-mute" style="
               background: rgba(15, 23, 42, 0.75);
               border: 1px solid rgba(148, 163, 184, 0.25);
@@ -811,6 +1052,16 @@ export class DesktopApp {
         </div>
       </div>
     `;
+
+    this.uiContainer.querySelector('#btn-open-chart')?.addEventListener('click', () => {
+      audio.playBlip();
+      this.starChartModal.toggle();
+    });
+
+    this.uiContainer.querySelector('#btn-open-journal')?.addEventListener('click', () => {
+      audio.playBlip();
+      this.journalModal.toggle();
+    });
 
     this.uiContainer.querySelector('#btn-audio-mute')?.addEventListener('click', () => {
       const isMuted = audio.toggleMute();

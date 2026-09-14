@@ -16,7 +16,8 @@ export type MusicPhaseContext =
   | 'approach'
   | 'orbit'
   | 'entry'
-  | 'surface';
+  | 'surface'
+  | 'deep_cruise';
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -339,6 +340,15 @@ export class AudioEngine {
         this.bassGain.gain.setTargetAtTime(0.16, now, 0.5);
         this.leadGain.gain.setTargetAtTime(0.15, now, 0.5);
         this.beatGain.gain.setTargetAtTime(0.08, now, 0.5);
+        break;
+
+      case 'deep_cruise':
+        // Interstellar hyperspace: rich harmonic drone, resonant arpeggio shimmer, deep bass
+        this.musicFilter.frequency.setTargetAtTime(4500, now, 0.4);
+        this.padGain.gain.setTargetAtTime(0.38, now, 0.4);
+        this.bassGain.gain.setTargetAtTime(0.28, now, 0.4);
+        this.leadGain.gain.setTargetAtTime(0.25, now, 0.4);
+        this.beatGain.gain.setTargetAtTime(0.04, now, 0.4);
         break;
     }
   }

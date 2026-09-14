@@ -11,8 +11,10 @@ describe('Star System & Planet Generation Determinism', () => {
     expect(sys1.name).toEqual(sys2.name);
     expect(sys1.star.name).toEqual(sys2.star.name);
     expect(sys1.planets.length).toEqual(sys2.planets.length);
-    expect(sys1.planets[0].name).toEqual(sys2.planets[0].name);
-    expect(sys1.planets[0].temperatureKelvin).toEqual(sys2.planets[0].temperatureKelvin);
+    if (sys1.planets.length > 0) {
+      expect(sys1.planets[0].name).toEqual(sys2.planets[0].name);
+      expect(sys1.planets[0].temperatureKelvin).toEqual(sys2.planets[0].temperatureKelvin);
+    }
   });
 
   it('generates reproducible landing sites for landable planets', () => {

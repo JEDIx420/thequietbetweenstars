@@ -116,6 +116,8 @@ export class SurfaceScene {
     this.spawnFauna(this.shipPosition);
   }
 
+  public static readonly WORLD_UP = new THREE.Vector3(0, 1, 0);
+
   public update(
     input: NormalizedInputState,
     dt: number,
@@ -153,12 +155,28 @@ export class SurfaceScene {
     this.shipGroup.position.copy(this.shipPosition);
     this.surveyCraft.update(clampedDt, input.throttle, input.axes.x, input.axes.y);
 
-    // 2. Camera follow and Sky/Horizon follow
+    // 2. Horizon-Stabilized Camera Follow & Level Recovery
+    // Craft visual bank is kept, but camera bank is gently clamped to maximum 6-8 degrees (~0.12 rad)
+    const maxCameraBankRad = 0.12;
+    const targetCameraBank = THREE.MathUtils.clamp(this.shipRoll * 0.3, -maxCameraBankRad, maxCameraBankRad);
+
+    // Camera look target
+    const lookAhead = this.shipPosition.clone().add(forward.clone().multiplyScalar(15));
+
+    // Desired camera up: WORLD_UP slightly tilted for subtle responsive banking, strictly upright
+    const right = new THREE.Vector3().crossVectors(forward, SurfaceScene.WORLD_UP).normalize();
+    const desiredUp = SurfaceScene.WORLD_UP.clone()
+      .addScaledVector(right, -Math.sin(targetCameraBank))
+      .normalize();
+
+    // Fast recovery to upright if incoming camera from orbit was inverted or sideways
+    const upAlignment = camera.up.dot(SurfaceScene.WORLD_UP);
+    const recoveryRate = upAlignment < 0.2 ? 9.0 : 4.5;
+    camera.up.lerp(desiredUp, clampedDt * recoveryRate).normalize();
+
     const camOffset = new THREE.Vector3(0, 5.5, 14).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.shipYaw);
     const targetCamPos = this.shipPosition.clone().add(camOffset);
     camera.position.lerp(targetCamPos, clampedDt * 4.5);
-
-    const lookAhead = this.shipPosition.clone().add(forward.clone().multiplyScalar(15));
     camera.lookAt(lookAhead);
 
     this.proceduralSky.update(camera.position);

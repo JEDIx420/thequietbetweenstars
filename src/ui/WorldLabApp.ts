@@ -4,6 +4,7 @@ import { LandingRegionGenerator, type LandingRegionProfile } from '../game/plane
 import type { PlanetDescriptor } from '../game/systems/PlanetDescriptor';
 import { SurfaceScene } from '../game/surface/SurfaceScene';
 import type { LandingSite } from '../game/systems/LandingSiteGenerator';
+import { SectorManager } from '../game/universe/SectorManager';
 
 export class WorldLabApp {
   private container: HTMLElement;
@@ -64,6 +65,19 @@ export class WorldLabApp {
               Select a region above to inspect its morphology and inspect 3D flight.
             </div>
 
+            <!-- Navigation & Sector QA section -->
+            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 14px; display: flex; flex-direction: column; gap: 8px;">
+              <label style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: #38bdf8; font-weight: 600;">Navigation & Sector Explorer QA</label>
+              <div style="display: flex; gap: 6px;">
+                <input type="number" id="sec-x" value="0" placeholder="Sec X" style="width: 50%; padding: 6px; background: #161c2d; border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 4px; font-size: 0.78rem;" />
+                <input type="number" id="sec-z" value="0" placeholder="Sec Z" style="width: 50%; padding: 6px; background: #161c2d; border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 4px; font-size: 0.78rem;" />
+              </div>
+              <button id="query-nav-btn" style="padding: 7px 10px; background: #0369a1; border: none; border-radius: 4px; color: #fff; font-size: 0.78rem; cursor: pointer; font-weight: 600;">Query Star Systems in Radius</button>
+              <div id="nav-qa-output" style="max-height: 140px; overflow-y: auto; background: rgba(0,0,0,0.4); padding: 8px; border-radius: 4px; font-size: 0.72rem; color: #94a3b8; font-family: monospace;">
+                Click query to test SectorManager.getSystemsInRadius
+              </div>
+            </div>
+
             <div style="margin-top: auto; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 0.72rem; color: #64748b;">
               Controls: Click viewport & use <b>W/A/S/D</b> or Arrow Keys to pilot craft.
             </div>
@@ -122,6 +136,22 @@ export class WorldLabApp {
     customInput.addEventListener('input', () => {
       this.loadPlanet(customInput.value || 'seed-default', 'G');
     });
+
+    const queryBtn = this.container.querySelector('#query-nav-btn') as HTMLButtonElement;
+    const secXInput = this.container.querySelector('#sec-x') as HTMLInputElement;
+    const secZInput = this.container.querySelector('#sec-z') as HTMLInputElement;
+    const navQaOutput = this.container.querySelector('#nav-qa-output') as HTMLElement;
+
+    if (queryBtn) {
+      queryBtn.addEventListener('click', () => {
+        const sx = parseInt(secXInput.value, 10) || 0;
+        const sz = parseInt(secZInput.value, 10) || 0;
+        const sm = new SectorManager();
+        const results = sm.getSystemsInRadius({ x: sx, y: 0, z: sz }, 4);
+        navQaOutput.innerHTML = `Found ${results.length} systems within r=4 of (${sx}, ${sz}):<br/>` +
+          results.map(r => `&bull; <b>${r.system.star.name}</b> [${r.system.star.spectralClass}] at (${r.system.sectorX}, ${r.system.sectorZ}) - ${r.system.planets.length} planets, ${r.system.anomalies?.length ?? 0} anomalies (${r.distanceSectors.toFixed(1)} sec)`).join('<br/>');
+      });
+    }
 
     loadPreset();
   }

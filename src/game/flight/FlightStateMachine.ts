@@ -6,6 +6,7 @@ export enum FlightPhase {
   ENTRY = 'ENTRY',
   SURFACE_FLIGHT = 'SURFACE_FLIGHT',
   ASCENT = 'ASCENT',
+  STELLAR_CRUISE = 'STELLAR_CRUISE',
 }
 
 export type StateChangeCallback = (from: FlightPhase, to: FlightPhase) => void;
@@ -32,9 +33,11 @@ export class FlightStateMachine {
 
     switch (from) {
       case FlightPhase.DEEP_SPACE:
-        return target === FlightPhase.SYSTEM_CRUISE;
+        return target === FlightPhase.SYSTEM_CRUISE || target === FlightPhase.STELLAR_CRUISE;
       case FlightPhase.SYSTEM_CRUISE:
-        return target === FlightPhase.DEEP_SPACE || target === FlightPhase.PLANET_APPROACH;
+        return target === FlightPhase.DEEP_SPACE || target === FlightPhase.PLANET_APPROACH || target === FlightPhase.STELLAR_CRUISE;
+      case FlightPhase.STELLAR_CRUISE:
+        return target === FlightPhase.SYSTEM_CRUISE || target === FlightPhase.DEEP_SPACE;
       case FlightPhase.PLANET_APPROACH:
         return target === FlightPhase.SYSTEM_CRUISE || target === FlightPhase.ORBIT;
       case FlightPhase.ORBIT:

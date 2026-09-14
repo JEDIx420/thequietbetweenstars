@@ -4,7 +4,7 @@ import { CelestialPhysicsSystem, type CelestialBody } from '../core/celestialPhy
 import { InfiniteBackground } from '../universe/InfiniteBackground';
 import { PlanetVisualGenerator } from '../planets/PlanetVisualGenerator';
 import { PlanetEnvironmentGenerator } from '../planets/PlanetEnvironmentProfile';
-import type { PlanetDescriptor } from '../systems/PlanetDescriptor';
+import type { PlanetDescriptor, StarSystemDescriptor } from '../systems/PlanetDescriptor';
 
 export class SpaceScene {
   public scene: THREE.Scene;
@@ -53,6 +53,15 @@ export class SpaceScene {
   private scanRadius = 0;
   private isScanning = false;
   private clock = 0;
+
+  // Warp hyperspace effects
+  public warpFactor = 0;
+  public warpHeading?: THREE.Vector3;
+
+  // Active Loaded Star System
+  public currentSystem: StarSystemDescriptor | null = null;
+  public planetGroups: THREE.Group[] = [];
+  public planetMeshes: Array<{ mesh: THREE.Mesh; cloud?: THREE.Mesh | null; atmo?: THREE.Mesh | null; ring?: THREE.Mesh | null }> = [];
 
   constructor() {
     this.scene = new THREE.Scene();
@@ -223,6 +232,102 @@ export class SpaceScene {
   }
 
   /**
+   * Loads a procedural star system into the 3D space scene.
+   * Cleans up any previously loaded planet groups, builds new planet meshes,
+   * generates orbital distances, sets up celestial physics and lighting.
+   */
+  public loadSystem(system: StarSystemDescriptor): void {
+    this.currentSystem = system;
+
+    // 1. Remove previous dynamic planet groups from worldRoot
+    for (const group of this.planetGroups) {
+      this.worldRoot.remove(group);
+    }
+    this.planetGroups = [];
+    this.planetMeshes = [];
+    this.activePlanetList = [];
+
+    // 2. Hide or show origin system meshes (Aurelia & Zephyr)
+    const isOrigin = system.sectorX === 0 && system.sectorY === 0 && system.sectorZ === 0;
+    if (isOrigin) {
+      this.aureliaGroup.visible = true;
+      this.zephyrGroup.visible = true;
+      this.activePlanetList = [
+        { descriptor: this.aureliaDescriptor, position: this.planetAureliaPos },
+        { descriptor: this.zephyrDescriptor, position: this.moonZephyrPos },
+      ];
+    } else {
+      this.aureliaGroup.visible = false;
+      this.zephyrGroup.visible = false;
+
+      // 3. Generate 3D planet meshes and orbital positions for target system
+      const planetCount = system.planets.length;
+      for (let i = 0; i < planetCount; i++) {
+        const pDesc = system.planets[i];
+        const visual = PlanetVisualGenerator.createPlanetMesh(pDesc);
+
+        // Distribute planets in broad orbital arcs around the system center
+        const angle = (i / Math.max(1, planetCount)) * Math.PI * 2 + 0.4;
+        const orbitDist = 900 + i * 550;
+        const planetPos = new THREE.Vector3(
+          Math.cos(angle) * orbitDist,
+          (Math.sin(angle * 2) * 120),
+          Math.sin(angle) * orbitDist - 1200
+        );
+
+        visual.group.position.copy(planetPos);
+        this.worldRoot.add(visual.group);
+        this.planetGroups.push(visual.group);
+        this.planetMeshes.push({
+          mesh: visual.planetMesh,
+          cloud: visual.cloudMesh,
+          atmo: visual.atmosphereMesh,
+          ring: visual.ringMesh,
+        });
+
+        this.activePlanetList.push({
+          descriptor: pDesc,
+          position: planetPos,
+        });
+      }
+    }
+
+    // 4. Update Celestial Physics Bodies
+    const bodies: CelestialBody[] = [
+      {
+        id: `star-${system.name.toLowerCase().replace(/\s+/g, '-')}`,
+        name: system.star.name,
+        type: 'star',
+        position: this.sunPos,
+        physicalRadius: system.star.radius || 130,
+        exclusionRadius: (system.star.radius || 130) * 1.25,
+        atmosphereRadius: (system.star.radius || 130) * 3.4,
+        dangerRadius: (system.star.radius || 130) * 1.8,
+      },
+    ];
+
+    for (const p of this.activePlanetList) {
+      bodies.push({
+        id: p.descriptor.id,
+        name: p.descriptor.name,
+        type: 'planet',
+        position: p.position,
+        physicalRadius: p.descriptor.radius,
+        exclusionRadius: p.descriptor.radius * 1.12,
+        atmosphereRadius: p.descriptor.radius * 2.2,
+      });
+    }
+
+    this.physics = new CelestialPhysicsSystem(bodies);
+
+    // 5. Update Star Color & Illumination
+    const starColor = new THREE.Color(system.star.lightColor || 0xfff7ed);
+    (this.sunCore.material as THREE.MeshBasicMaterial).color.copy(starColor);
+    this.sunLight.color.copy(starColor);
+    this.sunDirLight.color.copy(starColor);
+  }
+
+  /**
    * Floating-origin rebase handler
    * Shifts all celestial bodies, physics envelopes, lights, and particles by offset.
    */
@@ -232,6 +337,10 @@ export class SpaceScene {
     this.sunDirLight.position.add(offset);
     this.aureliaGroup.position.add(offset);
     this.zephyrGroup.position.add(offset);
+
+    for (const group of this.planetGroups) {
+      group.position.add(offset);
+    }
 
     // 2. Shift logical positions for approach controller and physics
     this.sunPos.add(offset);
@@ -363,8 +472,8 @@ export class SpaceScene {
   ): void {
     this.clock += dt;
 
-    // 1. Update Infinite Starfield & Nebula to follow camera
-    this.infiniteBackground.update(cameraPos, this.clock);
+    // 1. Update Infinite Starfield & Nebula to follow camera (with warp hyperspace stretch)
+    this.infiniteBackground.update(cameraPos, this.clock, this.warpFactor, this.warpHeading);
 
     // 2. Survey Craft visual animations
     this.surveyCraft.update(dt, throttle, steeringYaw, steeringPitch);
@@ -381,11 +490,21 @@ export class SpaceScene {
     this.sunLight.intensity = 3.2 + Math.sin(this.clock * 2.1) * 0.25;
 
     // 4. Planetary & Lunar Orbital Rotations
-    this.planetAureliaMesh.rotation.y += dt * 0.018;
-    if (this.cloudAureliaMesh) this.cloudAureliaMesh.rotation.y += dt * 0.026;
-    if (this.atmosphereAureliaMesh) this.atmosphereAureliaMesh.rotation.y += dt * 0.022;
-    if (this.ringAureliaMesh) this.ringAureliaMesh.rotation.z += dt * 0.002;
-    this.moonZephyrMesh.rotation.y += dt * 0.012;
+    if (this.aureliaGroup.visible) {
+      this.planetAureliaMesh.rotation.y += dt * 0.018;
+      if (this.cloudAureliaMesh) this.cloudAureliaMesh.rotation.y += dt * 0.026;
+      if (this.atmosphereAureliaMesh) this.atmosphereAureliaMesh.rotation.y += dt * 0.022;
+      if (this.ringAureliaMesh) this.ringAureliaMesh.rotation.z += dt * 0.002;
+      this.moonZephyrMesh.rotation.y += dt * 0.012;
+    }
+
+    // Dynamic Planets rotation
+    for (const p of this.planetMeshes) {
+      p.mesh.rotation.y += dt * 0.015;
+      if (p.cloud) p.cloud.rotation.y += dt * 0.024;
+      if (p.atmo) p.atmo.rotation.y += dt * 0.020;
+      if (p.ring) p.ring.rotation.z += dt * 0.002;
+    }
 
     // 5. Cosmic Dust Particle Recycling around Ship
     const halfBox = this.dustBoxSize / 2;

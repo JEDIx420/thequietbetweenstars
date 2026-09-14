@@ -18,7 +18,9 @@ export type GameAction =
   | 'interact'
   | 'pause'
   | 'confirm'
-  | 'cancel';
+  | 'cancel'
+  | 'journal'
+  | 'cycle_target';
 
 export type ActionState = 'down' | 'up' | 'trigger';
 

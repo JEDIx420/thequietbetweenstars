@@ -8,9 +8,9 @@ describe('StorageManager Persistence', () => {
     storage = new StorageManager();
   });
 
-  it('provides default settings with schema version 1', async () => {
+  it('provides default settings with schema version 2', async () => {
     const settings = await storage.getSettings();
-    expect(settings.version).toBe(1);
+    expect(settings.version).toBe(2);
     expect(settings.audioMuted).toBe(false);
     expect(settings.masterVolume).toBe(0.7);
     expect(settings.preferredInputMode).toBe('keyboard');

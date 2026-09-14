@@ -98,4 +98,55 @@ export class SectorManager {
   public getSector(key: string): ActiveSector | undefined {
     return this.activeSectors.get(key);
   }
+
+  /**
+   * Deterministically queries star systems within a sector radius on demand.
+   * Does NOT instantiate Three.js meshes, keeping map rendering lightweight.
+   */
+  public getSystemsInRadius(
+    centerSector: SectorCoord,
+    radius: number = 5
+  ): Array<{ coord: SectorCoord; system: StarSystemDescriptor; distanceSectors: number }> {
+    const results: Array<{ coord: SectorCoord; system: StarSystemDescriptor; distanceSectors: number }> = [];
+
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dz = -radius; dz <= radius; dz++) {
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (dist > radius) continue;
+
+          const sx = centerSector.x + dx;
+          const sy = centerSector.y + dy;
+          const sz = centerSector.z + dz;
+
+          // Check if sector already in active cache
+          const key = SectorManager.getSectorKey(sx, sy, sz);
+          const active = this.activeSectors.get(key);
+          if (active) {
+            if (active.hasSystem && active.system) {
+              results.push({ coord: active.coord, system: active.system, distanceSectors: dist });
+            }
+            continue;
+          }
+
+          // Deterministic generation on demand without storing in active 3D render cache
+          const sectorHash = SeededRandom.hashCoords(this.universeSeed, sx, sy, sz);
+          const rng = new SeededRandom(sectorHash);
+          const hasSystem = (sx === 0 && sy === 0 && sz === 0) || rng.chance(0.35);
+
+          if (hasSystem) {
+            const system = StarSystemGenerator.generateSystem(this.universeSeed, sx, sy, sz);
+            results.push({
+              coord: { x: sx, y: sy, z: sz },
+              system,
+              distanceSectors: dist,
+            });
+          }
+        }
+      }
+    }
+
+    // Sort by distance from center sector
+    return results.sort((a, b) => a.distanceSectors - b.distanceSectors);
+  }
 }

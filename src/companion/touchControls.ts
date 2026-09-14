@@ -197,6 +197,36 @@ export class TouchControls {
                 touch-action: manipulation;
               ">AUTO</button>
             </div>
+
+            <div style="display: flex; gap: 8px;">
+              <button id="btn-target" class="companion-btn" style="
+                width: 70px;
+                padding: 8px 0;
+                background: rgba(15, 23, 42, 0.7);
+                border: 1px solid rgba(56, 189, 248, 0.3);
+                border-radius: 8px;
+                color: #38bdf8;
+                font-size: 10px;
+                font-weight: 600;
+                letter-spacing: 0.05em;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">TARGET</button>
+
+              <button id="btn-journal" class="companion-btn" style="
+                width: 70px;
+                padding: 8px 0;
+                background: rgba(15, 23, 42, 0.7);
+                border: 1px solid rgba(148, 163, 184, 0.25);
+                border-radius: 8px;
+                color: #cbd5e1;
+                font-size: 10px;
+                font-weight: 600;
+                letter-spacing: 0.05em;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">LOG</button>
+            </div>
           </div>
 
           <!-- Right Touch Zone: Vertical Throttle Slider -->
@@ -337,6 +367,8 @@ export class TouchControls {
     bindBtn('#btn-scan', 'scan');
     bindBtn('#btn-map', 'map');
     bindBtn('#btn-autopilot', 'autopilot');
+    bindBtn('#btn-target', 'cycle_target');
+    bindBtn('#btn-journal', 'journal');
   }
 
   private onJoystickPointerDown(e: PointerEvent): void {
