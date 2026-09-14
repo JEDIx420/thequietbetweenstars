@@ -32,8 +32,20 @@ describe('SaveManager IndexedDB v2 & Journey Persistence', () => {
       stats: {
         systemsVisited: 3,
         planetsScanned: 5,
-        anomaliesFound: 1,
+        surfacesVisited: 2,
+        speciesDiscovered: 4,
+        anomaliesDiscovered: 1,
         flightTimeSeconds: 420,
+      },
+      tutorial: {
+        started: true,
+        completed: false,
+        step: 'SET_COURSE',
+        skipped: false,
+      },
+      narrative: {
+        triggeredEventIds: ['first_wake', 'first_steer'],
+        resonanceFlags: ['intro_1420'],
       },
     };
 

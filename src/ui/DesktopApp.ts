@@ -22,6 +22,11 @@ import { LandingSiteGenerator, type LandingSite } from '../game/systems/LandingS
 import { CompanionDiagnosticsModal } from './CompanionDiagnosticsModal';
 import { StarChartModal } from './StarChartModal';
 import { JournalModal } from './JournalModal';
+import { HelpModal } from './HelpModal';
+import { DialoguePresenter } from './DialoguePresenter';
+import { NarrativeDirector } from '../narrative/NarrativeDirector';
+import { TutorialDirector } from '../tutorial/TutorialDirector';
+import type { NarrativeContext } from '../narrative/NarrativeTypes';
 import { NavRadar } from '../game/ui/NavRadar';
 import { DeepCruiseController } from '../game/flight/DeepCruiseController';
 import { AutopilotController } from '../game/flight/AutopilotController';
@@ -61,6 +66,21 @@ export class DesktopApp {
   public navRadar!: NavRadar;
   public starChartModal!: StarChartModal;
   public journalModal!: JournalModal;
+  public helpModal!: HelpModal;
+
+  // Narrative & Tutorial Systems
+  public dialoguePresenter!: DialoguePresenter;
+  public narrativeDirector!: NarrativeDirector;
+  public tutorialDirector!: TutorialDirector;
+
+  // Real journey stats & tracking
+  public visitedSystems = new Set<string>();
+  public scannedPlanets = new Set<string>();
+  public visitedSurfaces = new Set<string>();
+  public discoveredSpecies = new Set<string>();
+  public discoveredAnomalies = new Set<string>();
+  private journeyStartTime = Date.now();
+
   private hasSavedJourney = false;
   private lastAutosaveTime = 0;
 
@@ -112,26 +132,66 @@ export class DesktopApp {
       },
     });
 
-    // 1. Navigation & Autopilot subsystems
+    // 1. Narrative & Dialogue Subsystems
+    this.dialoguePresenter = new DialoguePresenter(this.canvasContainer);
+    this.narrativeDirector = new NarrativeDirector(this.dialoguePresenter);
+    this.tutorialDirector = new TutorialDirector(this.narrativeDirector, () => this.getNarrativeContext());
+    this.tutorialDirector.setCallbacks(
+      (prompt) => this.updateContextPrompt(prompt || ''),
+      (action, prompt) => {
+        if (this.peer) {
+          this.peer.sendReliable({
+            type: 'tutorial_hint',
+            action,
+            prompt,
+            timestamp: Date.now(),
+          } as any);
+        }
+      }
+    );
+
+    // Mirror ship computer dialogue to phone companion
+    this.dialoguePresenter.setMirrorCallback((line) => {
+      if (this.peer) {
+        this.peer.sendReliable({
+          type: 'dialogue_line',
+          speaker: line.speaker,
+          text: line.text,
+          durationMs: line.durationMs,
+          timestamp: Date.now(),
+        } as any);
+      }
+    });
+
+    // 2. Navigation & Autopilot subsystems
     this.autopilotController = new AutopilotController(this.flightModel);
     this.navRadar = new NavRadar(this.canvasContainer, this.autopilotController);
     this.navRadar.setPlanets(this.spaceScene.activePlanetList);
+    this.navRadar.setOnTargetCycle((target) => {
+      this.tutorialDirector.onPlayerTargetCycle();
+      this.narrativeDirector.trigger('first_target_selected', { targetName: target.name }, this.getNarrativeContext(), { forceOnce: true });
+    });
+    this.navRadar.setOnOpenSystemMap(() => {
+      this.starChartModal.setScale('SYSTEM');
+      this.starChartModal.open();
+    });
 
-    // 2. Interstellar Deep Cruise subsystem
+    // 3. Interstellar Deep Cruise subsystem
     this.deepCruiseController = new DeepCruiseController(
       this.stateMachine,
       this.flightModel,
       this.spaceScene
     );
     this.deepCruiseController.setOnArrival((targetSys) => {
-      this.navRadar.setPlanets(this.spaceScene.activePlanetList);
+      this.navRadar.setPlanets(this.spaceScene.activePlanetList, targetSys.anomalies || []);
       this.showHudNotice(`ARRIVED // STAR SYSTEM: ${targetSys.name.toUpperCase()}`);
       audio.playConnectChime();
       this.recordArrivalDiscovery(targetSys);
+      this.tutorialDirector.onPlayerArrival(targetSys.name, targetSys.planets.length);
       this.saveCurrentJourney();
     });
 
-    // 3. Modals: Star Chart (M) & Ship Log Journal (J)
+    // 4. Modals: Star Chart (M), Ship Log Journal (J) & Help Manual (H)
     this.starChartModal = new StarChartModal(
       this.container,
       this.sectorManager,
@@ -140,8 +200,13 @@ export class DesktopApp {
         this.engageInterstellarCruise(targetSys);
       }
     );
+    this.starChartModal.setOnCourseSet((targetSys) => {
+      this.showHudNotice(`COURSE LOCKED // ${targetSys.name.toUpperCase()}`);
+      this.tutorialDirector.onPlayerSetCourse(targetSys.name, `${Math.round(this.worldPosition.sector.x - targetSys.sectorX)} sec`);
+    });
 
     this.journalModal = new JournalModal(this.container);
+    this.helpModal = new HelpModal(this.container);
 
     // Wire music contexts to state machine
     this.stateMachine.onPhaseChange((_from, to) => {
@@ -178,6 +243,15 @@ export class DesktopApp {
     const input = this.inputManager.getNormalizedInput();
     const phase = this.stateMachine.getPhase();
 
+    // Check steering & throttle for tutorial progress
+    if (Math.abs(input.axes.x) > 0.25 || Math.abs(input.axes.y) > 0.25) {
+      this.tutorialDirector.onPlayerSteer();
+    }
+    if (input.throttle > 0.1) {
+      this.tutorialDirector.onPlayerThrottle();
+    }
+    this.tutorialDirector.update();
+
     if (phase === FlightPhase.SURFACE_FLIGHT && this.surfaceScene) {
       // 1. Surface Simulation Domain
       const res = this.surfaceScene.update(input, dt, this.renderer.camera);
@@ -192,10 +266,14 @@ export class DesktopApp {
 
       if (this.inputManager.consumeAction('scan')) {
         audio.playScanEffect();
+        this.tutorialDirector.onPlayerScan();
+
         if (res.activeScanTarget) {
-          this.showHudNotice(`SCANNED: ${res.activeScanTarget.name} — ${res.activeScanTarget.info}`);
+          this.showHudNotice(`SCANNED: ${res.activeScanTarget.name} — LOG UPDATED`);
+          this.recordSurfaceDiscovery(res.activeScanTarget.name, res.activeScanTarget.info);
+          this.tutorialDirector.onPlayerDiscovery();
         } else {
-          this.showHudNotice('SURFACE RADAR: MINERAL FORMATIONS CONFIRMED');
+          this.showHudNotice('SURFACE RADAR: MINERAL STRATA CONFIRMED');
         }
       }
 
@@ -253,7 +331,24 @@ export class DesktopApp {
         if (this.inputManager.consumeAction('scan')) {
           this.spaceScene.triggerScan(shipPos);
           audio.playScanEffect();
+          this.tutorialDirector.onPlayerScan();
           this.showHudNotice('SCAN INITIATED — ACOUSTIC RESONANCE EMITTED');
+
+          // Check if space anomalies or rare resonance trigger
+          if (this.discoveredSpecies.size + this.visitedSystems.size >= 2 && !this.narrativeDirector.resonanceFlags.has('heard_first_resonance')) {
+            this.narrativeDirector.resonanceFlags.add('heard_first_resonance');
+            this.narrativeDirector.trigger('resonance_first_hint', {}, this.getNarrativeContext(), { priority: 'high' });
+            saveManager.recordDiscovery({
+              id: 'resonance-1420-harmonic',
+              type: 'anomaly',
+              name: 'Resonance Harmonic (1420 kHz)',
+              systemName: this.spaceScene.currentSystem?.name || 'Local Star',
+              sector: { ...this.worldPosition.sector },
+              timestamp: Date.now(),
+              details: 'Unclassified prime harmonic interval detected across sub-space carrier wave.',
+              category: 'ANOMALIES',
+            });
+          }
         }
       }
 
@@ -314,11 +409,22 @@ export class DesktopApp {
     if (this.inputManager.consumeAction('map')) {
       audio.playBlip();
       this.starChartModal.toggle();
+      if (this.starChartModal.getIsOpen()) {
+        this.tutorialDirector.onPlayerOpenMap();
+      }
     }
 
     if (this.inputManager.consumeAction('journal')) {
       audio.playBlip();
       this.journalModal.toggle();
+      if (this.journalModal.getIsOpen()) {
+        this.tutorialDirector.onPlayerOpenJournal();
+      }
+    }
+
+    if (this.inputManager.consumeAction('help')) {
+      audio.playBlip();
+      this.helpModal.toggle();
     }
 
     if (this.inputManager.consumeAction('cycle_target')) {
@@ -332,14 +438,19 @@ export class DesktopApp {
 
     if (this.inputManager.consumeAction('autopilot')) {
       audio.playBlip();
-      const active = this.autopilotController.toggle();
-      if (active) {
-        const targetDesc = this.autopilotController.currentTarget?.type === 'planet'
-          ? this.autopilotController.currentTarget.descriptor.name
-          : 'DESTINATION';
-        this.showHudNotice(`AUTOPILOT ENGAGED // ALIGNING WITH ${targetDesc.toUpperCase()}`);
+      // If course is set to another star system in star chart, engage Deep Cruise!
+      if (this.starChartModal.activeCourseSystem && this.stateMachine.getPhase() === FlightPhase.SYSTEM_CRUISE) {
+        this.engageInterstellarCruise(this.starChartModal.activeCourseSystem);
       } else {
-        this.showHudNotice('AUTOPILOT DISENGAGED // MANUAL FLIGHT RESUMED');
+        const active = this.autopilotController.toggle();
+        if (active) {
+          const targetDesc = this.autopilotController.currentTarget?.type === 'planet'
+            ? this.autopilotController.currentTarget.descriptor.name
+            : 'DESTINATION';
+          this.showHudNotice(`AUTOPILOT ENGAGED // ALIGNING WITH ${targetDesc.toUpperCase()}`);
+        } else {
+          this.showHudNotice('AUTOPILOT DISENGAGED // MANUAL FLIGHT RESUMED');
+        }
       }
     }
 
@@ -550,6 +661,16 @@ export class DesktopApp {
     btnBegin.addEventListener('click', async () => {
       await audio.start();
       audio.playTitleMusic();
+      if (this.hasSavedJourney) {
+        await saveManager.clearJourney();
+        this.visitedSystems.clear();
+        this.scannedPlanets.clear();
+        this.visitedSurfaces.clear();
+        this.discoveredSpecies.clear();
+        this.discoveredAnomalies.clear();
+        this.journeyStartTime = Date.now();
+        this.tutorialDirector.reset();
+      }
       await storage.updateSettings({ introSeen: true });
       this.renderModeSelectScreen();
     });
@@ -571,14 +692,30 @@ export class DesktopApp {
     // If a non-origin star system was active, load it into SpaceScene
     if (slot.currentSystem) {
       this.spaceScene.loadSystem(slot.currentSystem);
-      this.navRadar.setPlanets(this.spaceScene.activePlanetList);
+      this.navRadar.setPlanets(this.spaceScene.activePlanetList, slot.currentSystem.anomalies || []);
+    }
+
+    // Restore tutorial & narrative state
+    if (slot.tutorial) {
+      this.tutorialDirector.loadState(slot.tutorial as any);
+    }
+    if (slot.narrative) {
+      this.narrativeDirector.loadNarrativeState(
+        slot.narrative.triggeredEventIds || [],
+        slot.narrative.resonanceFlags || []
+      );
+    }
+    if (slot.targetSystem) {
+      this.starChartModal.activeCourseSystem = slot.targetSystem;
     }
   }
 
   public async saveCurrentJourney(): Promise<void> {
+    const flightTimeSec = Math.round((Date.now() - this.journeyStartTime) / 1000);
+
     const slot: PlayerSaveSlot = {
       slotId: 'current_journey',
-      saveVersion: 2,
+      saveVersion: 3,
       updatedAt: Date.now(),
       universeSeed: this.sectorManager.universeSeed,
       playerSector: { ...this.worldPosition.sector },
@@ -588,12 +725,20 @@ export class DesktopApp {
         z: this.flightModel.position.z,
       },
       currentSystem: this.spaceScene.currentSystem,
+      targetSystem: this.starChartModal.activeCourseSystem,
       flightPhase: this.stateMachine.getPhase(),
       stats: {
-        systemsVisited: 1,
-        planetsScanned: 0,
-        anomaliesFound: 0,
-        flightTimeSeconds: 0,
+        systemsVisited: Math.max(1, this.visitedSystems.size),
+        planetsScanned: this.scannedPlanets.size,
+        surfacesVisited: this.visitedSurfaces.size,
+        speciesDiscovered: this.discoveredSpecies.size,
+        anomaliesDiscovered: this.discoveredAnomalies.size,
+        flightTimeSeconds: flightTimeSec,
+      },
+      tutorial: this.tutorialDirector.getState(),
+      narrative: {
+        triggeredEventIds: this.narrativeDirector.getTriggeredEventIds(),
+        resonanceFlags: this.narrativeDirector.getResonanceFlags(),
       },
     };
 
@@ -602,8 +747,10 @@ export class DesktopApp {
   }
 
   public recordArrivalDiscovery(system: StarSystemDescriptor): void {
+    this.visitedSystems.add(system.id);
+
     saveManager.recordDiscovery({
-      id: `system-${system.id}`,
+      id: `system:${system.id}`,
       type: 'system',
       name: system.name,
       systemName: system.name,
@@ -614,10 +761,64 @@ export class DesktopApp {
     });
   }
 
+  public recordSurfaceDiscovery(name: string, info: string): void {
+    const planet = this.surfaceScene?.planet;
+    const site = this.surfaceScene?.site;
+    const planetName = planet?.name || 'Local World';
+    const planetId = planet?.id || 'world';
+
+    const isFauna = info.includes('Diet:') || info.includes('Temperament:');
+    const isFlora = info.includes('Vegetation') || info.includes('Flora');
+
+    let category: 'WORLDS' | 'LIFE' | 'ANOMALIES' = 'WORLDS';
+    let id = `landmark:${planetId}:${name.toLowerCase().replace(/\s+/g, '_')}`;
+
+    if (isFauna || isFlora) {
+      category = 'LIFE';
+      id = `species:${planetId}:${name.toLowerCase().replace(/\s+/g, '_')}`;
+      this.discoveredSpecies.add(id);
+    } else {
+      id = `landmark:${planetId}:${name.toLowerCase().replace(/\s+/g, '_')}`;
+    }
+
+    saveManager.recordDiscovery({
+      id,
+      type: category === 'LIFE' ? 'flora' : 'landmark',
+      name,
+      systemName: this.spaceScene.currentSystem?.name || 'Aurelia',
+      sector: { ...this.worldPosition.sector },
+      timestamp: Date.now(),
+      details: `${info} (Observed on ${planetName} in ${site?.name || 'regional sector'})`,
+      category,
+    });
+
+    if (isFauna) {
+      this.narrativeDirector.trigger('scanned_fauna', { name }, this.getNarrativeContext(), { forceOnce: true });
+    } else if (isFlora) {
+      this.narrativeDirector.trigger('scanned_flora', { name }, this.getNarrativeContext(), { forceOnce: true });
+    } else {
+      this.narrativeDirector.trigger('scanned_landmark', { name }, this.getNarrativeContext(), { forceOnce: true });
+    }
+
+    this.saveCurrentJourney();
+  }
+
+  public getNarrativeContext(): NarrativeContext {
+    return {
+      sector: { ...this.worldPosition.sector },
+      currentSystemName: this.spaceScene.currentSystem?.name || 'Aurelia',
+      flightPhase: this.stateMachine.getPhase(),
+      systemsVisited: Math.max(1, this.visitedSystems.size),
+      discoveriesCount: this.discoveredSpecies.size + this.discoveredAnomalies.size + this.scannedPlanets.size,
+      resonanceFlags: this.narrativeDirector.getResonanceFlags(),
+    };
+  }
+
   public engageInterstellarCruise(targetSys: StarSystemDescriptor): void {
     const engaged = this.deepCruiseController.engage(targetSys, this.worldPosition);
     if (engaged) {
       this.showHudNotice(`WARP DRIVE CHARGING // HEADING SET TO ${targetSys.name.toUpperCase()}`);
+      this.tutorialDirector.onPlayerEngageCruise(targetSys.name);
     }
   }
 
@@ -929,6 +1130,10 @@ export class DesktopApp {
   private enterFlightMode(mode: 'companion' | 'keyboard'): void {
     this.uiState = 'playing';
     audio.setContext('cruise');
+    this.tutorialDirector.setInputMode(mode);
+    if (!this.tutorialDirector.isComplete()) {
+      this.tutorialDirector.start();
+    }
     this.renderFlightHUD(mode);
   }
 
@@ -980,6 +1185,16 @@ export class DesktopApp {
               font-size: 11px;
               cursor: pointer;
             ">LOG [J]</button>
+
+            <button id="btn-open-help" style="
+              background: rgba(15, 23, 42, 0.75);
+              border: 1px solid rgba(148, 163, 184, 0.25);
+              border-radius: 8px;
+              color: #cbd5e1;
+              padding: 7px 14px;
+              font-size: 11px;
+              cursor: pointer;
+            ">HELP [H]</button>
 
             <button id="btn-audio-mute" style="
               background: rgba(15, 23, 42, 0.75);
@@ -1061,6 +1276,11 @@ export class DesktopApp {
     this.uiContainer.querySelector('#btn-open-journal')?.addEventListener('click', () => {
       audio.playBlip();
       this.journalModal.toggle();
+    });
+
+    this.uiContainer.querySelector('#btn-open-help')?.addEventListener('click', () => {
+      audio.playBlip();
+      this.helpModal.toggle();
     });
 
     this.uiContainer.querySelector('#btn-audio-mute')?.addEventListener('click', () => {

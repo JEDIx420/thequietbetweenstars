@@ -34,12 +34,25 @@ export interface PlayerSaveSlot {
   playerSector: SectorCoord;
   playerLocalPos: { x: number; y: number; z: number };
   currentSystem: StarSystemDescriptor | null;
+  targetSystem?: StarSystemDescriptor | null;
   flightPhase: string;
   stats: {
     systemsVisited: number;
     planetsScanned: number;
-    anomaliesFound: number;
+    surfacesVisited: number;
+    speciesDiscovered: number;
+    anomaliesDiscovered: number;
     flightTimeSeconds: number;
+  };
+  tutorial: {
+    started: boolean;
+    completed: boolean;
+    step: string;
+    skipped: boolean;
+  };
+  narrative: {
+    triggeredEventIds: string[];
+    resonanceFlags: string[];
   };
 }
 
@@ -63,18 +76,31 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 const DEFAULT_SAVE_SLOT: PlayerSaveSlot = {
   slotId: 'current_journey',
-  saveVersion: 2,
-  updatedAt: Date.now(),
+  saveVersion: 3,
+  updatedAt: 0,
   universeSeed: 'QUIET-DEFAULT-001',
   playerSector: { x: 0, y: 0, z: 0 },
   playerLocalPos: { x: 0, y: 0, z: 100 },
   currentSystem: null,
+  targetSystem: null,
   flightPhase: 'SYSTEM_CRUISE',
   stats: {
     systemsVisited: 1,
     planetsScanned: 0,
-    anomaliesFound: 0,
+    surfacesVisited: 0,
+    speciesDiscovered: 0,
+    anomaliesDiscovered: 0,
     flightTimeSeconds: 0,
+  },
+  tutorial: {
+    started: false,
+    completed: false,
+    step: 'WAKE_INTRO',
+    skipped: false,
+  },
+  narrative: {
+    triggeredEventIds: [],
+    resonanceFlags: [],
   },
 };
 
@@ -178,25 +204,74 @@ export class SaveManager {
   // Save Slots & Journey State
   // ==========================================
   public async getSaveSlot(slotId = 'current_journey'): Promise<PlayerSaveSlot | null> {
+    let raw: any = null;
+
     if (!this.db) {
-      return this.memorySaveSlot.updatedAt > 0 ? { ...this.memorySaveSlot } : null;
+      raw = this.memorySaveSlot.updatedAt > 0 ? { ...this.memorySaveSlot } : null;
+    } else {
+      try {
+        raw = await new Promise<any>((resolve) => {
+          const tx = this.db!.transaction(STORE_SAVE_SLOTS, 'readonly');
+          const store = tx.objectStore(STORE_SAVE_SLOTS);
+          const req = store.get(slotId);
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => resolve(null);
+        });
+      } catch {
+        raw = null;
+      }
+    }
+
+    if (!raw) return null;
+
+    // Migrate v2 -> v3
+    if (!raw.saveVersion || raw.saveVersion < 3) {
+      raw.saveVersion = 3;
+      if (!raw.stats) {
+        raw.stats = { ...DEFAULT_SAVE_SLOT.stats };
+      } else {
+        raw.stats.surfacesVisited = raw.stats.surfacesVisited || 0;
+        raw.stats.speciesDiscovered = raw.stats.speciesDiscovered || 0;
+        raw.stats.anomaliesDiscovered = raw.stats.anomaliesFound || 0;
+      }
+      if (!raw.tutorial) {
+        raw.tutorial = { ...DEFAULT_SAVE_SLOT.tutorial };
+      }
+      if (!raw.narrative) {
+        raw.narrative = { ...DEFAULT_SAVE_SLOT.narrative };
+      }
+    }
+
+    return raw as PlayerSaveSlot;
+  }
+
+  public async clearJourney(slotId = 'current_journey'): Promise<void> {
+    this.memorySaveSlot = { ...DEFAULT_SAVE_SLOT, updatedAt: 0 };
+    this.memoryDiscoveries.clear();
+    this.memoryJournal = [];
+
+    if (!this.db) {
+      this.saveLocalStorageFallback();
+      return;
     }
 
     try {
-      return await new Promise<PlayerSaveSlot | null>((resolve) => {
-        const tx = this.db!.transaction(STORE_SAVE_SLOTS, 'readonly');
-        const store = tx.objectStore(STORE_SAVE_SLOTS);
-        const req = store.get(slotId);
-        req.onsuccess = () => resolve(req.result || null);
-        req.onerror = () => resolve(null);
+      await new Promise<void>((resolve) => {
+        const tx = this.db!.transaction([STORE_SAVE_SLOTS, STORE_DISCOVERIES, STORE_JOURNAL], 'readwrite');
+        tx.objectStore(STORE_SAVE_SLOTS).delete(slotId);
+        tx.objectStore(STORE_DISCOVERIES).clear();
+        tx.objectStore(STORE_JOURNAL).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
       });
     } catch {
-      return null;
+      this.saveLocalStorageFallback();
     }
   }
 
   public async saveJourney(slot: PlayerSaveSlot): Promise<void> {
     slot.updatedAt = Date.now();
+    slot.saveVersion = 3;
     this.memorySaveSlot = { ...slot };
 
     if (!this.db) {

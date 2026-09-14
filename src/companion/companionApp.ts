@@ -150,6 +150,12 @@ export class CompanionApp {
       onMetrics: (metrics) => {
         this.touchControls?.updateStatus(metrics.state, metrics.rttMs);
       },
+      onDialogueLine: (msg) => {
+        this.touchControls?.showDialogueLine(msg.speaker, msg.text, msg.durationMs);
+      },
+      onTutorialHint: (msg) => {
+        this.touchControls?.highlightAction(msg.action);
+      },
     });
 
     this.peer.start().catch((err) => {

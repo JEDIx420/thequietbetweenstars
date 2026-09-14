@@ -28,6 +28,8 @@ export interface PeerConnectionCallbacks {
   onRealtimeInput?: (input: RealtimeInputMessage) => void;
   onAction?: (action: ActionMessage) => void;
   onContextChange?: (ctx: GameContextMessage) => void;
+  onDialogueLine?: (msg: { speaker: string; text: string; durationMs?: number }) => void;
+  onTutorialHint?: (msg: { action: string; prompt: string }) => void;
   onMetrics?: (metrics: ConnectionMetrics) => void;
   onError?: (err: Error) => void;
 }
@@ -199,6 +201,14 @@ export class PeerConnectionManager {
 
         case 'context_change':
           this.callbacks.onContextChange?.(msg);
+          break;
+
+        case 'dialogue_line':
+          this.callbacks.onDialogueLine?.(msg);
+          break;
+
+        case 'tutorial_hint':
+          this.callbacks.onTutorialHint?.(msg);
           break;
 
         case 'handshake':

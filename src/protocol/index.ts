@@ -20,7 +20,8 @@ export type GameAction =
   | 'confirm'
   | 'cancel'
   | 'journal'
-  | 'cycle_target';
+  | 'cycle_target'
+  | 'help';
 
 export type ActionState = 'down' | 'up' | 'trigger';
 
@@ -89,6 +90,27 @@ export interface PongMessage {
   timestamp: number;
 }
 
+export interface DialogueLineMessage {
+  type: 'dialogue_line';
+  speaker: string;
+  text: string;
+  durationMs?: number;
+  timestamp: number;
+}
+
+export interface TutorialHintMessage {
+  type: 'tutorial_hint';
+  action: string;
+  prompt: string;
+  timestamp: number;
+}
+
+export interface SetCourseActionMessage {
+  type: 'set_course';
+  systemId: string;
+  timestamp: number;
+}
+
 export interface ErrorMessage {
   type: 'error';
   code: string;
@@ -106,6 +128,9 @@ export type ProtocolMessage =
   | RealtimeInputMessage
   | ActionMessage
   | GameContextMessage
+  | DialogueLineMessage
+  | TutorialHintMessage
+  | SetCourseActionMessage
   | PingMessage
   | PongMessage
   | ErrorMessage

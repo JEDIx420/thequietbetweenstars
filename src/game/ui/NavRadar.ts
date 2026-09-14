@@ -1,6 +1,17 @@
-import type { PlanetDescriptor } from '../systems/PlanetDescriptor';
+import type { PlanetDescriptor, SpaceAnomalyDescriptor } from '../systems/PlanetDescriptor';
 import type { AutopilotController } from '../flight/AutopilotController';
 import * as THREE from 'three';
+
+export interface RadarTargetItem {
+  id: string;
+  name: string;
+  type: string;
+  position: THREE.Vector3;
+  color: string;
+  isAnomaly?: boolean;
+  descriptor?: PlanetDescriptor;
+  anomaly?: SpaceAnomalyDescriptor;
+}
 
 export class NavRadar {
   public container: HTMLElement;
@@ -9,9 +20,11 @@ export class NavRadar {
   private targetInfoEl: HTMLElement;
   private autopilotController: AutopilotController;
 
-  private planets: Array<{ descriptor: PlanetDescriptor; position: THREE.Vector3 }> = [];
+  private targets: RadarTargetItem[] = [];
   private selectedIndex = 0;
   private radarRadius = 65;
+  private onTargetCycleCallback: ((target: RadarTargetItem) => void) | null = null;
+  private onOpenSystemMapCallback: (() => void) | null = null;
 
   constructor(parent: HTMLElement, autopilot: AutopilotController) {
     this.autopilotController = autopilot;
@@ -36,11 +49,12 @@ export class NavRadar {
     this.canvas = document.createElement('canvas');
     this.canvas.width = 140;
     this.canvas.height = 140;
+    this.canvas.title = 'Click to cycle target · Double-click for Map';
     this.canvas.style.cssText = `
       width: 140px;
       height: 140px;
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(15, 23, 42, 0.9) 0%, rgba(3, 7, 18, 0.95) 100%);
+      background: radial-gradient(circle, rgba(15, 23, 42, 0.92) 0%, rgba(3, 7, 18, 0.98) 100%);
       border: 1px solid rgba(56, 189, 248, 0.4);
       box-shadow: 0 0 24px rgba(56, 189, 248, 0.2), inset 0 0 16px rgba(0, 0, 0, 0.8);
       cursor: pointer;
@@ -50,57 +64,120 @@ export class NavRadar {
     // Info chip below radar
     this.targetInfoEl = document.createElement('div');
     this.targetInfoEl.style.cssText = `
-      background: rgba(15, 23, 42, 0.85);
-      border: 1px solid rgba(56, 189, 248, 0.3);
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.35);
       border-radius: 8px;
-      padding: 6px 12px;
+      padding: 7px 12px;
       font-size: 10px;
       color: #cbd5e1;
-      max-width: 180px;
+      max-width: 200px;
       text-align: right;
       line-height: 1.4;
-      backdrop-filter: blur(6px);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 14px rgba(0,0,0,0.5);
     `;
 
     this.container.appendChild(this.canvas);
     this.container.appendChild(this.targetInfoEl);
     parent.appendChild(this.container);
 
-    // Clicking radar cycles targets
     this.canvas.addEventListener('click', () => {
       this.cycleTarget();
     });
+
+    this.canvas.addEventListener('dblclick', () => {
+      if (this.onOpenSystemMapCallback) this.onOpenSystemMapCallback();
+    });
   }
 
-  public setPlanets(planets: Array<{ descriptor: PlanetDescriptor; position: THREE.Vector3 }>): void {
-    this.planets = planets;
-    if (this.planets.length > 0 && !this.autopilotController.currentTarget) {
+  public setOnTargetCycle(cb: (target: RadarTargetItem) => void): void {
+    this.onTargetCycleCallback = cb;
+  }
+
+  public setOnOpenSystemMap(cb: () => void): void {
+    this.onOpenSystemMapCallback = cb;
+  }
+
+  public setPlanets(
+    planets: Array<{ descriptor: PlanetDescriptor; position: THREE.Vector3 }>,
+    anomalies: SpaceAnomalyDescriptor[] = []
+  ): void {
+    const list: RadarTargetItem[] = [];
+
+    for (const p of planets) {
+      list.push({
+        id: p.descriptor.id,
+        name: p.descriptor.name,
+        type: p.descriptor.type,
+        position: p.position,
+        color: p.descriptor.palette?.primary || '#38bdf8',
+        descriptor: p.descriptor,
+      });
+    }
+
+    // Add space anomalies to radar targets
+    for (const a of anomalies) {
+      const angle = a.angle || 0;
+      const dist = 600 + a.distanceFromStar * 300;
+      const pos = new THREE.Vector3(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+      list.push({
+        id: a.id,
+        name: a.name,
+        type: a.type,
+        position: pos,
+        color: '#f59e0b',
+        isAnomaly: true,
+        anomaly: a,
+      });
+    }
+
+    this.targets = list;
+    if (this.targets.length > 0 && !this.autopilotController.currentTarget) {
       this.selectTargetIndex(0);
     }
   }
 
   public cycleTarget(): void {
-    if (this.planets.length === 0) return;
-    this.selectedIndex = (this.selectedIndex + 1) % this.planets.length;
+    if (this.targets.length === 0) return;
+    this.selectedIndex = (this.selectedIndex + 1) % this.targets.length;
     this.selectTargetIndex(this.selectedIndex);
   }
 
   public selectTargetIndex(index: number): void {
-    if (index >= 0 && index < this.planets.length) {
+    if (index >= 0 && index < this.targets.length) {
       this.selectedIndex = index;
-      const p = this.planets[index];
-      this.autopilotController.setTarget({
-        type: 'planet',
-        descriptor: p.descriptor,
-        position: p.position,
-      });
+      const t = this.targets[index];
+      if (t.descriptor) {
+        this.autopilotController.setTarget({
+          type: 'planet',
+          descriptor: t.descriptor,
+          position: t.position,
+        });
+      } else {
+        this.autopilotController.setTarget({
+          type: 'vector',
+          heading: t.position.clone().normalize(),
+          name: t.name,
+        });
+      }
+
+      if (this.onTargetCycleCallback) {
+        this.onTargetCycleCallback(t);
+      }
     }
   }
 
+  public getSelectedTarget(): RadarTargetItem | null {
+    if (this.targets.length === 0) return null;
+    return this.targets[this.selectedIndex] || null;
+  }
+
   public getSelectedPlanet(): { descriptor: PlanetDescriptor; position: THREE.Vector3 } | null {
-    if (this.planets.length === 0) return null;
-    return this.planets[this.selectedIndex] || null;
+    const t = this.getSelectedTarget();
+    if (t && t.descriptor) {
+      return { descriptor: t.descriptor, position: t.position };
+    }
+    return null;
   }
 
   public update(
@@ -159,24 +236,36 @@ export class NavRadar {
     ctx.arc(sunPx, sunPy, 3.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // 3. Draw Celestial Bodies (Planets)
-    for (let i = 0; i < this.planets.length; i++) {
-      const p = this.planets[i];
-      const rel = p.position.clone().sub(shipPos).applyQuaternion(invShipQuat);
+    // 3. Draw Radar Targets (Planets & Space Anomalies)
+    for (let i = 0; i < this.targets.length; i++) {
+      const t = this.targets[i];
+      const rel = t.position.clone().sub(shipPos).applyQuaternion(invShipQuat);
       const dist = Math.sqrt(rel.x * rel.x + rel.z * rel.z);
       const isSelected = i === this.selectedIndex;
 
+      const isOffscreen = dist * scale > this.radarRadius - 4;
       const r = Math.min(this.radarRadius - 4, dist * scale);
       const angle = Math.atan2(rel.x, -rel.z);
       const px = cx + Math.sin(angle) * r;
       const py = cy - Math.cos(angle) * r;
 
-      // Color from planet palette
-      const col = p.descriptor.palette.primary || '#38bdf8';
-      ctx.fillStyle = col;
-      ctx.beginPath();
-      ctx.arc(px, py, isSelected ? 4 : 2.5, 0, Math.PI * 2);
-      ctx.fill();
+      if (isOffscreen && isSelected) {
+        // Offscreen chevron pointer
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(px, py, 3, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Node
+        ctx.fillStyle = t.color;
+        ctx.beginPath();
+        if (t.isAnomaly) {
+          ctx.rect(px - 3, py - 3, 6, 6);
+        } else {
+          ctx.arc(px, py, isSelected ? 4.2 : 2.6, 0, Math.PI * 2);
+        }
+        ctx.fill();
+      }
 
       // Selected Reticle
       if (isSelected) {
@@ -197,13 +286,17 @@ export class NavRadar {
     ctx.fill();
 
     // 5. Update Target Information Chip
-    const active = this.getSelectedPlanet();
+    const active = this.getSelectedTarget();
     if (active) {
       const d = active.position.distanceTo(shipPos);
-      const autoText = this.autopilotController.isActive ? '<span style="color:#4ade80;">[AUTOPILOT ON]</span>' : '<span style="color:#94a3b8;">[TAB: Cycle]</span>';
+      const autoText = this.autopilotController.isActive
+        ? '<span style="color:#4ade80;">[AUTOPILOT ON]</span>'
+        : '<span style="color:#94a3b8;">[TAB: Cycle]</span>';
+
+      const typeLabel = active.isAnomaly ? `⚡ ${active.type}` : active.type;
       this.targetInfoEl.innerHTML = `
-        <div style="color: #38bdf8; font-weight: 600;">${active.descriptor.name}</div>
-        <div style="font-size: 9px; color: #94a3b8;">${active.descriptor.type} · ${d.toFixed(0)}u</div>
+        <div style="color: #38bdf8; font-weight: 600;">${active.name}</div>
+        <div style="font-size: 9px; color: #94a3b8;">${typeLabel} · ${d.toFixed(0)}u</div>
         <div style="font-size: 9px; margin-top: 2px;">${autoText}</div>
       `;
     } else {

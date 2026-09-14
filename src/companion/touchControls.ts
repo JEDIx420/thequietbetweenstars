@@ -94,6 +94,27 @@ export class TouchControls {
           </div>
         </div>
 
+        <!-- Ship Dialogue Mirror Banner -->
+        <div id="companion-dialogue-banner" style="
+          display: none;
+          pointer-events: auto;
+          background: rgba(10, 16, 28, 0.9);
+          border: 1px solid rgba(56, 189, 248, 0.4);
+          border-radius: 8px;
+          padding: 8px 14px;
+          margin: 6px 0;
+          font-family: ui-sans-serif, system-ui, sans-serif;
+          font-size: 12px;
+          color: #f1f5f9;
+          text-align: center;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+          backdrop-filter: blur(8px);
+          transition: all 0.3s ease;
+        ">
+          <div id="companion-dialogue-speaker" style="font-family: ui-monospace, monospace; font-size: 9px; font-weight: 700; color: #38bdf8; letter-spacing: 0.1em; margin-bottom: 2px;"></div>
+          <div id="companion-dialogue-text" style="color: #e2e8f0; line-height: 1.4;"></div>
+        </div>
+
         <!-- Center Controls Layout: Left Joystick, Center Actions, Right Throttle -->
         <div style="
           flex: 1;
@@ -502,6 +523,44 @@ export class TouchControls {
     } else {
       dot.style.background = '#facc15';
       text.textContent = state.toUpperCase();
+    }
+  }
+
+  public showDialogueLine(speaker: string, text: string, durationMs = 4000): void {
+    const banner = this.container.querySelector('#companion-dialogue-banner') as HTMLElement;
+    const speakerEl = this.container.querySelector('#companion-dialogue-speaker') as HTMLElement;
+    const textEl = this.container.querySelector('#companion-dialogue-text') as HTMLElement;
+
+    if (!banner || !speakerEl || !textEl) return;
+
+    speakerEl.textContent = speaker;
+    textEl.textContent = text;
+    banner.style.display = 'block';
+
+    setTimeout(() => {
+      banner.style.display = 'none';
+    }, durationMs);
+  }
+
+  public highlightAction(actionName: string): void {
+    let btn: HTMLElement | null = null;
+    if (actionName === 'scan') btn = this.container.querySelector('#btn-scan');
+    else if (actionName === 'map') btn = this.container.querySelector('#btn-map');
+    else if (actionName === 'autopilot') btn = this.container.querySelector('#btn-autopilot');
+    else if (actionName === 'target') btn = this.container.querySelector('#btn-target');
+    else if (actionName === 'journal') btn = this.container.querySelector('#btn-journal');
+    else if (actionName === 'throttle') btn = this.container.querySelector('#throttle-track');
+    else if (actionName === 'joystick') btn = this.container.querySelector('#joystick-base');
+
+    if (btn) {
+      btn.style.boxShadow = '0 0 20px #38bdf8, 0 0 40px #0284c7';
+      btn.style.borderColor = '#38bdf8';
+      setTimeout(() => {
+        if (btn) {
+          btn.style.boxShadow = '';
+          btn.style.borderColor = '';
+        }
+      }, 4500);
     }
   }
 
