@@ -3,36 +3,78 @@ import type { NormalizedInputState } from '../input/InputSource';
 import type { CelestialPhysicsSystem, CollisionResult } from './celestialPhysics';
 import type { ApproachController } from '../flight/ApproachController';
 
+export interface FlightTelemetryState {
+  physicsQuat: THREE.Quaternion;
+  visualQuat: THREE.Quaternion;
+  angleDeltaDeg: number;
+  yawRate: number;
+  pitchRate: number;
+  rollRate: number;
+  simSteps: number;
+  dt: number;
+  cameraUpDotWorldUp: number;
+  hasDiscontinuity: boolean;
+}
+
 export class FlightModel {
-  public shipGroup: THREE.Group;
+  // Transform hierarchy:
+  // FlightModel owns ONLY shipPhysicsRoot.position and shipPhysicsRoot.quaternion.
+  // Visual banking is applied to shipVisualRoot.
+  public shipGroup: THREE.Group; // Aliased to shipPhysicsRoot
+  public shipPhysicsRoot: THREE.Group;
+  public shipVisualRoot: THREE.Group;
+
   public position: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
   public velocity: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
   public quaternion: THREE.Quaternion = new THREE.Quaternion();
 
-  // Angular rates
-  private pitchRate = 0;
-  private yawRate = 0;
-  private rollRate = 0;
+  // Explicit angular velocities (rad/sec)
+  private yawVelocity = 0;
+  private pitchVelocity = 0;
+  private rollVelocity = 0;
   private currentThrottle = 0;
 
-  // Visual bank angle (local ship tilt during yaw turns)
-  private currentBankAngle = 0;
+  // Visual bank angle on shipVisualRoot
+  private visualBankAngle = 0;
 
-  // Refined flight dynamics parameters
+  // Fixed timestep physics accumulator
+  private timeAccumulator = 0;
+  private readonly fixedTimeStep = 1 / 60; // 60 Hz deterministic simulation
+  private readonly maxSubSteps = 5;
+
+  // Arcade flight parameters
   private readonly maxCruiseSpeed = 160;
-  private readonly baseAcceleration = 75;
+  private readonly baseAcceleration = 78;
   public accelerationMultiplier = 1.0;
-  private readonly linearDamping = 0.988; // Gentle glide
-  private readonly turnSpeed = 1.75;
-  private readonly angularDamping = 0.86;
-  private readonly autoBankFactor = 0.55;
+  private readonly linearDamping = 0.988;
+  private readonly turnRateMax = 1.85; // rad/s
+  private readonly angularDampingFactor = 12.0; // Exponential response rate
+  private readonly autoBankFactor = 0.52; // Visual roll into turns
+  private readonly horizonAssistStrength = 0.85; // Gentle upright restorative tendency
 
-  // Considered Chase Camera Follow
-  private cameraTargetPos: THREE.Vector3 = new THREE.Vector3(0, 3, 10);
-  private cameraLookTarget: THREE.Vector3 = new THREE.Vector3(0, 0, -20);
+  // Cinematic Chase Camera Rig
+  private cameraTargetPos: THREE.Vector3 = new THREE.Vector3(0, 3.2, 10.5);
+  private cameraLookTarget: THREE.Vector3 = new THREE.Vector3(0, 0, -22);
+  private currentCameraUp: THREE.Vector3 = new THREE.Vector3(0, 1, 0);
   private currentFov = 64;
+  private isCameraInitialized = false;
 
-  // Collision & safety state
+  // Telemetry & discontinuity tracking
+  private prevQuat: THREE.Quaternion = new THREE.Quaternion();
+  public telemetry: FlightTelemetryState = {
+    physicsQuat: new THREE.Quaternion(),
+    visualQuat: new THREE.Quaternion(),
+    angleDeltaDeg: 0,
+    yawRate: 0,
+    pitchRate: 0,
+    rollRate: 0,
+    simSteps: 0,
+    dt: 0,
+    cameraUpDotWorldUp: 1,
+    hasDiscontinuity: false,
+  };
+
+  // Collision & safety systems
   public lastCollision: CollisionResult = { hasCollided: false, penetrationDepth: 0 };
   private physicsSystem: CelestialPhysicsSystem | null = null;
   private approachController: ApproachController | null = null;
@@ -40,12 +82,28 @@ export class FlightModel {
   constructor(
     shipGroup: THREE.Group,
     physicsSystem?: CelestialPhysicsSystem,
-    approachController?: ApproachController
+    approachController?: ApproachController,
+    shipVisualRoot?: THREE.Group
   ) {
+    this.shipPhysicsRoot = shipGroup;
     this.shipGroup = shipGroup;
+
+    if (shipVisualRoot) {
+      this.shipVisualRoot = shipVisualRoot;
+    } else {
+      // Find or create child visual root
+      if (shipGroup.children.length > 0 && (shipGroup.children[0] as THREE.Group).isGroup) {
+        this.shipVisualRoot = shipGroup.children[0] as THREE.Group;
+      } else {
+        this.shipVisualRoot = new THREE.Group();
+        this.shipPhysicsRoot.add(this.shipVisualRoot);
+      }
+    }
+
     this.physicsSystem = physicsSystem || null;
     this.approachController = approachController || null;
-    this.quaternion.setFromEuler(new THREE.Euler(0, 0, 0, 'YXZ'));
+    this.quaternion.identity();
+    this.prevQuat.copy(this.quaternion);
   }
 
   public setPhysicsSystem(physics: CelestialPhysicsSystem): void {
@@ -57,7 +115,6 @@ export class FlightModel {
   }
 
   public onRebase(offset: THREE.Vector3, camera?: THREE.PerspectiveCamera): void {
-    // When floating origin rebases, camera offsets and camera itself shift cleanly
     this.cameraTargetPos.add(offset);
     this.cameraLookTarget.add(offset);
     if (camera) {
@@ -66,76 +123,147 @@ export class FlightModel {
   }
 
   public update(input: NormalizedInputState, dt: number, camera: THREE.PerspectiveCamera): void {
-    const clampedDt = Math.min(dt, 0.06);
+    const clampedDt = Math.min(dt, 0.1); // Cap browser lag spikes to 100ms
+    this.timeAccumulator += clampedDt;
 
-    // 1. Smooth Throttle Response
-    const throttleTarget = Math.max(0, Math.min(1, input.throttle));
-    const throttleRampSpeed = throttleTarget > this.currentThrottle ? 3.5 : 2.5;
-    this.currentThrottle += (throttleTarget - this.currentThrottle) * Math.min(1, clampedDt * throttleRampSpeed);
+    let simSteps = 0;
+    while (this.timeAccumulator >= this.fixedTimeStep && simSteps < this.maxSubSteps) {
+      this.stepSimulation(input, this.fixedTimeStep);
+      this.timeAccumulator -= this.fixedTimeStep;
+      simSteps++;
+    }
 
-    // 2. Coordinated Angular Steering
-    const targetPitchRate = input.axes.y * this.turnSpeed;
-    const targetYawRate = -input.axes.x * this.turnSpeed;
-    const targetRollRate = (-input.roll) * this.turnSpeed;
+    if (simSteps >= this.maxSubSteps) {
+      this.timeAccumulator = 0;
+    }
 
-    const angularEase = 1 - Math.pow(this.angularDamping, clampedDt * 60);
-    this.pitchRate += (targetPitchRate - this.pitchRate) * angularEase;
-    this.yawRate += (targetYawRate - this.yawRate) * angularEase;
-    this.rollRate += (targetRollRate - this.rollRate) * angularEase;
+    // Apply strict transform ownership
+    // 1. Physics root receives position and orientation quaternion
+    this.shipPhysicsRoot.position.copy(this.position);
+    this.shipPhysicsRoot.quaternion.copy(this.quaternion);
 
-    // Apply incremental rotation to ship quaternion
-    const deltaRot = new THREE.Quaternion();
-    const eulerDelta = new THREE.Euler(
-      this.pitchRate * clampedDt,
-      this.yawRate * clampedDt,
-      this.rollRate * clampedDt,
-      'YXZ'
-    );
-    deltaRot.setFromEuler(eulerDelta);
-    this.quaternion.multiply(deltaRot);
-
-    // 3. Visual Banking Tilt into Turns
+    // 2. Visual banking tilt is applied strictly to shipVisualRoot
     const targetBank = -input.axes.x * this.autoBankFactor;
-    this.currentBankAngle += (targetBank - this.currentBankAngle) * Math.min(1, clampedDt * 6);
+    this.visualBankAngle += (targetBank - this.visualBankAngle) * Math.min(1, clampedDt * 8.0);
+    this.shipVisualRoot.rotation.set(0, 0, 0);
+    this.shipVisualRoot.rotateZ(this.visualBankAngle);
 
-    const bankQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), this.currentBankAngle);
-    const finalVisualQuat = this.quaternion.clone().multiply(bankQuat);
-    this.shipGroup.quaternion.copy(finalVisualQuat);
+    // 3. Angular discontinuity detection
+    const angleDeltaRad = 2 * Math.acos(Math.min(1.0, Math.abs(this.quaternion.dot(this.prevQuat))));
+    const angleDeltaDeg = (angleDeltaRad * 180) / Math.PI;
+    const hasDiscontinuity = angleDeltaDeg > 45.0 && simSteps > 0;
+    this.prevQuat.copy(this.quaternion);
 
-    // 4. Momentum & Thrust Vector
+    // 4. Update Cinematic Chase Camera
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
+    const speed = this.velocity.length();
+    this.updateCinematicCamera(camera, clampedDt, forward, speed);
+
+    // 5. Update Telemetry
+    this.telemetry.physicsQuat.copy(this.quaternion);
+    this.telemetry.visualQuat.copy(this.shipVisualRoot.quaternion);
+    this.telemetry.angleDeltaDeg = angleDeltaDeg;
+    this.telemetry.yawRate = this.yawVelocity;
+    this.telemetry.pitchRate = this.pitchVelocity;
+    this.telemetry.rollRate = this.rollVelocity;
+    this.telemetry.simSteps = simSteps;
+    this.telemetry.dt = clampedDt;
+    this.telemetry.cameraUpDotWorldUp = camera.up.dot(new THREE.Vector3(0, 1, 0));
+    this.telemetry.hasDiscontinuity = hasDiscontinuity;
+  }
+
+  private stepSimulation(input: NormalizedInputState, stepDt: number): void {
+    // 1. Smooth Throttle Response
+    const throttleTarget = THREE.MathUtils.clamp(input.throttle, 0, 1);
+    const throttleRampSpeed = throttleTarget > this.currentThrottle ? 3.8 : 2.6;
+    this.currentThrottle += (throttleTarget - this.currentThrottle) * Math.min(1, stepDt * throttleRampSpeed);
+
+    // 2. Target Angular Rates from Input
+    const targetPitch = input.axes.y * this.turnRateMax;
+    const targetYaw = -input.axes.x * this.turnRateMax;
+    const targetRoll = (-input.roll) * this.turnRateMax;
+
+    // Frame-rate independent exponential approach
+    const angularBlend = 1 - Math.exp(-this.angularDampingFactor * stepDt);
+    this.pitchVelocity += (targetPitch - this.pitchVelocity) * angularBlend;
+    this.yawVelocity += (targetYaw - this.yawVelocity) * angularBlend;
+    this.rollVelocity += (targetRoll - this.rollVelocity) * angularBlend;
+
+    // 3. Local Axis-Angle Quaternion Integration
+    // Derive current local basis vectors from existing quaternion
+    const localRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.quaternion);
+    const localUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);
+    const localForward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
+
+    // Pitch around local right
+    if (Math.abs(this.pitchVelocity) > 0.0001) {
+      const qPitch = new THREE.Quaternion().setFromAxisAngle(localRight, this.pitchVelocity * stepDt);
+      this.quaternion.premultiply(qPitch);
+    }
+
+    // Yaw around local up
+    if (Math.abs(this.yawVelocity) > 0.0001) {
+      const qYaw = new THREE.Quaternion().setFromAxisAngle(localUp, this.yawVelocity * stepDt);
+      this.quaternion.premultiply(qYaw);
+    }
+
+    // Roll around local forward
+    if (Math.abs(this.rollVelocity) > 0.0001) {
+      const qRoll = new THREE.Quaternion().setFromAxisAngle(localForward, this.rollVelocity * stepDt);
+      this.quaternion.premultiply(qRoll);
+    }
+
+    // 4. Soft Horizon Restorative Tendency
+    // If player is not actively commanding roll, gently nudge craft upright relative to reference up
+    if (Math.abs(input.roll) < 0.05) {
+      const currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);
+      const worldUp = new THREE.Vector3(0, 1, 0);
+
+      // Determine tilt along roll axis
+      const projectedUp = currentUp.clone().projectOnPlane(localForward).normalize();
+      const dotUp = projectedUp.dot(worldUp);
+
+      if (dotUp > -0.5 && dotUp < 0.999) {
+        // Cross product gives correction sign around forward axis
+        const cross = new THREE.Vector3().crossVectors(projectedUp, worldUp);
+        const correctionAngle = cross.dot(localForward) * this.horizonAssistStrength * stepDt;
+        const qAssist = new THREE.Quaternion().setFromAxisAngle(localForward, correctionAngle);
+        this.quaternion.premultiply(qAssist);
+      }
+    }
+
+    // Strict invariant: normalize quaternion every step to prevent drift or NaN
+    this.quaternion.normalize();
+
+    // 5. Momentum & Propulsion Integration
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
     const accel = this.baseAcceleration * this.accelerationMultiplier;
-    const effectiveThrust = Math.pow(this.currentThrottle, 1.3) * accel;
-    this.velocity.addScaledVector(forward, effectiveThrust * clampedDt);
+    const effectiveThrust = Math.pow(this.currentThrottle, 1.25) * accel;
+    this.velocity.addScaledVector(forward, effectiveThrust * stepDt);
 
-    // Space inertia damping
-    this.velocity.multiplyScalar(Math.pow(this.linearDamping, clampedDt * 60));
+    // Space drag / velocity damping
+    this.velocity.multiplyScalar(Math.pow(this.linearDamping, stepDt * 60));
 
     // Approach envelope intelligent speed braking
     if (this.approachController) {
       this.approachController.applyApproachBraking(this.velocity, this.position);
     }
 
-    // Cap velocity
+    // Cap maximum cruise speed
     const speed = this.velocity.length();
     if (speed > this.maxCruiseSpeed) {
       this.velocity.setLength(this.maxCruiseSpeed);
     }
 
-    // 5. Update Position and Resolve Celestial Collisions
-    this.position.addScaledVector(this.velocity, clampedDt);
+    // 6. Update Position & Resolve Physics Collisions
+    this.position.addScaledVector(this.velocity, stepDt);
 
     if (this.physicsSystem) {
-      this.lastCollision = this.physicsSystem.resolvePhysics(this.position, this.velocity, clampedDt);
+      this.lastCollision = this.physicsSystem.resolvePhysics(this.position, this.velocity, stepDt);
     }
-
-    this.shipGroup.position.copy(this.position);
-
-    // 6. Considered Chase Camera Follow
-    this.updateCamera(camera, clampedDt, forward, speed);
   }
 
-  private updateCamera(
+  private updateCinematicCamera(
     camera: THREE.PerspectiveCamera,
     dt: number,
     forward: THREE.Vector3,
@@ -143,32 +271,41 @@ export class FlightModel {
   ): void {
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);
 
-    // Dynamic camera distance: expands back slightly with speed
     const speedRatio = Math.min(1, speed / this.maxCruiseSpeed);
-    const distanceBehind = 7.8 + speedRatio * 3.2;
-    const heightAbove = 2.4 + speedRatio * 0.6;
+    const distanceBehind = 8.2 + speedRatio * 3.6;
+    const heightAbove = 2.6 + speedRatio * 0.8;
 
     const desiredCamPos = this.position
       .clone()
       .sub(forward.clone().multiplyScalar(distanceBehind))
       .add(up.clone().multiplyScalar(heightAbove));
 
-    // Look-ahead target ahead of craft
-    const lookAheadDist = 18 + speedRatio * 12;
+    const lookAheadDist = 20 + speedRatio * 14;
     const desiredLookTarget = this.position.clone().add(forward.clone().multiplyScalar(lookAheadDist));
 
-    // Smooth spring-damper lerp
-    const camFollowLerp = 1 - Math.pow(0.002, dt);
-    this.cameraTargetPos.lerp(desiredCamPos, camFollowLerp);
-    this.cameraLookTarget.lerp(desiredLookTarget, camFollowLerp);
+    // Soft camera up interpolation preventing horizon flips
+    const desiredUp = up.clone().lerp(new THREE.Vector3(0, 1, 0), 0.25).normalize();
+
+    if (!this.isCameraInitialized) {
+      this.cameraTargetPos.copy(desiredCamPos);
+      this.cameraLookTarget.copy(desiredLookTarget);
+      this.currentCameraUp.copy(desiredUp);
+      this.isCameraInitialized = true;
+    } else {
+      const posLerp = 1 - Math.pow(0.003, dt);
+      const lookLerp = 1 - Math.pow(0.0015, dt);
+      this.cameraTargetPos.lerp(desiredCamPos, posLerp);
+      this.cameraLookTarget.lerp(desiredLookTarget, lookLerp);
+      this.currentCameraUp.lerp(desiredUp, dt * 5.0).normalize();
+    }
 
     camera.position.copy(this.cameraTargetPos);
-    camera.up.copy(up);
+    camera.up.copy(this.currentCameraUp);
     camera.lookAt(this.cameraLookTarget);
 
-    // Dynamic FOV for speed sensation (63° to 71°)
-    const targetFov = 63 + speedRatio * 8;
-    this.currentFov += (targetFov - this.currentFov) * Math.min(1, dt * 3);
+    // Dynamic FOV easing (63° cruise to 72° boost)
+    const targetFov = 63 + speedRatio * 9;
+    this.currentFov += (targetFov - this.currentFov) * Math.min(1, dt * 3.5);
     camera.fov = this.currentFov;
     camera.updateProjectionMatrix();
   }
@@ -182,6 +319,6 @@ export class FlightModel {
   }
 
   public getSteeringRates(): { yaw: number; pitch: number; roll: number } {
-    return { yaw: this.yawRate, pitch: this.pitchRate, roll: this.rollRate };
+    return { yaw: this.yawVelocity, pitch: this.pitchVelocity, roll: this.rollVelocity };
   }
 }

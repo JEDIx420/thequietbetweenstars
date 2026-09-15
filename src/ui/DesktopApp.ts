@@ -34,11 +34,13 @@ import { NavRadar } from '../game/ui/NavRadar';
 import { DeepCruiseController } from '../game/flight/DeepCruiseController';
 import { AutopilotController } from '../game/flight/AutopilotController';
 import { saveManager, type PlayerSaveSlot, type ShipModule } from '../persistence/SaveManager';
+import { TitleRevealSequence } from './TitleRevealSequence';
+import { NewJourneyCinematic } from './NewJourneyCinematic';
 import type { NPCIdentity } from '../game/ecology/SentientSpeciesProfile';
 import type { ConnectionState } from '../connection/connectionState';
 import type { StarSystemDescriptor } from '../game/systems/PlanetDescriptor';
 
-export type UIState = 'title' | 'mode_select' | 'pairing' | 'playing';
+export type UIState = 'title' | 'mode_select' | 'pairing' | 'playing' | 'cinematic';
 
 export class DesktopApp {
   private container: HTMLElement;
@@ -110,6 +112,8 @@ export class DesktopApp {
   private isRunning = false;
   private lastDeflectionSoundTime = 0;
   private currentControlMode: 'companion' | 'keyboard' = 'keyboard';
+  private newJourneyCinematic!: NewJourneyCinematic;
+  private audioUnlocked = false;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -127,7 +131,13 @@ export class DesktopApp {
 
     this.initGameEngine();
     this.setupDebugKeyListeners();
-    this.renderTitleScreen();
+    this.setupAudioUnlockListeners();
+
+    // 3-Second Live Title Reveal Sequence on page load
+    const titleSequence = new TitleRevealSequence(this.container);
+    titleSequence.play(() => {
+      this.renderTitleScreen();
+    });
   }
 
   public getUiState(): UIState {
@@ -239,6 +249,9 @@ export class DesktopApp {
       },
     });
 
+    // 5. Cinematic Director
+    this.newJourneyCinematic = new NewJourneyCinematic(this.container);
+
     // Wire music contexts to state machine
     this.stateMachine.onPhaseChange((_from, to) => {
       this.debugOverlay.setFlightPhase(to);
@@ -282,6 +295,16 @@ export class DesktopApp {
       this.tutorialDirector.onPlayerThrottle();
     }
     this.tutorialDirector.update();
+
+    if (this.uiState === 'cinematic' && this.newJourneyCinematic.getIsPlaying()) {
+      // Cinematic Intro Camera Directing
+      this.newJourneyCinematic.update(dt, this.renderer.camera);
+      const shipPos = this.flightModel.position;
+      this.spaceScene.update(dt, shipPos, this.renderer.camera.position, 0.2, 0, 0);
+      this.renderer.render(this.spaceScene.scene);
+      requestAnimationFrame((t) => this.gameLoop(t));
+      return;
+    }
 
     if (phase === FlightPhase.SURFACE_FLIGHT && this.surfaceScene) {
       // 1. Surface Simulation Domain
@@ -517,6 +540,11 @@ export class DesktopApp {
         }
       }
 
+      // Handle F3 Debug Telemetry Overlay in Space
+      if (this.debugTelemetryVisible) {
+        this.updateDebugTelemetryOverlay(null);
+      }
+
       this.renderer.render(this.spaceScene.scene);
     }
 
@@ -688,6 +716,26 @@ export class DesktopApp {
     this.peer.sendContextChange(context as any, layout as any);
   }
 
+  private setupAudioUnlockListeners(): void {
+    const unlockAudio = async () => {
+      if (this.audioUnlocked) return;
+      this.audioUnlocked = true;
+      try {
+        await audio.start();
+        audio.playTitleOverture();
+        const hint = document.getElementById('audio-unlock-hint');
+        if (hint) hint.style.opacity = '0';
+      } catch (err) {
+        console.warn('[DesktopApp] Audio unlock prevented:', err);
+      }
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
+  }
+
   private async renderTitleScreen(): Promise<void> {
     this.uiState = 'title';
     this.hasSavedJourney = await saveManager.hasSavedJourney();
@@ -774,12 +822,25 @@ export class DesktopApp {
             min-width: 260px;
           ">${this.hasSavedJourney ? 'NEW JOURNEY' : 'BEGIN JOURNEY'}</button>
         </div>
+
+        <div id="audio-unlock-hint" style="
+          margin-top: 28px;
+          font-family: ui-monospace, monospace;
+          font-size: 11px;
+          letter-spacing: 0.2em;
+          color: #38bdf8;
+          opacity: ${this.audioUnlocked ? '0' : '0.75'};
+          transition: opacity 0.4s ease;
+        ">
+          CLICK ANYWHERE FOR TITLE OVERTURE
+        </div>
       </div>
     `;
 
     this.uiContainer.querySelector('#btn-continue')?.addEventListener('click', async () => {
       await audio.start();
-      audio.playTitleMusic();
+      audio.stopTitleOverture();
+      audio.setContext('cruise');
       await this.loadSavedJourney();
       this.renderModeSelectScreen();
     });
@@ -787,7 +848,8 @@ export class DesktopApp {
     const btnBegin = this.uiContainer.querySelector('#btn-begin') as HTMLElement;
     btnBegin.addEventListener('click', async () => {
       await audio.start();
-      audio.playTitleMusic();
+      audio.stopTitleOverture();
+      audio.setContext('cruise');
       if (this.hasSavedJourney) {
         await saveManager.clearJourney();
         this.visitedSystems.clear();
@@ -799,7 +861,13 @@ export class DesktopApp {
         this.tutorialDirector.reset();
       }
       await storage.updateSettings({ introSeen: true });
-      this.renderModeSelectScreen();
+
+      // Trigger 18-second in-engine New Journey Cinematic
+      this.uiState = 'cinematic';
+      this.uiContainer.innerHTML = '';
+      this.newJourneyCinematic.play(this.flightModel.position, () => {
+        this.renderModeSelectScreen();
+      });
     });
   }
 
@@ -1921,7 +1989,7 @@ export class DesktopApp {
     });
   }
 
-  private updateDebugTelemetryOverlay(t: any): void {
+  private updateDebugTelemetryOverlay(data: any): void {
     if (!this.debugTelemetryEl) {
       this.debugTelemetryEl = document.createElement('div');
       this.debugTelemetryEl.id = 'debug-flight-telemetry';
@@ -1940,27 +2008,50 @@ export class DesktopApp {
         z-index: 1000;
         pointer-events: none;
         box-shadow: 0 4px 20px rgba(0,0,0,0.6);
-        min-width: 280px;
+        min-width: 300px;
       `;
       this.container.appendChild(this.debugTelemetryEl);
     }
 
     this.debugTelemetryEl.style.display = 'block';
-    this.debugTelemetryEl.innerHTML = `
-      <div style="color: #38bdf8; font-weight: 700; border-bottom: 1px solid rgba(56, 189, 248, 0.3); padding-bottom: 4px; margin-bottom: 6px;">
-        FLIGHT MODEL TELEMETRY [F3]
-      </div>
-      <div>Pos XZ: <span style="color: #f8fafc;">${t.shipPos.x.toFixed(1)}, ${t.shipPos.z.toFixed(1)}</span></div>
-      <div>Ship Y (Alt): <span style="color: #f8fafc;">${t.shipPos.y.toFixed(2)}m</span></div>
-      <div>Ground (Under): <span style="color: #94a3b8;">${t.groundHeight.toFixed(2)}m</span></div>
-      <div>Anticipated Ground: <span style="color: #94a3b8;">${t.anticipatedGround.toFixed(2)}m</span></div>
-      <div>Actual AGL: <span style="color: #4ade80;">${t.actualAGL.toFixed(2)}m</span></div>
-      <div>Desired AGL: <span style="color: #38bdf8;">${t.desiredAGL.toFixed(1)}m</span></div>
-      <div>Vert Velocity: <span style="color: ${t.verticalVelocity >= 0 ? '#4ade80' : '#f87171'};">${t.verticalVelocity.toFixed(2)} m/s</span></div>
-      <div>Vert Accel: <span style="color: #cbd5e1;">${t.verticalAcceleration.toFixed(2)} m/s²</span></div>
-      <div>Horizontal Speed: <span style="color: #facc15;">${t.speedMps} m/s</span></div>
-      <div>Frame dt: <span style="color: #64748b;">${(t.dt * 1000).toFixed(1)} ms</span></div>
-    `;
+
+    if (this.stateMachine.getPhase() === FlightPhase.SURFACE_FLIGHT) {
+      this.debugTelemetryEl.innerHTML = `
+        <div style="color: #38bdf8; font-weight: 700; border-bottom: 1px solid rgba(56, 189, 248, 0.3); padding-bottom: 4px; margin-bottom: 6px;">
+          SURFACE CORRIDOR TELEMETRY [F3]
+        </div>
+        <div>Pos XZ: <span style="color: #f8fafc;">${data.shipPos.x.toFixed(1)}, ${data.shipPos.z.toFixed(1)}</span></div>
+        <div>Ship Y (Alt): <span style="color: #f8fafc;">${data.shipPos.y.toFixed(2)}m</span></div>
+        <div>Ground (Under): <span style="color: #94a3b8;">${data.groundHeight.toFixed(2)}m</span></div>
+        <div>Anticipated Ground: <span style="color: #94a3b8;">${data.anticipatedGround.toFixed(2)}m</span></div>
+        <div>Actual AGL: <span style="color: #4ade80;">${data.actualAGL.toFixed(2)}m</span></div>
+        <div>Desired AGL: <span style="color: #38bdf8;">${data.desiredAGL.toFixed(1)}m</span></div>
+        <div>Vert Velocity: <span style="color: ${data.verticalVelocity >= 0 ? '#4ade80' : '#f87171'};">${data.verticalVelocity.toFixed(2)} m/s</span></div>
+        <div>Vert Accel: <span style="color: #cbd5e1;">${data.verticalAcceleration.toFixed(2)} m/s²</span></div>
+        <div>Horizontal Speed: <span style="color: #facc15;">${data.speedMps} m/s</span></div>
+        <div>Terrain Assist: <span style="color: ${data.terrainAssistActive ? '#38bdf8' : '#64748b'};">${data.terrainAssistActive ? 'ACTIVE [CREST CLIMB]' : 'STANDBY'}</span></div>
+        <div>Frame dt: <span style="color: #64748b;">${(data.dt * 1000).toFixed(1)} ms</span></div>
+      `;
+    } else {
+      const q = this.flightModel.quaternion;
+      const vq = this.flightModel.shipVisualRoot.quaternion;
+      const telem = this.flightModel.telemetry;
+      this.debugTelemetryEl.innerHTML = `
+        <div style="color: #38bdf8; font-weight: 700; border-bottom: 1px solid rgba(56, 189, 248, 0.3); padding-bottom: 4px; margin-bottom: 6px;">
+          SPACE ARCADE FLIGHT TELEMETRY [F3]
+        </div>
+        <div>Speed: <span style="color: #facc15;">${Math.round(this.flightModel.getSpeed())} m/s</span></div>
+        <div>Throttle: <span style="color: #38bdf8;">${Math.round(this.flightModel.getThrottle() * 100)}%</span></div>
+        <div>Phys Quat: <span style="color: #94a3b8;">[${q.x.toFixed(2)}, ${q.y.toFixed(2)}, ${q.z.toFixed(2)}, ${q.w.toFixed(2)}]</span></div>
+        <div>Vis Bank Quat: <span style="color: #94a3b8;">[${vq.x.toFixed(2)}, ${vq.y.toFixed(2)}, ${vq.z.toFixed(2)}, ${vq.w.toFixed(2)}]</span></div>
+        <div>Angular Delta: <span style="color: ${telem.angleDeltaDeg > 35 ? '#f87171' : '#4ade80'};">${telem.angleDeltaDeg.toFixed(2)}°/frame</span></div>
+        <div>Yaw Rate: <span style="color: #cbd5e1;">${telem.yawRate.toFixed(2)} rad/s</span></div>
+        <div>Pitch Rate: <span style="color: #cbd5e1;">${telem.pitchRate.toFixed(2)} rad/s</span></div>
+        <div>Roll Rate: <span style="color: #cbd5e1;">${telem.rollRate.toFixed(2)} rad/s</span></div>
+        <div>Horizon Up Dot: <span style="color: #38bdf8;">${telem.cameraUpDotWorldUp.toFixed(3)}</span></div>
+        <div>Discontinuity: <span style="color: ${telem.hasDiscontinuity ? '#f87171' : '#4ade80'};">${telem.hasDiscontinuity ? 'DETECTED (>45°)' : 'NONE (STABLE)'}</span></div>
+      `;
+    }
   }
 
   public dispose(): void {

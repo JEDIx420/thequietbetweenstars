@@ -9,7 +9,9 @@ import { CourierPod } from '../flight/CourierPod';
 
 export class SpaceScene {
   public scene: THREE.Scene;
-  public shipGroup: THREE.Group;
+  public shipGroup: THREE.Group; // Aliased to shipPhysicsRoot for external access
+  public shipPhysicsRoot: THREE.Group;
+  public shipVisualRoot: THREE.Group;
   public surveyCraft: SurveyCraft;
   public physics: CelestialPhysicsSystem;
   public infiniteBackground: InfiniteBackground;
@@ -191,10 +193,18 @@ export class SpaceScene {
       { descriptor: this.zephyrDescriptor, position: this.moonZephyrPos },
     ];
 
-    // 7. Survey Spacecraft
+    // 7. Survey Spacecraft & Explicit Transform Hierarchy
+    // shipPhysicsRoot (position, physical quaternion)
+    // └── shipVisualRoot (visual banking tilt)
+    //     └── surveyCraft.group (internal mesh animations only)
+    this.shipPhysicsRoot = new THREE.Group();
+    this.shipVisualRoot = new THREE.Group();
     this.surveyCraft = new SurveyCraft();
-    this.shipGroup = this.surveyCraft.group;
-    this.shipRoot.add(this.shipGroup);
+
+    this.shipVisualRoot.add(this.surveyCraft.group);
+    this.shipPhysicsRoot.add(this.shipVisualRoot);
+    this.shipGroup = this.shipPhysicsRoot;
+    this.shipRoot.add(this.shipPhysicsRoot);
 
     // 8. Holographic Scanner Pulse
     this.scanWave = this.createScanWave();
@@ -492,16 +502,17 @@ export class SpaceScene {
     shipPos: THREE.Vector3,
     cameraPos: THREE.Vector3,
     throttle: number,
-    steeringYaw = 0,
-    steeringPitch = 0
+    _steeringYaw = 0,
+    _steeringPitch = 0
   ): void {
     this.clock += dt;
 
     // 1. Update Infinite Starfield & Nebula to follow camera (with warp hyperspace stretch)
     this.infiniteBackground.update(cameraPos, this.clock, this.warpFactor, this.warpHeading);
 
-    // 2. Survey Craft visual animations
-    this.surveyCraft.update(dt, throttle, steeringYaw, steeringPitch);
+    // 2. Survey Craft internal animations (strictly never alters physics transform)
+    const flightMode = this.warpFactor > 0.1 ? 'warp' : 'space';
+    this.surveyCraft.updateVisuals(dt, throttle, flightMode);
 
     // 3. Solar Corona Multi-harmonic Pulsations
     const pulse1 = Math.sin(this.clock * 0.7) * 0.035;

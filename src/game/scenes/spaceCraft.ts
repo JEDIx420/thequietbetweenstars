@@ -1,217 +1,326 @@
 import * as THREE from 'three';
 
+export type CraftFlightMode = 'space' | 'surface' | 'warp';
+
+interface EngineMeshSet {
+  housing: THREE.Mesh;
+  core: THREE.Mesh;
+  innerPlume: THREE.Mesh;
+  outerPlume: THREE.Mesh;
+}
+
+interface WingVaneSet {
+  rootPivot: THREE.Group;
+  vaneMesh: THREE.Mesh;
+  sensorArray: THREE.Mesh;
+  strobeLight?: THREE.Mesh;
+}
+
 export class SurveyCraft {
   public group: THREE.Group;
 
-  // Visual module mount groups
+  // Visual module hierarchy
   private hullGroup: THREE.Group;
-  private wingGroup: THREE.Group;
-  private engineGroup: THREE.Group;
-  private scannerGroup: THREE.Group;
+  private cockpitGroup: THREE.Group;
+  private sensorGroup: THREE.Group;
   private moduleVisualsGroup: THREE.Group;
 
-  // Dynamic visual elements
-  private leftThrusterCore: THREE.Mesh;
-  private rightThrusterCore: THREE.Mesh;
-  private leftThrusterInnerPlume: THREE.Mesh;
-  private rightThrusterInnerPlume: THREE.Mesh;
-  private leftThrusterOuterPlume: THREE.Mesh;
-  private rightThrusterOuterPlume: THREE.Mesh;
-  private sensorGlow: THREE.Mesh;
-  private portStrobe: THREE.Mesh;
-  private starStrobe: THREE.Mesh;
+  // 4 Articulated Survey Vanes (Upper Left, Upper Right, Lower Left, Lower Right)
+  private vaneUL!: WingVaneSet;
+  private vaneUR!: WingVaneSet;
+  private vaneLL!: WingVaneSet;
+  private vaneLR!: WingVaneSet;
 
-  // Installed upgrade visuals
+  // 4 Engine Thruster Clusters
+  private engines: EngineMeshSet[] = [];
+
+  // Strobes & Sensor Emitters
+  private sensorDome!: THREE.Mesh;
+  private sensorFieldRings: THREE.Mesh[] = [];
+  private strobes: THREE.Mesh[] = [];
+
+  // Installed upgrade attachments
   private installedModuleVisuals: Map<string, THREE.Object3D> = new Map();
 
+  // Internal animation state
   private clock = 0;
+  private currentMode: CraftFlightMode = 'space';
+  private wingSpreadFactor = 1.0; // 1.0 = full X deployment in space, 0.25 = tucked in atmospheric/surface flight
 
   constructor() {
     this.group = new THREE.Group();
 
     this.hullGroup = new THREE.Group();
-    this.wingGroup = new THREE.Group();
-    this.engineGroup = new THREE.Group();
-    this.scannerGroup = new THREE.Group();
+    this.cockpitGroup = new THREE.Group();
+    this.sensorGroup = new THREE.Group();
     this.moduleVisualsGroup = new THREE.Group();
 
     this.group.add(this.hullGroup);
-    this.group.add(this.wingGroup);
-    this.group.add(this.engineGroup);
-    this.group.add(this.scannerGroup);
+    this.group.add(this.cockpitGroup);
+    this.group.add(this.sensorGroup);
     this.group.add(this.moduleVisualsGroup);
 
-    // Refined PBR Materials
-    const hullMat = new THREE.MeshStandardMaterial({
-      color: 0xf1f5f9, // Clean warm ceramic white
+    // Modern Sci-Fi Materials
+    const primaryMat = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc, // Off-white aerospace ceramic
+      roughness: 0.32,
+      metalness: 0.25,
+      flatShading: true,
+    });
+
+    const accentMat = new THREE.MeshStandardMaterial({
+      color: 0x0284c7, // Scientific cerulean blue accent
       roughness: 0.28,
-      metalness: 0.35,
+      metalness: 0.45,
       flatShading: true,
     });
 
-    const trimMat = new THREE.MeshStandardMaterial({
-      color: 0xf97316, // Survey orange
-      roughness: 0.3,
-      metalness: 0.4,
-      flatShading: true,
-    });
-
-    const darkMetalMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      roughness: 0.4,
-      metalness: 0.85,
+    const titaniumMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b, // Dark titanium alloy
+      roughness: 0.38,
+      metalness: 0.88,
     });
 
     const canopyMat = new THREE.MeshStandardMaterial({
-      color: 0x0f172a,
-      roughness: 0.05,
+      color: 0x020617, // Deep tinted obsidian glass
+      roughness: 0.04,
       metalness: 0.95,
+      envMapIntensity: 1.5,
     });
 
-    const sensorMat = new THREE.MeshBasicMaterial({
+    const glowCyanMat = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
       transparent: true,
       opacity: 0.85,
     });
 
-    // 1. Sleek Faceted Fuselage
-    // Nose Cone
-    const noseGeo = new THREE.ConeGeometry(0.75, 2.4, 5);
-    noseGeo.rotateX(Math.PI / 2);
-    noseGeo.scale(1.15, 0.45, 1);
-    const nose = new THREE.Mesh(noseGeo, hullMat);
-    nose.position.set(0, 0, -1.9);
+    // 1. Sleek Long Fuselage & Nose Probe
+    this.buildFuselage(primaryMat, accentMat, titaniumMat);
+
+    // 2. High-Tech Canopy & Cockpit Frame
+    this.buildCockpit(canopyMat, titaniumMat);
+
+    // 3. Nose Sensor Boom & Resonance Array
+    this.buildSensorSuite(titaniumMat, glowCyanMat);
+
+    // 4. Four Articulated Survey Vanes
+    this.buildFourVanes(primaryMat, accentMat, titaniumMat);
+
+    // 5. Four Ion Engines & Exhaust Plumes
+    this.buildFourEngines(titaniumMat);
+  }
+
+  private buildFuselage(
+    primaryMat: THREE.Material,
+    accentMat: THREE.Material,
+    darkMat: THREE.Material
+  ): void {
+    // Slender forward fuselage
+    const noseShape = new THREE.ConeGeometry(0.7, 3.2, 6);
+    noseShape.rotateX(Math.PI / 2);
+    noseShape.scale(1.2, 0.55, 1.0);
+    const nose = new THREE.Mesh(noseShape, primaryMat);
+    nose.position.set(0, 0.05, -2.4);
     this.hullGroup.add(nose);
 
-    // Cabin
-    const cabinGeo = new THREE.BoxGeometry(1.4, 0.7, 3.4);
-    const cabin = new THREE.Mesh(cabinGeo, hullMat);
-    cabin.position.set(0, 0.05, 0.2);
-    this.hullGroup.add(cabin);
+    // Mid-section main fuselage
+    const midGeo = new THREE.BoxGeometry(1.6, 0.85, 3.2);
+    const mid = new THREE.Mesh(midGeo, primaryMat);
+    mid.position.set(0, 0.08, 0.3);
+    this.hullGroup.add(mid);
 
-    // Keel
-    const keelGeo = new THREE.BoxGeometry(0.75, 0.35, 3.0);
-    const keel = new THREE.Mesh(keelGeo, darkMetalMat);
-    keel.position.set(0, -0.38, 0.3);
+    // Ventral reinforcement keel
+    const keelGeo = new THREE.BoxGeometry(0.85, 0.38, 3.4);
+    const keel = new THREE.Mesh(keelGeo, darkMat);
+    keel.position.set(0, -0.42, 0.4);
     this.hullGroup.add(keel);
 
-    // Forward Canopy
+    // Lateral aerospace intake chamfers
+    const intakeGeo = new THREE.BoxGeometry(0.35, 0.55, 1.8);
+    const leftIntake = new THREE.Mesh(intakeGeo, accentMat);
+    leftIntake.position.set(-0.92, 0.04, 0.6);
+    this.hullGroup.add(leftIntake);
+
+    const rightIntake = new THREE.Mesh(intakeGeo, accentMat);
+    rightIntake.position.set(0.92, 0.04, 0.6);
+    this.hullGroup.add(rightIntake);
+
+    // Rear engine mounting bulkhead
+    const bulkheadGeo = new THREE.BoxGeometry(1.7, 0.95, 0.6);
+    const bulkhead = new THREE.Mesh(bulkheadGeo, darkMat);
+    bulkhead.position.set(0, 0.1, 2.0);
+    this.hullGroup.add(bulkhead);
+  }
+
+  private buildCockpit(canopyMat: THREE.Material, darkMat: THREE.Material): void {
+    // Elongated canopy dome
     const canopyGeo = new THREE.SphereGeometry(0.55, 16, 12);
-    canopyGeo.scale(0.85, 0.55, 1.9);
+    canopyGeo.scale(0.82, 0.52, 2.1);
     const canopy = new THREE.Mesh(canopyGeo, canopyMat);
-    canopy.position.set(0, 0.38, -0.35);
-    this.hullGroup.add(canopy);
+    canopy.position.set(0, 0.46, -0.5);
+    this.cockpitGroup.add(canopy);
 
-    // Scanner Dome
-    const sensorGeo = new THREE.SphereGeometry(0.2, 12, 8);
-    this.sensorGlow = new THREE.Mesh(sensorGeo, sensorMat);
-    this.sensorGlow.position.set(0, 0.02, -3.0);
-    this.scannerGroup.add(this.sensorGlow);
+    // Longitudinal cockpit rib
+    const ribGeo = new THREE.BoxGeometry(0.12, 0.1, 2.2);
+    const rib = new THREE.Mesh(ribGeo, darkMat);
+    rib.position.set(0, 0.72, -0.5);
+    this.cockpitGroup.add(rib);
+  }
 
-    // 2. Wings
-    const wingShape = new THREE.Shape();
-    wingShape.moveTo(0, 0);
-    wingShape.lineTo(2.8, 0.8);
-    wingShape.lineTo(2.6, 2.0);
-    wingShape.lineTo(0, 1.4);
-    wingShape.closePath();
+  private buildSensorSuite(darkMat: THREE.Material, glowMat: THREE.Material): void {
+    // Forward survey needle probe
+    const needleGeo = new THREE.CylinderGeometry(0.04, 0.08, 1.6, 8);
+    needleGeo.rotateX(Math.PI / 2);
+    const needle = new THREE.Mesh(needleGeo, darkMat);
+    needle.position.set(0, 0.05, -4.6);
+    this.sensorGroup.add(needle);
 
-    const wingGeo = new THREE.ExtrudeGeometry(wingShape, { depth: 0.08, bevelEnabled: false });
-    wingGeo.rotateX(Math.PI / 2);
+    // Luminous sensor dome node
+    const domeGeo = new THREE.SphereGeometry(0.22, 12, 8);
+    this.sensorDome = new THREE.Mesh(domeGeo, glowMat);
+    this.sensorDome.position.set(0, 0.05, -3.85);
+    this.sensorGroup.add(this.sensorDome);
 
-    const leftWing = new THREE.Mesh(wingGeo, hullMat);
-    leftWing.position.set(-0.65, 0.05, -0.4);
-    leftWing.scale.set(-1, 1, 1);
-    this.wingGroup.add(leftWing);
+    // Sensor emitter ring
+    const ringGeo = new THREE.TorusGeometry(0.32, 0.03, 6, 16);
+    const ring = new THREE.Mesh(ringGeo, glowMat);
+    ring.position.set(0, 0.05, -4.1);
+    this.sensorGroup.add(ring);
+    this.sensorFieldRings.push(ring);
+  }
 
-    const rightWing = new THREE.Mesh(wingGeo, hullMat);
-    rightWing.position.set(0.65, 0.05, -0.4);
-    this.wingGroup.add(rightWing);
+  private buildFourVanes(
+    primaryMat: THREE.Material,
+    accentMat: THREE.Material,
+    darkMat: THREE.Material
+  ): void {
+    const createVane = (
+      name: string,
+      xSide: number,
+      ySide: number,
+      strobeColor?: number
+    ): WingVaneSet => {
+      const rootPivot = new THREE.Group();
+      rootPivot.name = name;
+      // Position pivots on the rear fuselage corners
+      rootPivot.position.set(xSide * 0.78, ySide * 0.28, 0.8);
 
-    // Wingtips
-    const tipGeo = new THREE.BoxGeometry(0.12, 0.7, 1.2);
-    const leftTip = new THREE.Mesh(tipGeo, trimMat);
-    leftTip.position.set(-3.25, 0.32, 0.6);
-    this.wingGroup.add(leftTip);
+      // Swept geometric vane shape
+      const shape = new THREE.Shape();
+      shape.moveTo(0, 0);
+      shape.lineTo(2.4, 0.55);
+      shape.lineTo(2.2, 1.4);
+      shape.lineTo(0, 1.1);
+      shape.closePath();
 
-    const rightTip = new THREE.Mesh(tipGeo, trimMat);
-    rightTip.position.set(3.25, 0.32, 0.6);
-    this.wingGroup.add(rightTip);
+      const vaneGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.07, bevelEnabled: false });
+      vaneGeo.rotateX(Math.PI / 2);
 
-    // 3. Engine Nacelles & Layered Plumes
-    const nacelleGeo = new THREE.CylinderGeometry(0.35, 0.42, 2.2, 8);
-    nacelleGeo.rotateX(Math.PI / 2);
+      const vaneMesh = new THREE.Mesh(vaneGeo, primaryMat);
+      // Flip X for left side
+      if (xSide < 0) {
+        vaneMesh.scale.set(-1, 1, 1);
+      }
+      rootPivot.add(vaneMesh);
 
-    const leftNacelle = new THREE.Mesh(nacelleGeo, darkMetalMat);
-    leftNacelle.position.set(-0.85, 0.1, 1.4);
-    this.engineGroup.add(leftNacelle);
+      // Edge sensory fairing / antenna boom at wingtip
+      const sensorGeo = new THREE.BoxGeometry(0.1, 0.25, 1.2);
+      const sensorArray = new THREE.Mesh(sensorGeo, accentMat);
+      sensorArray.position.set(xSide * 2.3, 0, 0.95);
+      rootPivot.add(sensorArray);
 
-    const rightNacelle = new THREE.Mesh(nacelleGeo, darkMetalMat);
-    rightNacelle.position.set(0.85, 0.1, 1.4);
-    this.engineGroup.add(rightNacelle);
+      // Trailing antenna needle
+      const antGeo = new THREE.CylinderGeometry(0.02, 0.03, 0.9, 6);
+      antGeo.rotateX(Math.PI / 2);
+      const ant = new THREE.Mesh(antGeo, darkMat);
+      ant.position.set(xSide * 2.3, 0, 1.8);
+      rootPivot.add(ant);
 
-    // Layered Thruster Plume Setup
-    const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const innerPlumeMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.85,
-    });
-    const outerPlumeMat = new THREE.MeshBasicMaterial({
-      color: 0x0284c7,
-      transparent: true,
-      opacity: 0.45,
-    });
+      let strobeLight: THREE.Mesh | undefined;
+      if (strobeColor !== undefined) {
+        const strobeGeo = new THREE.SphereGeometry(0.08, 8, 8);
+        const strobeMat = new THREE.MeshBasicMaterial({ color: strobeColor });
+        strobeLight = new THREE.Mesh(strobeGeo, strobeMat);
+        strobeLight.position.set(xSide * 2.32, 0.14, 0.95);
+        rootPivot.add(strobeLight);
+        this.strobes.push(strobeLight);
+      }
 
-    const coreGeo = new THREE.ConeGeometry(0.18, 0.8, 6);
-    coreGeo.rotateX(-Math.PI / 2);
+      this.group.add(rootPivot);
+      return { rootPivot, vaneMesh, sensorArray, strobeLight };
+    };
 
-    const innerGeo = new THREE.ConeGeometry(0.3, 2.4, 8);
+    // Upper-Left & Upper-Right (Port/Starboard Strobes)
+    this.vaneUL = createVane('vaneUL', -1, 1, 0xef4444); // Red port
+    this.vaneUR = createVane('vaneUR', 1, 1, 0x22c55e);  // Green starboard
+
+    // Lower-Left & Lower-Right (White trailing strobes)
+    this.vaneLL = createVane('vaneLL', -1, -1, 0xf8fafc);
+    this.vaneLR = createVane('vaneLR', 1, -1, 0xf8fafc);
+  }
+
+  private buildFourEngines(darkMat: THREE.Material): void {
+    // 4 distinct engine cluster positions corresponding to the X silhouette
+    const engineOffsets = [
+      { x: -0.65, y: 0.42, z: 2.1 },  // Upper Left
+      { x: 0.65, y: 0.42, z: 2.1 },   // Upper Right
+      { x: -0.65, y: -0.32, z: 2.1 }, // Lower Left
+      { x: 0.65, y: -0.32, z: 2.1 },  // Lower Right
+    ];
+
+    const coreGeo = new THREE.CylinderGeometry(0.12, 0.22, 0.7, 12);
+    coreGeo.rotateX(Math.PI / 2);
+
+    const innerGeo = new THREE.ConeGeometry(0.24, 2.2, 12);
     innerGeo.rotateX(-Math.PI / 2);
 
-    const outerGeo = new THREE.ConeGeometry(0.48, 3.8, 8);
+    const outerGeo = new THREE.ConeGeometry(0.38, 3.2, 12);
     outerGeo.rotateX(-Math.PI / 2);
 
-    // Left Thruster
-    this.leftThrusterCore = new THREE.Mesh(coreGeo, coreMat);
-    this.leftThrusterCore.position.set(-0.85, 0.1, 2.5);
-    this.engineGroup.add(this.leftThrusterCore);
+    for (let i = 0; i < 4; i++) {
+      const pos = engineOffsets[i];
 
-    this.leftThrusterInnerPlume = new THREE.Mesh(innerGeo, innerPlumeMat);
-    this.leftThrusterInnerPlume.position.set(-0.85, 0.1, 2.6);
-    this.engineGroup.add(this.leftThrusterInnerPlume);
+      // Cylindrical engine housing
+      const housingGeo = new THREE.CylinderGeometry(0.26, 0.28, 1.1, 12);
+      housingGeo.rotateX(Math.PI / 2);
+      const housing = new THREE.Mesh(housingGeo, darkMat);
+      housing.position.set(pos.x, pos.y, pos.z);
+      this.hullGroup.add(housing);
 
-    this.leftThrusterOuterPlume = new THREE.Mesh(outerGeo, outerPlumeMat);
-    this.leftThrusterOuterPlume.position.set(-0.85, 0.1, 2.8);
-    this.engineGroup.add(this.leftThrusterOuterPlume);
+      // Hot white emission core
+      const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const core = new THREE.Mesh(coreGeo, coreMat);
+      core.position.set(pos.x, pos.y, pos.z + 0.45);
+      this.hullGroup.add(core);
 
-    // Right Thruster
-    this.rightThrusterCore = new THREE.Mesh(coreGeo, coreMat);
-    this.rightThrusterCore.position.set(0.85, 0.1, 2.5);
-    this.engineGroup.add(this.rightThrusterCore);
+      // Cyan energetic inner plume
+      const innerMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+      });
+      const innerPlume = new THREE.Mesh(innerGeo, innerMat);
+      innerPlume.position.set(pos.x, pos.y, pos.z + 1.4);
+      this.hullGroup.add(innerPlume);
 
-    this.rightThrusterInnerPlume = new THREE.Mesh(innerGeo, innerPlumeMat);
-    this.rightThrusterInnerPlume.position.set(0.85, 0.1, 2.6);
-    this.engineGroup.add(this.rightThrusterInnerPlume);
+      // Translucent deep blue outer plume
+      const outerMat = new THREE.MeshBasicMaterial({
+        color: 0x0284c7,
+        transparent: true,
+        opacity: 0.35,
+        blending: THREE.AdditiveBlending,
+      });
+      const outerPlume = new THREE.Mesh(outerGeo, outerMat);
+      outerPlume.position.set(pos.x, pos.y, pos.z + 1.8);
+      this.hullGroup.add(outerPlume);
 
-    this.rightThrusterOuterPlume = new THREE.Mesh(outerGeo, outerPlumeMat);
-    this.rightThrusterOuterPlume.position.set(0.85, 0.1, 2.8);
-    this.engineGroup.add(this.rightThrusterOuterPlume);
-
-    // Navigation Strobes
-    const portGeo = new THREE.SphereGeometry(0.08, 6, 6);
-    this.portStrobe = new THREE.Mesh(portGeo, new THREE.MeshBasicMaterial({ color: 0xef4444 }));
-    this.portStrobe.position.set(-3.28, 0.65, 0.6);
-    this.wingGroup.add(this.portStrobe);
-
-    const starGeo = new THREE.SphereGeometry(0.08, 6, 6);
-    this.starStrobe = new THREE.Mesh(starGeo, new THREE.MeshBasicMaterial({ color: 0x22c55e }));
-    this.starStrobe.position.set(3.28, 0.65, 0.6);
-    this.wingGroup.add(this.starStrobe);
+      this.engines.push({ housing, core, innerPlume, outerPlume });
+    }
   }
 
   public setInstalledModules(moduleIds: string[]): void {
-    // Clear previous visual attachments
+    // Clear existing module visuals
     for (const obj of this.installedModuleVisuals.values()) {
       this.moduleVisualsGroup.remove(obj);
     }
@@ -220,78 +329,124 @@ export class SurveyCraft {
     const upgradeMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
       emissive: 0x0284c7,
-      emissiveIntensity: 0.5,
-      roughness: 0.3,
-      metalness: 0.7,
+      emissiveIntensity: 0.6,
+      roughness: 0.25,
+      metalness: 0.75,
     });
 
     for (const id of moduleIds) {
       if (id === 'mod_propulsion_ion_vector') {
-        // Glowing cyan vectoring rings around engine exhausts
-        const ringGeo = new THREE.TorusGeometry(0.44, 0.06, 6, 16);
-        const leftRing = new THREE.Mesh(ringGeo, upgradeMat);
-        leftRing.position.set(-0.85, 0.1, 2.45);
-        const rightRing = new THREE.Mesh(ringGeo, upgradeMat);
-        rightRing.position.set(0.85, 0.1, 2.45);
-
+        // 4 glowing ion vector rings at each of the 4 engine nozzles
+        const ringGeo = new THREE.TorusGeometry(0.32, 0.04, 6, 16);
         const group = new THREE.Group();
-        group.add(leftRing);
-        group.add(rightRing);
+        const positions = [
+          [-0.65, 0.42, 2.65],
+          [0.65, 0.42, 2.65],
+          [-0.65, -0.32, 2.65],
+          [0.65, -0.32, 2.65],
+        ];
+        for (const [px, py, pz] of positions) {
+          const ring = new THREE.Mesh(ringGeo, upgradeMat);
+          ring.position.set(px, py, pz);
+          group.add(ring);
+        }
         this.moduleVisualsGroup.add(group);
         this.installedModuleVisuals.set(id, group);
       } else if (id === 'mod_surface_grav_stabilizer') {
-        // High-aspect wing extensions
-        const extGeo = new THREE.BoxGeometry(0.6, 0.05, 1.4);
-        const leftExt = new THREE.Mesh(extGeo, upgradeMat);
-        leftExt.position.set(-3.5, 0.15, 0.6);
-        const rightExt = new THREE.Mesh(extGeo, upgradeMat);
-        rightExt.position.set(3.5, 0.15, 0.6);
-
+        // Gravitic field coils integrated at the wing roots
+        const coilGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.5, 8);
+        coilGeo.rotateX(Math.PI / 2);
         const group = new THREE.Group();
-        group.add(leftExt);
-        group.add(rightExt);
+        const leftCoil = new THREE.Mesh(coilGeo, upgradeMat);
+        leftCoil.position.set(-1.1, -0.1, 0.8);
+        const rightCoil = new THREE.Mesh(coilGeo, upgradeMat);
+        rightCoil.position.set(1.1, -0.1, 0.8);
+        group.add(leftCoil);
+        group.add(rightCoil);
         this.moduleVisualsGroup.add(group);
         this.installedModuleVisuals.set(id, group);
       } else if (id === 'mod_scanner_deep_ecology') {
-        // Crown sensor array on fuselage
-        const crownGeo = new THREE.CylinderGeometry(0.35, 0.45, 0.25, 6);
+        // Crown sensor array mounted behind canopy
+        const crownGeo = new THREE.CylinderGeometry(0.3, 0.42, 0.25, 6);
         const crown = new THREE.Mesh(crownGeo, upgradeMat);
-        crown.position.set(0, 0.55, 0.4);
+        crown.position.set(0, 0.62, 0.8);
         this.moduleVisualsGroup.add(crown);
         this.installedModuleVisuals.set(id, crown);
+      } else if (id === 'mod_field_warp_stabilizer') {
+        // Dorsal resonance spine
+        const spineGeo = new THREE.BoxGeometry(0.12, 0.35, 2.2);
+        const spine = new THREE.Mesh(spineGeo, upgradeMat);
+        spine.position.set(0, 0.6, 1.4);
+        this.moduleVisualsGroup.add(spine);
+        this.installedModuleVisuals.set(id, spine);
       }
     }
   }
 
-  public update(dt: number, throttle: number, yaw: number, pitch: number): void {
+  public setFlightMode(mode: CraftFlightMode): void {
+    this.currentMode = mode;
+  }
+
+  /**
+   * Updates craft internal animations ONLY.
+   * STRICT RULE: Never modifies this.group.rotation or this.group.quaternion.
+   */
+  public updateVisuals(
+    dt: number,
+    throttle: number,
+    mode: CraftFlightMode = 'space'
+  ): void {
     this.clock += dt;
+    this.currentMode = mode;
 
-    // Layered Thruster Plume Scale & Modulation
-    const t = Math.max(0.05, throttle);
-    const flicker = 1.0 + Math.sin(this.clock * 25.0) * 0.08;
+    // 1. Articulated Survey Vane Positioning
+    // In SPACE: full X configuration (spread factor 1.0)
+    // In SURFACE/ATMOSPHERE: folded/narrowed configuration (spread factor 0.25)
+    // In WARP: tightened inline configuration (spread factor 0.55)
+    let targetSpread = 1.0;
+    if (this.currentMode === 'surface') {
+      targetSpread = 0.28;
+    } else if (this.currentMode === 'warp') {
+      targetSpread = 0.55;
+    }
 
-    this.leftThrusterCore.scale.set(1, 1, (0.5 + t * 1.5) * flicker);
-    this.rightThrusterCore.scale.set(1, 1, (0.5 + t * 1.5) * flicker);
+    this.wingSpreadFactor += (targetSpread - this.wingSpreadFactor) * Math.min(1, dt * 3.5);
 
-    this.leftThrusterInnerPlume.scale.set(1, 1, (0.3 + t * 2.8) * flicker);
-    this.rightThrusterInnerPlume.scale.set(1, 1, (0.3 + t * 2.8) * flicker);
+    // Deploy angle: ~22 degrees in full X
+    const spreadAngle = this.wingSpreadFactor * 0.38;
 
-    this.leftThrusterOuterPlume.scale.set(1, 1, (0.2 + t * 3.4) * flicker);
-    this.rightThrusterOuterPlume.scale.set(1, 1, (0.2 + t * 3.4) * flicker);
+    // Upper vanes tilt upward (+Z roll), Lower vanes tilt downward (-Z roll)
+    this.vaneUL.rootPivot.rotation.z = -spreadAngle;
+    this.vaneUR.rootPivot.rotation.z = spreadAngle;
+    this.vaneLL.rootPivot.rotation.z = spreadAngle * 0.9;
+    this.vaneLR.rootPivot.rotation.z = -spreadAngle * 0.9;
 
-    // Strobe Blinking (1 Hz)
-    const strobeOn = Math.sin(this.clock * 6.28) > 0.85;
-    this.portStrobe.visible = strobeOn;
-    this.starStrobe.visible = strobeOn;
+    // 2. Dynamic 4-Engine Plumes
+    const t = Math.max(0.04, throttle);
+    const flicker = 1.0 + Math.sin(this.clock * 28.0) * 0.08;
 
-    // Subtle Sensor Pulsing
-    const sensorPulse = 0.6 + Math.sin(this.clock * 3.0) * 0.3;
-    (this.sensorGlow.material as THREE.MeshBasicMaterial).opacity = sensorPulse;
+    for (const eng of this.engines) {
+      eng.core.scale.set(1, 1, (0.5 + t * 1.5) * flicker);
+      eng.innerPlume.scale.set(1, 1, (0.3 + t * 2.8) * flicker);
+      eng.outerPlume.scale.set(1, 1, (0.2 + t * 3.4) * flicker);
+    }
 
-    // Craft visual banking response to steering input
-    const targetRoll = -yaw * 0.45;
-    const targetPitch = pitch * 0.25;
-    this.group.rotation.z = THREE.MathUtils.lerp(this.group.rotation.z, targetRoll, dt * 6.0);
-    this.group.rotation.x = THREE.MathUtils.lerp(this.group.rotation.x, targetPitch, dt * 6.0);
+    // 3. Sensor Suite Pulsing
+    const pulse = 0.65 + Math.sin(this.clock * 3.5) * 0.3;
+    (this.sensorDome.material as THREE.MeshBasicMaterial).opacity = pulse;
+    for (const r of this.sensorFieldRings) {
+      r.scale.setScalar(0.95 + pulse * 0.12);
+    }
+
+    // 4. Strobe Flashing (1.2 Hz)
+    const strobeState = Math.sin(this.clock * 7.54) > 0.88;
+    for (const s of this.strobes) {
+      s.visible = strobeState;
+    }
+  }
+
+  // Backward compatibility alias for legacy callers
+  public update(dt: number, throttle: number, _steeringYaw = 0, _steeringPitch = 0): void {
+    this.updateVisuals(dt, throttle, this.currentMode);
   }
 }

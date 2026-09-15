@@ -22,7 +22,7 @@ export class SurfaceScene {
   public planet: PlanetDescriptor;
   public site: LandingSite;
 
-// Surface flight dynamics & altitude control
+  // Surface flight dynamics & altitude control
   public shipPhysicsRoot: THREE.Group;
   public shipVisualRoot: THREE.Group;
   public shipPosition = new THREE.Vector3(0, 18, 0);
@@ -30,17 +30,28 @@ export class SurfaceScene {
   public shipYaw = 0;
   public shipPitch = 0;
   public shipRoll = 0;
+
+  // Separated pilot-desired world altitude vs terrain safety envelope
+  public pilotDesiredWorldAltitude = 18.0;
   public desiredAltitudeAGL = 18.0; // Dynamic pilot-controlled height AGL
   public minAltitudeAGL = 7.0;
   public maxAltitudeAGL = 45.0; // Extensible with upgrades
 
-  // Critically damped spring-damper vertical dynamics
+  // Filtered terrain safety envelope (rises quickly, falls slowly)
+  private filteredTerrainSafetyFloor = 0.0;
+  private postCrestHoldTimer = 0.0;
+
+  // Jerk-limited vertical dynamics
   public verticalVelocity = 0.0;
   public verticalAcceleration = 0.0;
-  public climbRate = 32.0; // m/s maximum climb
-  public descentRate = 22.0; // m/s maximum descent
-  public springStrength = 16.0; // Spring stiffness
-  public damping = 7.2; // Damping ratio (critically damped: ~2*sqrt(k))
+  public springStrength = 4.2;
+  public damping = 3.6;
+  public maxClimbAcceleration = 24.0; // m/s²
+  public maxDescentAcceleration = 16.0; // m/s²
+  public maxVerticalJerk = 45.0; // m/s³
+  public climbRate = 30.0; // m/s maximum climb
+  public descentRate = 18.0; // m/s maximum descent
+  public terrainAssistActive = false;
 
   // Smoothed camera tracking
   private smoothedCamPos = new THREE.Vector3();
@@ -60,6 +71,7 @@ export class SurfaceScene {
     verticalVelocity: 0,
     verticalAcceleration: 0,
     speedMps: 0,
+    terrainAssistActive: false,
     dt: 0,
   };
 
@@ -184,7 +196,9 @@ export class SurfaceScene {
 
     // Initialize position directly above ground
     const initGround = this.getTerrainHeight(0, 0);
-    this.shipPosition.set(0, initGround + this.desiredAltitudeAGL, 0);
+    this.pilotDesiredWorldAltitude = initGround + this.desiredAltitudeAGL;
+    this.filteredTerrainSafetyFloor = initGround + this.minAltitudeAGL;
+    this.shipPosition.set(0, this.pilotDesiredWorldAltitude, 0);
     this.shipPhysicsRoot.position.copy(this.shipPosition);
     this.scene.add(this.shipPhysicsRoot);
 
@@ -200,6 +214,7 @@ export class SurfaceScene {
       this.minAltitudeAGL,
       this.maxAltitudeAGL
     );
+    this.pilotDesiredWorldAltitude += delta;
   }
 
   public update(
@@ -242,31 +257,98 @@ export class SurfaceScene {
     const targetVel = forward.clone().multiplyScalar(speed);
 
     this.shipVelocity.lerp(targetVel, clampedDt * 3.5);
+    const currentSpeed = this.shipVelocity.length();
     this.shipPosition.x += this.shipVelocity.x * clampedDt;
     this.shipPosition.z += this.shipVelocity.z * clampedDt;
 
-    // 2. Predictive 3-Point Terrain Lookahead
+    // 2. Speed-Dependent Multi-Point Forward Corridor Sampling
+    // Sample distances scale dynamically with speed (15m to 140m)
     const currentGround = this.getTerrainHeight(this.shipPosition.x, this.shipPosition.z);
-    const lookahead1 = this.shipPosition.clone().addScaledVector(forward, 8.0);
-    const lookahead2 = this.shipPosition.clone().addScaledVector(forward, 22.0);
-    const h1 = this.getTerrainHeight(lookahead1.x, lookahead1.z);
-    const h2 = this.getTerrainHeight(lookahead2.x, lookahead2.z);
+    const corridorLength = THREE.MathUtils.clamp(15.0 + currentSpeed * 2.0, 15.0, 140.0);
+    const d1 = corridorLength * 0.18;
+    const d2 = corridorLength * 0.42;
+    const d3 = corridorLength * 0.70;
+    const d4 = corridorLength;
 
-    // Weighted anticipated ground height
+    const p1 = this.shipPosition.clone().addScaledVector(forward, d1);
+    const p2 = this.shipPosition.clone().addScaledVector(forward, d2);
+    const p3 = this.shipPosition.clone().addScaledVector(forward, d3);
+    const p4 = this.shipPosition.clone().addScaledVector(forward, d4);
+
+    const h1 = this.getTerrainHeight(p1.x, p1.z);
+    const h2 = this.getTerrainHeight(p2.x, p2.z);
+    const h3 = this.getTerrainHeight(p3.x, p3.z);
+    const h4 = this.getTerrainHeight(p4.x, p4.z);
+
+    // Dynamic slope analysis: calculate highest slope angle ahead
+    const maxSlopeHeight = Math.max(h1, h2, h3, h4);
+    const maxSlopeDist = maxSlopeHeight === h1 ? d1 : maxSlopeHeight === h2 ? d2 : maxSlopeHeight === h3 ? d3 : d4;
+    const heightDiff = maxSlopeHeight - currentGround;
+    const slopeAngleRad = Math.atan2(Math.max(0, heightDiff), Math.max(1.0, maxSlopeDist));
+
+    // Detect steep terrain (> 45 degrees) for anticipatory climb and speed moderation
+    if (slopeAngleRad > 0.785) { // ~45 deg
+      this.terrainAssistActive = true;
+      // Gentle speed moderation so the craft has time to clear the crest
+      this.shipVelocity.multiplyScalar(Math.max(0.7, 1.0 - clampedDt * 1.5));
+      // Subtle visual pitch up
+      this.shipVisualRoot.rotation.x -= 0.15 * Math.sin(slopeAngleRad);
+    } else {
+      this.terrainAssistActive = false;
+    }
+
+    // Weighted anticipated ground height for forward planning
     const anticipatedGround = Math.max(
       currentGround,
-      currentGround * 0.35 + h1 * 0.40 + h2 * 0.25
+      h1 * 0.35 + h2 * 0.30 + h3 * 0.20 + h4 * 0.15
     );
 
-    // 3. Critically Damped Spring-Damper Vertical Flight Model
-    const targetAltitude = anticipatedGround + this.desiredAltitudeAGL;
-    const altitudeError = targetAltitude - this.shipPosition.y;
+    // 3. Asymmetric Envelope Filter: Fast Rise, Slow Fall, Post-Crest Hold
+    const rawSafetyFloor = Math.max(currentGround, anticipatedGround) + this.minAltitudeAGL;
 
-    // a = k * error - c * velocity
-    this.verticalAcceleration = altitudeError * this.springStrength - this.verticalVelocity * this.damping;
+    if (rawSafetyFloor > this.filteredTerrainSafetyFloor) {
+      // Rapid upward adaptation to meet upcoming ridges without lag
+      const riseRate = 28.0; // m/s
+      this.filteredTerrainSafetyFloor = Math.min(
+        rawSafetyFloor,
+        this.filteredTerrainSafetyFloor + riseRate * clampedDt
+      );
+      // Reset post-crest hold timer (0.8s) when climbing
+      this.postCrestHoldTimer = 0.8;
+    } else {
+      // Downward slope: hold altitude briefly after cresting before gently descending
+      if (this.postCrestHoldTimer > 0) {
+        this.postCrestHoldTimer -= clampedDt;
+      } else {
+        const fallRate = 4.5; // m/s slow, elegant descent
+        this.filteredTerrainSafetyFloor = Math.max(
+          rawSafetyFloor,
+          this.filteredTerrainSafetyFloor - fallRate * clampedDt
+        );
+      }
+    }
+
+    // Target world altitude: pilot desire takes precedence unless safety floor requires lift
+    const targetWorldAltitude = Math.max(
+      this.pilotDesiredWorldAltitude,
+      this.filteredTerrainSafetyFloor
+    );
+
+    // 4. Jerk-Limited Spring-Damper Dynamics
+    const altitudeError = targetWorldAltitude - this.shipPosition.y;
+    const rawTargetAccel = altitudeError * this.springStrength - this.verticalVelocity * this.damping;
+
+    // Apply acceleration limits based on climb vs descent
+    const clampedTargetAccel = rawTargetAccel > 0
+      ? Math.min(rawTargetAccel, this.maxClimbAcceleration)
+      : Math.max(rawTargetAccel, -this.maxDescentAcceleration);
+
+    // Rate-limit acceleration changes by max vertical jerk (m/s³)
+    const maxDeltaAccel = this.maxVerticalJerk * clampedDt;
+    const accelDiff = clampedTargetAccel - this.verticalAcceleration;
+    this.verticalAcceleration += THREE.MathUtils.clamp(accelDiff, -maxDeltaAccel, maxDeltaAccel);
+
     this.verticalVelocity += this.verticalAcceleration * clampedDt;
-
-    // Asymmetric velocity clamping (faster climb for crest avoidance, controlled descent)
     this.verticalVelocity = THREE.MathUtils.clamp(
       this.verticalVelocity,
       -this.descentRate,
@@ -275,10 +357,10 @@ export class SurfaceScene {
 
     this.shipPosition.y += this.verticalVelocity * clampedDt;
 
-    // 4. Swept Floor Collision & Minimum Safe Clearance
-    const absoluteFloor = currentGround + this.minAltitudeAGL;
-    if (this.shipPosition.y < absoluteFloor) {
-      this.shipPosition.y = absoluteFloor;
+    // Hard floor safety: ship can NEVER penetrate terrain + minAltitudeAGL
+    const hardFloor = currentGround + this.minAltitudeAGL;
+    if (this.shipPosition.y < hardFloor) {
+      this.shipPosition.y = hardFloor;
       if (this.verticalVelocity < 0) {
         this.verticalVelocity = 0;
       }
@@ -299,7 +381,7 @@ export class SurfaceScene {
     }
 
     this.shipPhysicsRoot.position.copy(this.shipPosition);
-    this.surveyCraft.update(clampedDt, input.throttle, input.axes.x, input.axes.y);
+    this.surveyCraft.updateVisuals(clampedDt, input.throttle, 'surface');
 
     // 6. Horizon-Stabilized Camera with Decoupled Target Smoothing
     const maxCameraBankRad = 0.10;
@@ -417,6 +499,7 @@ export class SurfaceScene {
     this.debugTelemetry.verticalVelocity = this.verticalVelocity;
     this.debugTelemetry.verticalAcceleration = this.verticalAcceleration;
     this.debugTelemetry.speedMps = speedMps;
+    this.debugTelemetry.terrainAssistActive = this.terrainAssistActive;
     this.debugTelemetry.dt = clampedDt;
 
     return {
