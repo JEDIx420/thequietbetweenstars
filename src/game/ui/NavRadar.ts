@@ -150,6 +150,41 @@ export class NavRadar {
     }
   }
 
+  public setSurfaceTargets(
+    pickups: Array<{ position: THREE.Vector3; amount: number }> = [],
+    encounterSites: Array<{ position: THREE.Vector3; name: string }> = []
+  ): void {
+    const list: RadarTargetItem[] = [];
+
+    for (const site of encounterSites) {
+      list.push({
+        id: `beacon_${site.name}`,
+        name: site.name,
+        type: 'cultural_beacon',
+        position: site.position,
+        color: '#a855f7',
+        isAnomaly: false,
+      });
+    }
+
+    for (let i = 0; i < pickups.length; i++) {
+      const p = pickups[i];
+      list.push({
+        id: `pickup_${i}`,
+        name: `DATA MOTE (+${p.amount} SC)`,
+        type: 'credit_pickup',
+        position: p.position,
+        color: '#38bdf8',
+        isAnomaly: false,
+      });
+    }
+
+    this.targets = list;
+    if (this.targets.length > 0 && this.selectedIndex >= this.targets.length) {
+      this.selectedIndex = 0;
+    }
+  }
+
   public cycleTarget(): void {
     if (this.targets.length === 0) return;
     this.selectedIndex = (this.selectedIndex + 1) % this.targets.length;
@@ -272,7 +307,23 @@ export class NavRadar {
         // Node
         ctx.fillStyle = t.color;
         ctx.beginPath();
-        if (t.isAnomaly) {
+        if (t.type === 'credit_pickup') {
+          // Diamond mote
+          ctx.moveTo(px, py - 3.5);
+          ctx.lineTo(px + 3, py);
+          ctx.lineTo(px, py + 3.5);
+          ctx.lineTo(px - 3, py);
+          ctx.closePath();
+        } else if (t.type === 'cultural_beacon') {
+          // Cultural beacon ring
+          ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#c084fc';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(px, py, 2, 0, Math.PI * 2);
+        } else if (t.isAnomaly) {
           ctx.rect(px - 3, py - 3, 6, 6);
         } else {
           ctx.arc(px, py, isSelected ? 4.2 : 2.6, 0, Math.PI * 2);

@@ -65,6 +65,18 @@ export class WorldLabApp {
               Select a region above to inspect its morphology and inspect 3D flight.
             </div>
 
+            <!-- Sentient Life QA section -->
+            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 14px; display: flex; flex-direction: column; gap: 8px;">
+              <label style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: #a855f7; font-weight: 600;">Sentient Giants & Ecology QA</label>
+              <div style="display: flex; gap: 8px;">
+                <button id="force-sentient-btn" style="flex: 1; padding: 7px 10px; background: #7e22ce; border: none; border-radius: 4px; color: #fff; font-size: 0.74rem; cursor: pointer; font-weight: 600;">FORCE SENTIENT</button>
+                <button id="teleport-giant-btn" style="flex: 1; padding: 7px 10px; background: #0891b2; border: none; border-radius: 4px; color: #fff; font-size: 0.74rem; cursor: pointer; font-weight: 600;">TELEPORT GIANT</button>
+              </div>
+              <div id="sentient-qa-status" style="background: rgba(0,0,0,0.4); padding: 8px; border-radius: 4px; font-size: 0.72rem; color: #cbd5e1; font-family: monospace;">
+                Sentient status: Normal profile
+              </div>
+            </div>
+
             <!-- Navigation & Sector QA section -->
             <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 14px; display: flex; flex-direction: column; gap: 8px;">
               <label style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: #38bdf8; font-weight: 600;">Navigation & Sector Explorer QA</label>
@@ -249,6 +261,51 @@ export class WorldLabApp {
     }
 
     this.currentSurfaceScene = new SurfaceScene(dummyPlanet, dummySite);
+
+    // Sentient QA buttons
+    const forceSentientBtn = this.container.querySelector('#force-sentient-btn') as HTMLButtonElement;
+    const teleportGiantBtn = this.container.querySelector('#teleport-giant-btn') as HTMLButtonElement;
+    const sentientQaStatus = this.container.querySelector('#sentient-qa-status') as HTMLElement;
+
+    if (forceSentientBtn) {
+      forceSentientBtn.onclick = () => {
+        profile.forceSentient = true;
+        profile.biosignature = 'intelligent-resonance';
+        this.selectRegion(profile, seed, region);
+        if (sentientQaStatus) {
+          sentientQaStatus.innerHTML = '<span style="color:#a855f7; font-weight:bold;">SENTIENT FORCED</span>: Giants & Spires Generated';
+        }
+      };
+    }
+
+    if (teleportGiantBtn) {
+      teleportGiantBtn.onclick = () => {
+        if (!this.currentSurfaceScene) return;
+        const sites = this.currentSurfaceScene.faunaPopulationManager.encounterSites;
+        if (sites.length > 0) {
+          const targetSite = sites[0];
+          this.currentSurfaceScene.shipPosition.set(targetSite.position.x - 30, targetSite.position.y + 15, targetSite.position.z);
+          this.currentSurfaceScene.shipPhysicsRoot.position.copy(this.currentSurfaceScene.shipPosition);
+          if (sentientQaStatus) {
+            sentientQaStatus.innerHTML = `<span style="color:#38bdf8;">TELEPORTED</span>: 30m from ${targetSite.giantNPC.name}`;
+          }
+        } else {
+          if (sentientQaStatus) {
+            sentientQaStatus.innerHTML = '<span style="color:#f87171;">NO GIANTS</span>: Click FORCE SENTIENT first!';
+          }
+        }
+      };
+    }
+
+    // Update initial sentient QA status readout
+    if (sentientQaStatus) {
+      if (this.currentSurfaceScene.sentientProfile) {
+        const giantCount = this.currentSurfaceScene.faunaPopulationManager.encounterSites.length;
+        sentientQaStatus.innerHTML = `<span style="color:#4ade80;">SENTIENT DETECTED</span>: ${this.currentSurfaceScene.sentientProfile.name} (${giantCount} giant site${giantCount > 1 ? 's' : ''})`;
+      } else {
+        sentientQaStatus.innerHTML = 'Sentient status: Primitive / non-sentient ecology';
+      }
+    }
 
     // Keyboard piloting input state
     const input = {

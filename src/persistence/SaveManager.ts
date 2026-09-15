@@ -84,6 +84,7 @@ export interface PlayerSaveSlot {
   installedModules: string[];
   pendingOrders: ModuleOrder[];
   npcMemories: Record<string, NPCMemory>;
+  collectedCreditIds?: string[];
   stats: {
     systemsVisited: number;
     planetsScanned: number;
@@ -141,6 +142,7 @@ export const DEFAULT_SAVE_SLOT: PlayerSaveSlot = {
   installedModules: [],
   pendingOrders: [],
   npcMemories: {},
+  collectedCreditIds: [],
   stats: {
     systemsVisited: 1,
     planetsScanned: 0,
@@ -298,6 +300,7 @@ export class SaveManager {
       if (!raw.installedModules) raw.installedModules = [];
       if (!raw.pendingOrders) raw.pendingOrders = [];
       if (!raw.npcMemories) raw.npcMemories = {};
+      if (!raw.collectedCreditIds) raw.collectedCreditIds = [];
 
       if (!raw.stats) {
         raw.stats = { ...DEFAULT_SAVE_SLOT.stats };

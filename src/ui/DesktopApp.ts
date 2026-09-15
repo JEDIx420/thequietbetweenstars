@@ -85,12 +85,17 @@ export class DesktopApp {
   public discoveredSpecies = new Set<string>();
   public discoveredAnomalies = new Set<string>();
   public credits = 0;
+  public collectedCreditIds = new Set<string>();
   public sampleInventory: Record<string, number> = {};
   public installedModules = new Set<string>();
   public pendingOrders: any[] = [];
   public npcMemories: Record<string, any> = {};
   public activeNPCInConversation: NPCIdentity | null = null;
   private journeyStartTime = Date.now();
+
+  // F3 Debug Telemetry Overlay
+  private debugTelemetryVisible = false;
+  private debugTelemetryEl: HTMLElement | null = null;
 
   private hasSavedJourney = false;
   private lastAutosaveTime = 0;
@@ -121,6 +126,7 @@ export class DesktopApp {
     this.container.appendChild(this.uiContainer);
 
     this.initGameEngine();
+    this.setupDebugKeyListeners();
     this.renderTitleScreen();
   }
 
@@ -291,6 +297,48 @@ export class DesktopApp {
       if (thrEl) thrEl.textContent = `${Math.round(throttle * 100)}% (ALT ${res.altitudeAGL}m)`;
       if (crEl) crEl.textContent = `${this.credits}`;
 
+      // Handle Fly-Through Credit Pickup Events
+      if (res.collectedCredits && res.collectedCredits.length > 0) {
+        for (const pickup of res.collectedCredits) {
+          this.credits += pickup.amount;
+          this.collectedCreditIds.add(pickup.id);
+          audio.playBlip();
+          this.showHudNotice(`+${pickup.amount} SC // SURVEY DATA MOTE DIGITIZED`);
+
+          // Sync credit update to mobile companion if connected
+          if (this.peer) {
+            this.peer.sendReliable({
+              type: 'credit_collected',
+              amount: pickup.amount,
+              totalCredits: this.credits,
+              timestamp: Date.now(),
+            } as any);
+          }
+        }
+        if (crEl) crEl.textContent = `${this.credits}`;
+        this.saveCurrentJourney();
+      }
+
+      // Update Local Nav Radar with surface targets (Data motes & Sentient encounter beacons)
+      if (this.navRadar && this.uiState === 'playing') {
+        const encounterSites = this.surfaceScene.faunaPopulationManager.encounterSites.map(s => ({
+          position: s.position,
+          name: s.name,
+        }));
+        this.navRadar.setSurfaceTargets(res.nearestCreditPickups, encounterSites);
+        this.navRadar.update(
+          this.surfaceScene.shipPosition,
+          this.surfaceScene.shipPhysicsRoot.quaternion,
+          new THREE.Vector3(400, 600, 300),
+          1200
+        );
+      }
+
+      // Handle F3 Debug Telemetry Overlay Updates
+      if (this.debugTelemetryVisible) {
+        this.updateDebugTelemetryOverlay(this.surfaceScene.debugTelemetry);
+      }
+
       // Handle companion altitude adjustments
       if (this.inputManager.consumeAction('altitude_up')) {
         this.surfaceScene.adjustAltitude(12.0);
@@ -303,12 +351,12 @@ export class DesktopApp {
         this.updateContextPrompt(`SURVEY SAMPLE DETECTED: ${res.nearbyResource.name} // PRESS SPACE TO COLLECT`);
       } else if (res.activeScanTarget) {
         if (res.activeScanTarget.isSentient) {
-          this.updateContextPrompt(`SENTIENT BEACON: ${res.activeScanTarget.name.toUpperCase()} // PRESS SPACE TO COMMUNICATE`);
+          this.updateContextPrompt(`SENTIENT CONTACT: ${res.activeScanTarget.name.toUpperCase()} // SPACE — COMMUNICATE`);
         } else {
           this.updateContextPrompt(`PROXIMITY: ${res.activeScanTarget.name} // SPACE TO SCAN`);
         }
       } else {
-        this.updateContextPrompt('SURFACE EXPLORATION // SPACE: RADAR · Q/E: ALTITUDE · U: SUPPLY · ESC/E: ORBIT');
+        this.updateContextPrompt('SURFACE EXPLORATION // FLY THROUGH MOTES TO COLLECT · Q/E: ALTITUDE · F3: TELEMETRY · ESC: ORBIT');
       }
 
       // Contextual action: Collect sample or initiate conversation or scan
@@ -557,7 +605,11 @@ export class DesktopApp {
 
     // Cinematic entry ease: 2.2 seconds before transitioning to SurfaceScene
     setTimeout(() => {
-      this.surfaceScene = new SurfaceScene(this.orbitController.planet!, selectedSite);
+      this.surfaceScene = new SurfaceScene(
+        this.orbitController.planet!,
+        selectedSite,
+        Array.from(this.collectedCreditIds)
+      );
       this.stateMachine.transitionTo(FlightPhase.SURFACE_FLIGHT);
       this.renderSurfaceHUD();
       this.showHudNotice(`ATMOSPHERIC PENETRATION COMPLETE // COMMENCING HOVER RECONNAISSANCE`);
@@ -567,6 +619,9 @@ export class DesktopApp {
   private returnToOrbitFromSurface(): void {
     this.stateMachine.transitionTo(FlightPhase.ASCENT);
     this.showHudNotice('SUB-ORBITAL ASCENT THRUSTERS ENGAGED');
+    if (this.debugTelemetryEl) {
+      this.debugTelemetryEl.style.display = 'none';
+    }
 
     setTimeout(() => {
       if (this.surfaceScene) {
@@ -783,6 +838,7 @@ export class DesktopApp {
 
     // Restore v0.0.7 progression state
     this.credits = slot.credits ?? 0;
+    this.collectedCreditIds = new Set(slot.collectedCreditIds || []);
     this.sampleInventory = slot.sampleInventory ? { ...slot.sampleInventory } : {};
     this.installedModules = new Set(slot.installedModules || []);
     this.pendingOrders = slot.pendingOrders ? [...slot.pendingOrders] : [];
@@ -827,6 +883,7 @@ export class DesktopApp {
       targetSystem: this.holographicNavModal.activeCourseSystem,
       flightPhase: this.stateMachine.getPhase(),
       credits: this.credits,
+      collectedCreditIds: Array.from(this.collectedCreditIds),
       sampleInventory: { ...this.sampleInventory },
       installedModules: Array.from(this.installedModules),
       pendingOrders: [...this.pendingOrders],
@@ -1746,6 +1803,7 @@ export class DesktopApp {
       targetSystem: this.holographicNavModal.activeCourseSystem,
       flightPhase: this.stateMachine.getPhase(),
       credits: this.credits,
+      collectedCreditIds: Array.from(this.collectedCreditIds),
       sampleInventory: { ...this.sampleInventory },
       installedModules: Array.from(this.installedModules),
       pendingOrders: [...this.pendingOrders],
@@ -1848,8 +1906,66 @@ export class DesktopApp {
     this.saveCurrentJourney();
   }
 
+  private setupDebugKeyListeners(): void {
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'F3' || e.code === 'F3') {
+        e.preventDefault();
+        this.debugTelemetryVisible = !this.debugTelemetryVisible;
+        if (!this.debugTelemetryVisible && this.debugTelemetryEl) {
+          this.debugTelemetryEl.style.display = 'none';
+        }
+        if (this.debugTelemetryVisible) {
+          this.showHudNotice(`DEBUG TELEMETRY ${this.debugTelemetryVisible ? 'ACTIVE [F3]' : 'OFF'}`);
+        }
+      }
+    });
+  }
+
+  private updateDebugTelemetryOverlay(t: any): void {
+    if (!this.debugTelemetryEl) {
+      this.debugTelemetryEl = document.createElement('div');
+      this.debugTelemetryEl.id = 'debug-flight-telemetry';
+      this.debugTelemetryEl.style.cssText = `
+        position: fixed;
+        top: 60px;
+        left: 24px;
+        background: rgba(3, 7, 18, 0.88);
+        border: 1px solid rgba(56, 189, 248, 0.5);
+        border-radius: 8px;
+        padding: 12px 16px;
+        color: #e0f2fe;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        line-height: 1.5;
+        z-index: 1000;
+        pointer-events: none;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+        min-width: 280px;
+      `;
+      this.container.appendChild(this.debugTelemetryEl);
+    }
+
+    this.debugTelemetryEl.style.display = 'block';
+    this.debugTelemetryEl.innerHTML = `
+      <div style="color: #38bdf8; font-weight: 700; border-bottom: 1px solid rgba(56, 189, 248, 0.3); padding-bottom: 4px; margin-bottom: 6px;">
+        FLIGHT MODEL TELEMETRY [F3]
+      </div>
+      <div>Pos XZ: <span style="color: #f8fafc;">${t.shipPos.x.toFixed(1)}, ${t.shipPos.z.toFixed(1)}</span></div>
+      <div>Ship Y (Alt): <span style="color: #f8fafc;">${t.shipPos.y.toFixed(2)}m</span></div>
+      <div>Ground (Under): <span style="color: #94a3b8;">${t.groundHeight.toFixed(2)}m</span></div>
+      <div>Anticipated Ground: <span style="color: #94a3b8;">${t.anticipatedGround.toFixed(2)}m</span></div>
+      <div>Actual AGL: <span style="color: #4ade80;">${t.actualAGL.toFixed(2)}m</span></div>
+      <div>Desired AGL: <span style="color: #38bdf8;">${t.desiredAGL.toFixed(1)}m</span></div>
+      <div>Vert Velocity: <span style="color: ${t.verticalVelocity >= 0 ? '#4ade80' : '#f87171'};">${t.verticalVelocity.toFixed(2)} m/s</span></div>
+      <div>Vert Accel: <span style="color: #cbd5e1;">${t.verticalAcceleration.toFixed(2)} m/s²</span></div>
+      <div>Horizontal Speed: <span style="color: #facc15;">${t.speedMps} m/s</span></div>
+      <div>Frame dt: <span style="color: #64748b;">${(t.dt * 1000).toFixed(1)} ms</span></div>
+    `;
+  }
+
   public dispose(): void {
     this.isRunning = false;
     if (this.peer) this.peer.dispose();
+    if (this.debugTelemetryEl) this.debugTelemetryEl.remove();
   }
 }

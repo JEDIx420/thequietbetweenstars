@@ -60,6 +60,26 @@ export class StarSystemGenerator {
       planets.push(planet);
     }
 
+    // Early-exploration accessibility guarantee:
+    // Sector {0, 1, 0} (immediate 1-sector neighbor of origin) is guaranteed to have at least one landable sentient world
+    const isStartingNeighbor = sx === 0 && sy === 1 && sz === 0;
+    if (isStartingNeighbor) {
+      if (planets.length === 0) {
+        // Guarantee at least 1 planet exists in this system
+        const p = this.generatePlanet(new SeededRandom(sysSeed + 42), name, 1, star.spectralClass);
+        planets.push(p);
+      }
+      const targetPlanet = planets[planets.length - 1];
+      targetPlanet.isLandable = true;
+      targetPlanet.biosignature = 'anomalous';
+      targetPlanet.profile.biosignature = 'anomalous';
+      targetPlanet.profile.isLandable = true;
+      (targetPlanet.profile as any).forceSentient = true;
+      targetPlanet.profile.atmosphere.hasAtmosphere = true;
+      targetPlanet.profile.temperatureKelvin = 296;
+      targetPlanet.profile.oceanCoverage = Math.max(0.25, targetPlanet.profile.oceanCoverage);
+    }
+
     // Space Anomalies (0 to 2 per system)
     const anomalies: SpaceAnomalyDescriptor[] = [];
     const hasAnomaly = rng.chance(0.4) || isOrigin;

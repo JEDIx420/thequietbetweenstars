@@ -89,6 +89,7 @@ export interface PlanetEnvironmentProfile {
   hasRings: boolean;
   isOutlier: boolean;
   description: string;
+  forceSentient?: boolean;
 }
 
 export class PlanetEnvironmentGenerator {

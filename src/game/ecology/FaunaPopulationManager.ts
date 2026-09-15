@@ -30,12 +30,18 @@ export interface ActiveCreature {
   scanInfo: CreatureScanInfo;
   isGiant?: boolean;
   npcIdentity?: NPCIdentity;
-  update: (
-    dt: number,
-    getHeightAt: (x: number, z: number) => number,
-    shipPos: THREE.Vector3,
-    shipThrottle: number
-  ) => void;
+  update: (dt: number, getHeightAt: (x: number, z: number) => number, shipPos: THREE.Vector3, shipThrottle: number) => void;
+}
+
+export interface SentientEncounterSite {
+  id: string;
+  name: string;
+  type: string;
+  position: THREE.Vector3;
+  giantNPC: NPCIdentity;
+  giantCreature: ActiveCreature;
+  landmarkGroup: THREE.Group;
+  beaconLight: THREE.PointLight;
 }
 
 export class FaunaPopulationManager {
@@ -50,8 +56,14 @@ export class FaunaPopulationManager {
   private activationRadius = 2; // Cells around craft
   public faunaGroup = new THREE.Group();
 
+  // Guaranteed Sentient Encounter Sites (do NOT despawn on cell unloading)
+  public encounterSites: SentientEncounterSite[] = [];
+  public encounterSitesGroup = new THREE.Group();
+  private sitesInitializedHeight = false;
+
   // Reusable materials cache
   private materialsCache: Map<string, THREE.Material> = new Map();
+  private clock = 0;
 
   constructor(
     ecology: PlanetEcologyProfile,
@@ -63,6 +75,85 @@ export class FaunaPopulationManager {
     this.region = region;
     this.sentientProfile = sentientProfile;
     this.notableNPCs = notableNPCs;
+
+    this.faunaGroup.add(this.encounterSitesGroup);
+
+    // Initialize guaranteed Sentient Encounter Site if world is sentient
+    if (this.ecology.tier === 'SENTIENT_BIOSPHERE' && this.sentientProfile && this.notableNPCs.length > 0) {
+      this.initEncounterSites();
+    }
+  }
+
+  private initEncounterSites(): void {
+    const rng = new SeededRandom(this.region.regionSeed + 777);
+    const siteCount = Math.min(2, Math.max(1, this.notableNPCs.length));
+
+    for (let i = 0; i < siteCount; i++) {
+      const npc = this.notableNPCs[i % this.notableNPCs.length];
+      const angle = (i / siteCount) * Math.PI * 2 + rng.range(0.2, 0.8);
+      const dist = rng.range(190, 360); // Guaranteed within 190–360m of landing
+      const sx = Math.cos(angle) * dist;
+      const sz = Math.sin(angle) * dist;
+      const initialPos = new THREE.Vector3(sx, 15, sz);
+
+      const landmarkGroup = new THREE.Group();
+
+      // Basaltic sanctuary spires ring
+      const spireMat = new THREE.MeshStandardMaterial({
+        color: 0x1e293b,
+        roughness: 0.9,
+        metalness: 0.2,
+        flatShading: true,
+      });
+
+      const spireCount = 6;
+      for (let s = 0; s < spireCount; s++) {
+        const sAngle = (s / spireCount) * Math.PI * 2;
+        const sDist = 16.0;
+        const sHeight = 12.0 + (s % 3) * 4.0;
+        const spireGeo = new THREE.CylinderGeometry(0.8, 2.2, sHeight, 5);
+        const spire = new THREE.Mesh(spireGeo, spireMat);
+        spire.position.set(Math.cos(sAngle) * sDist, sHeight * 0.5, Math.sin(sAngle) * sDist);
+        spire.rotation.y = sAngle;
+        spire.rotation.z = 0.08 * (s % 2 === 0 ? 1 : -1);
+        landmarkGroup.add(spire);
+      }
+
+      // Central Acoustic Resonance Beacon Tower
+      const beaconMat = new THREE.MeshStandardMaterial({
+        color: 0x0284c7,
+        emissive: 0x38bdf8,
+        emissiveIntensity: 0.9,
+        roughness: 0.2,
+        metalness: 0.8,
+      });
+      const beaconGeo = new THREE.OctahedronGeometry(2.2, 0);
+      const beaconMesh = new THREE.Mesh(beaconGeo, beaconMat);
+      beaconMesh.position.set(0, 18, 0);
+      landmarkGroup.add(beaconMesh);
+
+      const beaconLight = new THREE.PointLight(0x38bdf8, 3.5, 60);
+      beaconLight.position.set(0, 19, 0);
+      landmarkGroup.add(beaconLight);
+
+      landmarkGroup.position.copy(initialPos);
+      this.encounterSitesGroup.add(landmarkGroup);
+
+      // Giant creature standing at sanctuary center
+      const giantCreature = this.buildGiant(npc, initialPos);
+      this.encounterSitesGroup.add(giantCreature.group);
+
+      this.encounterSites.push({
+        id: `site_encounter_${npc.npcId}`,
+        name: `Sanctuary of ${npc.name}`,
+        type: 'Acoustic Resonance Sanctuary',
+        position: initialPos,
+        giantNPC: npc,
+        giantCreature,
+        landmarkGroup,
+        beaconLight,
+      });
+    }
   }
 
   public update(
@@ -72,6 +163,29 @@ export class FaunaPopulationManager {
     getHeightAt: (x: number, z: number) => number
   ): void {
     if (this.ecology.tier === 'BARREN') return;
+    this.clock += dt;
+
+    // Anchor encounter sites on first frame when terrain heights are known
+    if (!this.sitesInitializedHeight) {
+      for (const site of this.encounterSites) {
+        const groundY = getHeightAt(site.position.x, site.position.z);
+        site.position.y = groundY;
+        site.landmarkGroup.position.y = groundY;
+        site.giantCreature.group.position.y = groundY;
+        site.giantCreature.basePos.y = groundY;
+      }
+      this.sitesInitializedHeight = true;
+    }
+
+    // Update encounter sites & giant look-at behavior
+    for (const site of this.encounterSites) {
+      // Pulse resonance beacon
+      const pulse = 2.2 + Math.sin(this.clock * 2.8) * 1.4;
+      site.beaconLight.intensity = pulse;
+
+      // Update giant kinematics
+      site.giantCreature.update(dt, getHeightAt, craftPos, craftThrottle);
+    }
 
     const centerCellX = Math.floor(craftPos.x / this.cellSize);
     const centerCellZ = Math.floor(craftPos.z / this.cellSize);
@@ -105,7 +219,7 @@ export class FaunaPopulationManager {
       }
     }
 
-    // Kinematic updates for active creatures
+    // Kinematic updates for active creatures in streamed cells
     for (const creatures of this.activeCells.values()) {
       for (const creature of creatures) {
         creature.update(dt, getHeightAt, craftPos, craftThrottle);
@@ -115,10 +229,19 @@ export class FaunaPopulationManager {
 
   public getActiveCreatures(): ActiveCreature[] {
     const list: ActiveCreature[] = [];
+    // Include encounter site giants first
+    for (const site of this.encounterSites) {
+      list.push(site.giantCreature);
+    }
+    // Include streamed cell creatures
     for (const cell of this.activeCells.values()) {
       for (const c of cell) list.push(c);
     }
     return list;
+  }
+
+  public getEncounterSites(): SentientEncounterSite[] {
+    return this.encounterSites;
   }
 
   private spawnCell(
@@ -140,19 +263,7 @@ export class FaunaPopulationManager {
     else if (this.ecology.tier === 'COMPLEX_BIOSPHERE') targetCount = rng.rangeInt(4, 7);
     else if (this.ecology.tier === 'SENTIENT_BIOSPHERE') targetCount = rng.rangeInt(4, 8);
 
-    // 1. Check for Sentient Giant in this cell (rare / deterministic per region)
-    if (this.ecology.tier === 'SENTIENT_BIOSPHERE' && this.sentientProfile && (cx + cz) % 3 === 0) {
-      const npc = this.notableNPCs[(Math.abs(cx * 7 + cz * 13)) % Math.max(1, this.notableNPCs.length)];
-      const gx = cellOriginX + rng.range(20, this.cellSize - 20);
-      const gz = cellOriginZ + rng.range(20, this.cellSize - 20);
-      const gy = getHeightAt(gx, gz);
-
-      const giantCreature = this.buildGiant(npc, new THREE.Vector3(gx, gy, gz));
-      creatures.push(giantCreature);
-      targetCount--;
-    }
-
-    // 2. Spawn biological species (Ground, Aerial, Megafauna)
+    // Spawn biological species (Ground, Aerial, Amphibious, Megafauna)
     for (let i = 0; i < targetCount; i++) {
       const speciesPool = [
         ...this.ecology.groundSpecies,
@@ -167,10 +278,7 @@ export class FaunaPopulationManager {
       const lz = cellOriginZ + rng.range(15, this.cellSize - 15);
       const ly = getHeightAt(lx, lz);
 
-      // Avoid water for non-amphibious
-      if (ly < 2.0 && species.category !== 'AMPHIBIOUS' && species.category !== 'AERIAL') {
-        continue;
-      }
+      if (ly < 2.0 && species.category !== 'AMPHIBIOUS') continue;
 
       const creature = this.buildCreature(species, new THREE.Vector3(lx, ly, lz), rng);
       creatures.push(creature);
@@ -185,146 +293,78 @@ export class FaunaPopulationManager {
     rng: SeededRandom
   ): ActiveCreature {
     const group = new THREE.Group();
-    const motif = this.ecology.motif;
+    const s = species.scale;
 
-    // Body Material derived from planetary motif
-    const matKey = `mat_${species.bodyPlan}_${motif.name}`;
-    let bodyMat = this.materialsCache.get(matKey) as THREE.MeshStandardMaterial;
-    if (!bodyMat) {
-      bodyMat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(motif.primaryColor).offsetHSL(rng.range(-0.05, 0.05), 0.1, 0.05),
-        roughness: motif.integument === 'chitin' || motif.integument === 'crystalline_plates' ? 0.3 : 0.7,
-        metalness: motif.integument === 'crystalline_plates' ? 0.4 : 0.05,
+    const baseColor = new THREE.Color(this.ecology.motif.primaryColor || 0x38bdf8);
+    const accentColor = new THREE.Color(this.ecology.motif.accentColor || 0x60a5fa);
+
+    const matKey = `${species.id}_mat`;
+    let mat = this.materialsCache.get(matKey);
+    if (!mat) {
+      mat = new THREE.MeshStandardMaterial({
+        color: baseColor,
+        roughness: 0.6,
+        metalness: 0.2,
         flatShading: true,
       });
-      this.materialsCache.set(matKey, bodyMat);
+      this.materialsCache.set(matKey, mat);
     }
 
-    const eyeMat = new THREE.MeshBasicMaterial({
-      color: motif.bioluminescence ? 0x38bdf8 : 0xf97316,
-    });
-
-    const h = species.heightMeters;
-
-    // Geometric construction based on body plan
-    switch (species.bodyPlan) {
-      case 'colossus': {
-        // Towering Megafauna (12-16m)
-        const torso = new THREE.Mesh(new THREE.BoxGeometry(4.5, 3.5, 7.0), bodyMat);
-        torso.position.y = h * 0.6;
-        group.add(torso);
-
-        const neck = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.8, 6.0, 6), bodyMat);
-        neck.position.set(0, h * 0.8, -3.2);
-        neck.rotation.x = -Math.PI / 4;
-        group.add(neck);
-
-        const head = new THREE.Mesh(new THREE.SphereGeometry(1.4, 6, 6), bodyMat);
-        head.position.set(0, h * 1.05, -5.2);
-        group.add(head);
-
-        // 4 massive pillar legs
-        const legGeo = new THREE.CylinderGeometry(0.8, 1.1, h * 0.6, 6);
-        for (const [lx, lz] of [[-1.8, -2.2], [1.8, -2.2], [-1.8, 2.2], [1.8, 2.2]]) {
-          const leg = new THREE.Mesh(legGeo, bodyMat);
-          leg.position.set(lx, (h * 0.6) / 2, lz);
-          group.add(leg);
-        }
-        break;
-      }
-
-      case 'ray':
-      case 'glider': {
-        // Aerial soaring manta/glider
-        const wingWidth = h * 2.6;
-        const wingLength = h * 1.8;
-        const rayBody = new THREE.Mesh(new THREE.ConeGeometry(wingWidth * 0.45, wingLength, 4), bodyMat);
-        rayBody.rotation.x = Math.PI / 2;
-        rayBody.scale.set(2.2, 0.22, 1.0);
-        group.add(rayBody);
-
-        const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.2, wingLength * 1.5, 3), bodyMat);
-        tail.position.set(0, 0, wingLength * 0.8);
-        tail.rotation.x = Math.PI / 2;
-        group.add(tail);
-        break;
-      }
-
-      case 'jelly':
-      case 'balloon': {
-        // Floating atmospheric siphon
-        const dome = new THREE.Mesh(new THREE.SphereGeometry(h * 0.6, 8, 8, 0, Math.PI * 2, 0, Math.PI * 0.7), bodyMat);
-        dome.rotation.x = Math.PI;
-        group.add(dome);
-
-        const tentacleGeo = new THREE.CylinderGeometry(0.08, 0.12, h * 0.9, 4);
-        for (let t = 0; t < 6; t++) {
-          const ang = (t * Math.PI * 2) / 6;
-          const tent = new THREE.Mesh(tentacleGeo, bodyMat);
-          tent.position.set(Math.cos(ang) * (h * 0.35), -h * 0.5, Math.sin(ang) * (h * 0.35));
-          group.add(tent);
-        }
-        break;
-      }
-
-      case 'six_legged': {
-        // Hexapod grazer
-        const torso = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.2, 3.8), bodyMat);
-        torso.position.y = 1.6;
-        group.add(torso);
-
-        const legGeo = new THREE.CylinderGeometry(0.18, 0.22, 1.6, 4);
-        for (const [lx, lz] of [[-1.1, -1.3], [1.1, -1.3], [-1.2, 0], [1.2, 0], [-1.1, 1.3], [1.1, 1.3]]) {
-          const leg = new THREE.Mesh(legGeo, bodyMat);
-          leg.position.set(lx, 0.8, lz);
-          group.add(leg);
-        }
-        break;
-      }
-
-      case 'tripod': {
-        const shell = new THREE.Mesh(new THREE.DodecahedronGeometry(1.2, 0), bodyMat);
-        shell.position.y = 3.2;
-        group.add(shell);
-
-        const legGeo = new THREE.CylinderGeometry(0.12, 0.16, 3.2, 3);
-        for (let a = 0; a < 3; a++) {
-          const ang = (a * Math.PI * 2) / 3;
-          const leg = new THREE.Mesh(legGeo, bodyMat);
-          leg.position.set(Math.cos(ang) * 1.1, 1.6, Math.sin(ang) * 1.1);
-          group.add(leg);
-        }
-        break;
-      }
-
-      default: {
-        // Default quad/crawler
-        const torso = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.0, 2.6), bodyMat);
-        torso.position.y = 1.2;
-        group.add(torso);
-
-        const legGeo = new THREE.CylinderGeometry(0.16, 0.18, 1.2, 4);
-        for (const [lx, lz] of [[-0.8, -0.9], [0.8, -0.9], [-0.8, 0.9], [0.8, 0.9]]) {
-          const leg = new THREE.Mesh(legGeo, bodyMat);
-          leg.position.set(lx, 0.6, lz);
-          group.add(leg);
-        }
-        break;
-      }
+    const accentMatKey = `${species.id}_accent`;
+    let accentMat = this.materialsCache.get(accentMatKey);
+    if (!accentMat) {
+      accentMat = new THREE.MeshStandardMaterial({
+        color: accentColor,
+        roughness: 0.4,
+        metalness: 0.4,
+      });
+      this.materialsCache.set(accentMatKey, accentMat);
     }
 
-    // Add eyes based on motif
-    for (let e = 0; e < motif.eyeCount; e++) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.12 * species.scale, 4, 4), eyeMat);
-      const xOff = (e - (motif.eyeCount - 1) / 2) * 0.25;
-      eye.position.set(xOff, species.heightMeters * 0.75, -species.heightMeters * 0.4);
-      group.add(eye);
+    // Build anatomical geometry based on bodyPlan
+    if (species.category === 'AERIAL') {
+      const wingSpan = s * 3.5;
+      const wingGeo = new THREE.ConeGeometry(wingSpan * 0.4, wingSpan, 4);
+      wingGeo.rotateZ(Math.PI / 2);
+      const leftWing = new THREE.Mesh(wingGeo, mat);
+      leftWing.position.set(-wingSpan * 0.4, 0, 0);
+      group.add(leftWing);
+
+      const rightWing = new THREE.Mesh(wingGeo, mat);
+      rightWing.position.set(wingSpan * 0.4, 0, 0);
+      rightWing.rotation.y = Math.PI;
+      group.add(rightWing);
+
+      const bodyGeo = new THREE.CylinderGeometry(s * 0.2, s * 0.35, s * 1.8, 5);
+      bodyGeo.rotateX(Math.PI / 2);
+      const body = new THREE.Mesh(bodyGeo, accentMat);
+      group.add(body);
+    } else {
+      const bodyGeo = new THREE.BoxGeometry(s * 1.2, s * 0.8, s * 2.0);
+      const body = new THREE.Mesh(bodyGeo, mat);
+      body.position.y = s * 0.6;
+      group.add(body);
+
+      const headGeo = new THREE.DodecahedronGeometry(s * 0.5, 0);
+      const head = new THREE.Mesh(headGeo, accentMat);
+      head.position.set(0, s * 0.9, s * 1.2);
+      group.add(head);
+
+      const legCount = Math.min(6, Math.max(3, this.ecology.motif.limbCount));
+      const legGeo = new THREE.CylinderGeometry(s * 0.12, s * 0.08, s * 0.9, 4);
+      for (let l = 0; l < legCount; l++) {
+        const side = l % 2 === 0 ? 1 : -1;
+        const leg = new THREE.Mesh(legGeo, mat);
+        const zOff = (Math.floor(l / 2) - (legCount / 4)) * (s * 0.8);
+        leg.position.set(side * s * 0.65, s * 0.4, zOff);
+        group.add(leg);
+      }
     }
 
     group.position.copy(spawnPos);
 
-    let headingAngle = rng.range(0, Math.PI * 2);
     let phase = rng.range(0, Math.PI * 2);
+    let headingAngle = rng.range(0, Math.PI * 2);
 
     const scanInfo: CreatureScanInfo = {
       name: species.name,
@@ -351,44 +391,39 @@ export class FaunaPopulationManager {
       update: (dt, getHeightAt, shipPos, shipThrottle) => {
         phase += dt * 2.5;
 
-        // Ship reaction
+        // Ship reaction: thruster wash scares timid/ground creatures
         const distToShip = group.position.distanceTo(shipPos);
         let reactSpeed = species.baseSpeed;
 
         if (distToShip < 40 && shipThrottle > 0.3) {
-          // Thruster wash scares timid/small creatures
           if (species.temperament === 'timid' || species.category === 'GROUND') {
-            const awayDir = new THREE.Vector2(group.position.x - shipPos.x, group.position.z - shipPos.z).normalize();
-            headingAngle = Math.atan2(awayDir.y, awayDir.x);
-            reactSpeed *= 1.8;
+            reactSpeed *= 2.2;
+            const fleeDir = new THREE.Vector3().subVectors(group.position, shipPos).normalize();
+            headingAngle = Math.atan2(fleeDir.x, fleeDir.z);
           }
         }
 
         if (species.category === 'AERIAL') {
-          // 3D aerial flight: circle/soar
-          headingAngle += dt * 0.25;
-          group.position.x += Math.cos(headingAngle) * reactSpeed * dt;
-          group.position.z += Math.sin(headingAngle) * reactSpeed * dt;
-          const terrainY = getHeightAt(group.position.x, group.position.z);
-          group.position.y = terrainY + species.heightMeters * 3.5 + Math.sin(phase) * 1.5;
+          // Aerial flight dynamics
+          headingAngle += Math.sin(phase * 0.2) * 0.02;
+          const forward = new THREE.Vector3(Math.sin(headingAngle), 0, Math.cos(headingAngle));
+          group.position.addScaledVector(forward, reactSpeed * dt);
 
-          // Banking into turn
-          group.rotation.y = -headingAngle + Math.PI / 2;
-          group.rotation.z = Math.sin(headingAngle) * 0.25;
+          const groundY = getHeightAt(group.position.x, group.position.z);
+          const flightAlt = groundY + Math.max(12, s * 8) + Math.sin(phase * 0.8) * 3.0;
+          group.position.y = THREE.MathUtils.lerp(group.position.y, flightAlt, dt * 1.5);
+          group.rotation.y = headingAngle;
+          group.rotation.z = Math.sin(phase * 1.8) * 0.2;
         } else {
-          // Ground locomotion with terrain sampling
-          group.position.x += Math.cos(headingAngle) * reactSpeed * dt;
-          group.position.z += Math.sin(headingAngle) * reactSpeed * dt;
+          // Ground wandering dynamics
+          headingAngle += Math.sin(phase * 0.15) * 0.03;
+          const forward = new THREE.Vector3(Math.sin(headingAngle), 0, Math.cos(headingAngle));
+          group.position.addScaledVector(forward, reactSpeed * dt);
 
-          const curY = getHeightAt(group.position.x, group.position.z);
-          // Ground alignment
-          group.position.y = curY;
-          group.rotation.y = -headingAngle - Math.PI / 2;
-
-          // Boundary wander reversal
-          if (group.position.distanceTo(spawnPos) > 55) {
-            headingAngle += Math.PI * 0.75;
-          }
+          const groundY = getHeightAt(group.position.x, group.position.z);
+          group.position.y = THREE.MathUtils.lerp(group.position.y, groundY, dt * 8.0);
+          group.rotation.y = headingAngle;
+          group.position.y += Math.abs(Math.sin(phase * 3.0)) * (s * 0.15); // Step bob
         }
       },
     };
@@ -399,7 +434,7 @@ export class FaunaPopulationManager {
     spawnPos: THREE.Vector3
   ): ActiveCreature {
     const group = new THREE.Group();
-    const h = (this.sentientProfile?.averageHeightMeters || 18) * 1.2;
+    const h = (this.sentientProfile?.averageHeightMeters || 20) * 1.25; // 20–25m height
 
     const giantMat = new THREE.MeshStandardMaterial({
       color: 0x334155, // Basaltic monolithic slate
@@ -408,42 +443,50 @@ export class FaunaPopulationManager {
       flatShading: true,
     });
 
-    const lumMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8, // Luminous celestial cyan
+    const lumMat = new THREE.MeshStandardMaterial({
+      color: 0x0284c7,
+      emissive: 0x38bdf8,
+      emissiveIntensity: 0.9,
+      roughness: 0.2,
+      metalness: 0.8,
     });
 
-    // Tall slender alien silhouette
-    // Torso / robe
-    const robeGeo = new THREE.ConeGeometry(h * 0.22, h * 0.65, 7);
+    // Articulated alien giant body
+    // Lower robe
+    const robeGeo = new THREE.ConeGeometry(h * 0.24, h * 0.65, 7);
     const robe = new THREE.Mesh(robeGeo, giantMat);
     robe.position.y = h * 0.35;
     group.add(robe);
 
-    // Upper Torso
-    const upperGeo = new THREE.BoxGeometry(h * 0.28, h * 0.35, h * 0.18);
+    // Articulated upper torso
+    const upperGeo = new THREE.BoxGeometry(h * 0.3, h * 0.36, h * 0.2);
     const upper = new THREE.Mesh(upperGeo, giantMat);
     upper.position.y = h * 0.72;
     group.add(upper);
 
-    // Stately Alien Head / Crest
-    const headGeo = new THREE.CylinderGeometry(h * 0.08, h * 0.14, h * 0.22, 5);
+    // Stately alien head node (for smooth look-at tracking)
+    const headPivot = new THREE.Group();
+    headPivot.position.y = h * 0.94;
+
+    const headGeo = new THREE.CylinderGeometry(h * 0.08, h * 0.15, h * 0.24, 6);
     const head = new THREE.Mesh(headGeo, giantMat);
-    head.position.y = h * 0.95;
-    group.add(head);
+    headPivot.add(head);
 
-    // Luminous Acoustic Crest
-    const crestGeo = new THREE.TorusGeometry(h * 0.16, h * 0.02, 4, 16);
+    // Luminous Acoustic Crest / Halo
+    const crestGeo = new THREE.TorusGeometry(h * 0.18, h * 0.025, 6, 24);
     const crest = new THREE.Mesh(crestGeo, lumMat);
-    crest.position.set(0, h * 1.05, 0);
+    crest.position.set(0, h * 0.14, 0);
     crest.rotation.x = Math.PI / 4;
-    group.add(crest);
+    headPivot.add(crest);
 
-    // Walking limbs
-    const legGeo = new THREE.CylinderGeometry(h * 0.06, h * 0.08, h * 0.45, 5);
+    group.add(headPivot);
+
+    // Standing limbs
+    const legGeo = new THREE.CylinderGeometry(h * 0.07, h * 0.09, h * 0.45, 5);
     const leftLeg = new THREE.Mesh(legGeo, giantMat);
-    leftLeg.position.set(-h * 0.12, h * 0.22, 0);
+    leftLeg.position.set(-h * 0.13, h * 0.22, 0);
     const rightLeg = new THREE.Mesh(legGeo, giantMat);
-    rightLeg.position.set(h * 0.12, h * 0.22, 0);
+    rightLeg.position.set(h * 0.13, h * 0.22, 0);
     group.add(leftLeg);
     group.add(rightLeg);
 
@@ -454,7 +497,7 @@ export class FaunaPopulationManager {
       species: this.sentientProfile?.name || 'Sentient Giant',
       category: 'SENTIENT',
       behaviour: 'Observing the vessel in peaceful stillness.',
-      diet: 'Acoustic / Mineral sifting',
+      diet: 'Acoustic / Mineral resonance',
       temperament: 'Venerable & receptive to peaceful communication',
       adaptation: this.sentientProfile?.worldview || 'Acoustic harmonic philosophy',
       isSentient: true,
@@ -467,7 +510,7 @@ export class FaunaPopulationManager {
       category: 'SENTIENT',
       bodyPlan: 'sentient_giant',
       scale: 1.0,
-      baseSpeed: 1.2,
+      baseSpeed: 1.0,
       temperament: 'venerable',
       diet: 'Acoustic harmonics',
       behaviour: 'sentient_gaze',
@@ -475,6 +518,8 @@ export class FaunaPopulationManager {
       heightMeters: h,
       description: `Individual representative of ${this.sentientProfile?.name}.`,
     };
+
+    let giantClock = 0;
 
     return {
       id: npc.npcId,
@@ -491,17 +536,41 @@ export class FaunaPopulationManager {
       isGiant: true,
       npcIdentity: npc,
       update: (dt, getHeightAt, shipPos) => {
-        // The Giant gently tracks the player's craft with its torso/head
-        const dirToShip = new THREE.Vector3().subVectors(shipPos, group.position);
-        const targetAngle = Math.atan2(dirToShip.x, dirToShip.z);
+        giantClock += dt;
 
-        // Smooth rotation towards ship
-        group.rotation.y = THREE.MathUtils.lerp(group.rotation.y, targetAngle, dt * 2.0);
+        // Idle breathing sway
+        const breathingSway = Math.sin(giantClock * 1.5) * 0.25;
+        upper.position.y = h * 0.72 + breathingSway * 0.3;
+        headPivot.position.y = h * 0.94 + breathingSway * 0.4;
 
-        // Ground anchor
+        // Look-at tracking: head and upper body smoothly turn toward ship
+        const distToShip = group.position.distanceTo(shipPos);
+        if (distToShip < 90.0) {
+          const dir = new THREE.Vector3().subVectors(shipPos, group.position);
+          const targetAngle = Math.atan2(dir.x, dir.z);
+          group.rotation.y = THREE.MathUtils.lerp(group.rotation.y, targetAngle, dt * 2.5);
+
+          // Tilt head slightly toward ship elevation
+          const yDiff = shipPos.y - headPivot.position.y;
+          const pitchTarget = THREE.MathUtils.clamp(Math.atan2(yDiff, distToShip), -0.3, 0.4);
+          headPivot.rotation.x = THREE.MathUtils.lerp(headPivot.rotation.x, pitchTarget, dt * 3.0);
+        }
+
+        // Ground anchoring
         const curY = getHeightAt(group.position.x, group.position.z);
         group.position.y = curY;
       },
     };
+  }
+
+  public dispose(): void {
+    for (const cell of this.activeCells.values()) {
+      for (const c of cell) {
+        this.faunaGroup.remove(c.group);
+      }
+    }
+    this.activeCells.clear();
+    this.encounterSitesGroup.clear();
+    this.encounterSites = [];
   }
 }

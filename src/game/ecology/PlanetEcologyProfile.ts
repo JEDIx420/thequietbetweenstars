@@ -67,7 +67,8 @@ export class EcologyGenerator {
   public static deriveEcology(
     planetProfile: PlanetEnvironmentProfile,
     planetSeed: number,
-    planetId: string
+    planetId: string,
+    forceSentient: boolean = false
   ): PlanetEcologyProfile {
     const rng = new SeededRandom(planetSeed + 1337);
 
@@ -81,7 +82,12 @@ export class EcologyGenerator {
     let viability = 0;
     let trophicComplexity = 0;
 
-    if (bio === 'none' || !hasAtmo || temp < 110 || temp > 460) {
+    const isForced = forceSentient || (planetProfile as any).forceSentient === true;
+    if (isForced && hasAtmo) {
+      tier = 'SENTIENT_BIOSPHERE';
+      viability = 0.9;
+      trophicComplexity = 5;
+    } else if (bio === 'none' || !hasAtmo || temp < 110 || temp > 460) {
       // Barren or severe vacuum/cryo/inferno
       tier = 'BARREN';
       viability = rng.range(0.0, 0.05);
@@ -95,11 +101,19 @@ export class EcologyGenerator {
       viability = rng.range(0.35, 0.6);
       trophicComplexity = 2;
     } else if (bio === 'complex-ecosystem') {
-      tier = 'COMPLEX_BIOSPHERE';
-      viability = rng.range(0.65, 0.85);
+      viability = rng.range(0.65, 0.88);
       trophicComplexity = 3 + rng.rangeInt(0, 1);
+      // Sentience emerges naturally in 25-30% of temperate liquid-bearing complex ecosystems
+      const isTemperate = temp >= 240 && temp <= 340;
+      const hasHydrosphere = hydro >= 0.12;
+      const naturalSentient = isTemperate && hasHydrosphere && (rng.next() < 0.28);
+      tier = naturalSentient ? 'SENTIENT_BIOSPHERE' : 'COMPLEX_BIOSPHERE';
+      if (naturalSentient) {
+        trophicComplexity = 5;
+        viability = Math.max(viability, 0.85);
+      }
     } else if (bio === 'anomalous') {
-      // Anomalous high probability of Sentient Biosphere
+      // Anomalous high probability of Sentient Biosphere (~75%)
       const isSentient = rng.next() < 0.75;
       tier = isSentient ? 'SENTIENT_BIOSPHERE' : 'COMPLEX_BIOSPHERE';
       viability = rng.range(0.8, 1.0);

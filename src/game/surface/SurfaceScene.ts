@@ -13,6 +13,7 @@ import { EcologyGenerator, type PlanetEcologyProfile } from '../ecology/PlanetEc
 import { SentientSpeciesGenerator, type SentientSpeciesProfile, type NPCIdentity } from '../ecology/SentientSpeciesProfile';
 import { FaunaPopulationManager } from '../ecology/FaunaPopulationManager';
 import { ResourceNodeManager, type SampleNode } from './ResourceNodeManager';
+import { SurveyCreditPickupManager } from './SurveyCreditPickupManager';
 
 export class SurfaceScene {
   public scene: THREE.Scene;
@@ -21,7 +22,9 @@ export class SurfaceScene {
   public planet: PlanetDescriptor;
   public site: LandingSite;
 
-  // Surface flight dynamics & altitude control
+// Surface flight dynamics & altitude control
+  public shipPhysicsRoot: THREE.Group;
+  public shipVisualRoot: THREE.Group;
   public shipPosition = new THREE.Vector3(0, 18, 0);
   public shipVelocity = new THREE.Vector3(0, 0, 0);
   public shipYaw = 0;
@@ -30,6 +33,35 @@ export class SurfaceScene {
   public desiredAltitudeAGL = 18.0; // Dynamic pilot-controlled height AGL
   public minAltitudeAGL = 7.0;
   public maxAltitudeAGL = 45.0; // Extensible with upgrades
+
+  // Critically damped spring-damper vertical dynamics
+  public verticalVelocity = 0.0;
+  public verticalAcceleration = 0.0;
+  public climbRate = 32.0; // m/s maximum climb
+  public descentRate = 22.0; // m/s maximum descent
+  public springStrength = 16.0; // Spring stiffness
+  public damping = 7.2; // Damping ratio (critically damped: ~2*sqrt(k))
+
+  // Smoothed camera tracking
+  private smoothedCamPos = new THREE.Vector3();
+  private smoothedCamLook = new THREE.Vector3();
+  private isCamInitialized = false;
+
+  // Survey Credit Pickup Manager
+  public creditPickupManager: SurveyCreditPickupManager;
+
+  // Real-time telemetry for F3 overlay & QA
+  public debugTelemetry = {
+    shipPos: new THREE.Vector3(),
+    groundHeight: 0,
+    anticipatedGround: 0,
+    actualAGL: 0,
+    desiredAGL: 18,
+    verticalVelocity: 0,
+    verticalAcceleration: 0,
+    speedMps: 0,
+    dt: 0,
+  };
 
   // Atmospheric sky and lighting
   private proceduralSky: ProceduralSky;
@@ -62,7 +94,7 @@ export class SurfaceScene {
   // Coherent noise engine
   private noise: SimplexNoise2D;
 
-  constructor(planet: PlanetDescriptor, site: LandingSite) {
+  constructor(planet: PlanetDescriptor, site: LandingSite, initialCollectedCreditIds: string[] = []) {
     this.planet = planet;
     this.site = site;
     const profile = planet.profile;
@@ -130,11 +162,31 @@ export class SurfaceScene {
     this.resourceManager = new ResourceNodeManager(region, this.shipPosition, (x, z) => this.getTerrainHeight(x, z));
     this.scene.add(this.resourceManager.resourceGroup);
 
-    // 7. Survey Craft
+    // Survey Credit Pickup Manager
+    this.creditPickupManager = new SurveyCreditPickupManager(
+      region,
+      planet.id,
+      planet.seed,
+      initialCollectedCreditIds
+    );
+    this.scene.add(this.creditPickupManager.pickupGroup);
+
+    // 7. Survey Craft Hierarchy Separation
+    // shipPhysicsRoot holds the true world translation and horizontal yaw
+    // shipVisualRoot holds pitch, roll banking, and thruster vibration without distorting movement
+    this.shipPhysicsRoot = new THREE.Group();
+    this.shipVisualRoot = new THREE.Group();
     this.surveyCraft = new SurveyCraft();
-    this.shipGroup = this.surveyCraft.group;
-    this.shipGroup.position.copy(this.shipPosition);
-    this.scene.add(this.shipGroup);
+    this.shipGroup = this.shipPhysicsRoot;
+
+    this.shipVisualRoot.add(this.surveyCraft.group);
+    this.shipPhysicsRoot.add(this.shipVisualRoot);
+
+    // Initialize position directly above ground
+    const initGround = this.getTerrainHeight(0, 0);
+    this.shipPosition.set(0, initGround + this.desiredAltitudeAGL, 0);
+    this.shipPhysicsRoot.position.copy(this.shipPosition);
+    this.scene.add(this.shipPhysicsRoot);
 
     // Initial terrain generation
     this.updateTerrain(this.shipPosition);
@@ -159,88 +211,150 @@ export class SurfaceScene {
     nearbyResource: SampleNode | null;
     altitudeAGL: number;
     speedMps: number;
+    collectedCredits: Array<{ id: string; amount: number; tier: string }>;
+    nearestCreditPickups: Array<{ position: THREE.Vector3; amount: number }>;
   } {
-    const clampedDt = Math.min(dt, 0.06);
+    const clampedDt = Math.min(dt, 0.05);
 
     // Handle roll-based altitude keys (Q: descend, E: ascend)
     if (input.roll !== 0) {
       this.adjustAltitude(input.roll * clampedDt * 18.0);
     }
 
-    // 1. Hover-Stabilized Surface Movement Model
+    // 1. Horizontal Flight Dynamics & Heading Control
     this.shipYaw += -input.axes.x * clampedDt * 1.8;
     this.shipPitch = input.axes.y * 0.45;
     this.shipRoll = -input.axes.x * 0.35;
 
-    this.shipGroup.rotation.set(0, 0, 0);
-    this.shipGroup.rotateY(this.shipYaw);
-    this.shipGroup.rotateX(this.shipPitch);
-    this.shipGroup.rotateZ(this.shipRoll);
+    // Apply orientation:
+    // Yaw applied to physics root (world space forward)
+    this.shipPhysicsRoot.rotation.set(0, 0, 0);
+    this.shipPhysicsRoot.rotateY(this.shipYaw);
 
-    // Forward propulsion
-    const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.shipYaw);
+    // Visual bank and pitch applied ONLY to visual root
+    this.shipVisualRoot.rotation.set(0, 0, 0);
+    this.shipVisualRoot.rotateX(this.shipPitch);
+    this.shipVisualRoot.rotateZ(this.shipRoll);
+
+    // Forward propulsion in horizontal XZ plane
+    const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(SurfaceScene.WORLD_UP, this.shipYaw);
     const speed = input.throttle * 65;
-    const targetVel = forward.multiplyScalar(speed);
+    const targetVel = forward.clone().multiplyScalar(speed);
 
     this.shipVelocity.lerp(targetVel, clampedDt * 3.5);
-    this.shipPosition.addScaledVector(this.shipVelocity, clampedDt);
+    this.shipPosition.x += this.shipVelocity.x * clampedDt;
+    this.shipPosition.z += this.shipVelocity.z * clampedDt;
 
-    // Dynamic Altitude with spring/damped terrain following
-    const groundHeight = this.getTerrainHeight(this.shipPosition.x, this.shipPosition.z);
-    const targetAltitude = groundHeight + this.desiredAltitudeAGL;
+    // 2. Predictive 3-Point Terrain Lookahead
+    const currentGround = this.getTerrainHeight(this.shipPosition.x, this.shipPosition.z);
+    const lookahead1 = this.shipPosition.clone().addScaledVector(forward, 8.0);
+    const lookahead2 = this.shipPosition.clone().addScaledVector(forward, 22.0);
+    const h1 = this.getTerrainHeight(lookahead1.x, lookahead1.z);
+    const h2 = this.getTerrainHeight(lookahead2.x, lookahead2.z);
 
-    if (this.shipPosition.y < groundHeight + this.minAltitudeAGL) {
-      // Hard anti-collision ceiling floor
-      this.shipPosition.y += (groundHeight + this.minAltitudeAGL - this.shipPosition.y) * clampedDt * 8.0;
-    } else {
-      this.shipPosition.y = THREE.MathUtils.lerp(this.shipPosition.y, targetAltitude, clampedDt * 3.0);
+    // Weighted anticipated ground height
+    const anticipatedGround = Math.max(
+      currentGround,
+      currentGround * 0.35 + h1 * 0.40 + h2 * 0.25
+    );
+
+    // 3. Critically Damped Spring-Damper Vertical Flight Model
+    const targetAltitude = anticipatedGround + this.desiredAltitudeAGL;
+    const altitudeError = targetAltitude - this.shipPosition.y;
+
+    // a = k * error - c * velocity
+    this.verticalAcceleration = altitudeError * this.springStrength - this.verticalVelocity * this.damping;
+    this.verticalVelocity += this.verticalAcceleration * clampedDt;
+
+    // Asymmetric velocity clamping (faster climb for crest avoidance, controlled descent)
+    this.verticalVelocity = THREE.MathUtils.clamp(
+      this.verticalVelocity,
+      -this.descentRate,
+      this.climbRate
+    );
+
+    this.shipPosition.y += this.verticalVelocity * clampedDt;
+
+    // 4. Swept Floor Collision & Minimum Safe Clearance
+    const absoluteFloor = currentGround + this.minAltitudeAGL;
+    if (this.shipPosition.y < absoluteFloor) {
+      this.shipPosition.y = absoluteFloor;
+      if (this.verticalVelocity < 0) {
+        this.verticalVelocity = 0;
+      }
     }
 
-    this.shipGroup.position.copy(this.shipPosition);
+    // 5. Sentient Giant Soft-Collision Repulsion Field (14m radius)
+    for (const site of this.faunaPopulationManager.encounterSites) {
+      const xDiff = this.shipPosition.x - site.position.x;
+      const zDiff = this.shipPosition.z - site.position.z;
+      const horizDistSq = xDiff * xDiff + zDiff * zDiff;
+      const minDistance = 14.0;
+      if (horizDistSq < minDistance * minDistance && horizDistSq > 0.001) {
+        const horizDist = Math.sqrt(horizDistSq);
+        const pushMag = (minDistance - horizDist) * 12.0 * clampedDt;
+        this.shipPosition.x += (xDiff / horizDist) * pushMag;
+        this.shipPosition.z += (zDiff / horizDist) * pushMag;
+      }
+    }
+
+    this.shipPhysicsRoot.position.copy(this.shipPosition);
     this.surveyCraft.update(clampedDt, input.throttle, input.axes.x, input.axes.y);
 
-    // 2. Horizon-Stabilized Camera Follow & Level Recovery
-    // Craft visual bank is kept, but camera bank is gently clamped to maximum 6-8 degrees (~0.12 rad)
-    const maxCameraBankRad = 0.12;
-    const targetCameraBank = THREE.MathUtils.clamp(this.shipRoll * 0.3, -maxCameraBankRad, maxCameraBankRad);
+    // 6. Horizon-Stabilized Camera with Decoupled Target Smoothing
+    const maxCameraBankRad = 0.10;
+    const targetCameraBank = THREE.MathUtils.clamp(this.shipRoll * 0.25, -maxCameraBankRad, maxCameraBankRad);
 
-    // Camera look target
-    const lookAhead = this.shipPosition.clone().add(forward.clone().multiplyScalar(15));
+    const camOffset = new THREE.Vector3(0, 5.5, 14.5).applyAxisAngle(SurfaceScene.WORLD_UP, this.shipYaw);
+    const targetCamPos = this.shipPosition.clone().add(camOffset);
+    const targetCamLook = this.shipPosition.clone().addScaledVector(forward, 16.0);
 
-    // Desired camera up: WORLD_UP slightly tilted for subtle responsive banking, strictly upright
+    if (!this.isCamInitialized) {
+      this.smoothedCamPos.copy(targetCamPos);
+      this.smoothedCamLook.copy(targetCamLook);
+      this.isCamInitialized = true;
+    } else {
+      this.smoothedCamPos.lerp(targetCamPos, clampedDt * 5.0);
+      this.smoothedCamLook.lerp(targetCamLook, clampedDt * 6.5);
+    }
+
     const right = new THREE.Vector3().crossVectors(forward, SurfaceScene.WORLD_UP).normalize();
     const desiredUp = SurfaceScene.WORLD_UP.clone()
       .addScaledVector(right, -Math.sin(targetCameraBank))
       .normalize();
 
-    // Fast recovery to upright if incoming camera from orbit was inverted or sideways
     const upAlignment = camera.up.dot(SurfaceScene.WORLD_UP);
     const recoveryRate = upAlignment < 0.2 ? 9.0 : 4.5;
     camera.up.lerp(desiredUp, clampedDt * recoveryRate).normalize();
 
-    const camOffset = new THREE.Vector3(0, 5.5, 14).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.shipYaw);
-    const targetCamPos = this.shipPosition.clone().add(camOffset);
-    camera.position.lerp(targetCamPos, clampedDt * 4.5);
-    camera.lookAt(lookAhead);
+    camera.position.copy(this.smoothedCamPos);
+    camera.lookAt(this.smoothedCamLook);
 
     this.proceduralSky.update(camera.position);
     if (this.distantHorizonRing) {
       this.distantHorizonRing.position.set(camera.position.x, 0, camera.position.z);
     }
 
-    // Follow camera with atmospheric particles
     if (this.particlePoints) {
       this.particlePoints.position.copy(this.shipPosition);
     }
 
-    // 3. Update streamed living ecology (Ground, Aerial, Megafauna & Sentient Giants)
+    // 7. Update Survey Credit Pickups (Fly-Through Auto-Collect & Magnetism)
+    const collectedCredits = this.creditPickupManager.update(
+      this.shipPosition,
+      clampedDt,
+      (x, z) => this.getTerrainHeight(x, z)
+    );
+    const nearestCreditPickups = this.creditPickupManager.getNearestPickups(this.shipPosition, 4);
+
+    // 8. Update streamed living ecology & Giant encounters
     const getHeightFn = (x: number, z: number) => this.getTerrainHeight(x, z);
     this.faunaPopulationManager.update(this.shipPosition, input.throttle, clampedDt, getHeightFn);
 
-    // 4. Terrain and liquid streaming updates
+    // 9. Terrain and liquid streaming updates
     this.updateTerrain(this.shipPosition);
 
-    // 5. Check for nearby scannable landmark, fauna, sentient giant, or survey sample
+    // 10. Check for nearby scannable landmark, fauna, sentient giant, or survey sample
     let scanTarget: { name: string; info: string; isSentient?: boolean; npcData?: NPCIdentity } | null = null;
     let minDist = 65;
 
@@ -268,6 +382,20 @@ export class SurfaceScene {
       }
     }
 
+    // Direct proximity to guaranteed giant encounter sites (up to 55m)
+    for (const site of this.faunaPopulationManager.encounterSites) {
+      const dist = this.shipPosition.distanceTo(site.position);
+      if (dist < 55) {
+        scanTarget = {
+          name: site.giantNPC.name,
+          info: `Sentient Giant Elder: ${site.giantNPC.title}\nTemperament: ${site.giantNPC.personality}\nObserving: ${site.giantNPC.currentConcern}`,
+          isSentient: true,
+          npcData: site.giantNPC,
+        };
+        break;
+      }
+    }
+
     // Check nearby collectible survey sample node
     let nearbyResource: SampleNode | null = null;
     for (const node of this.resourceManager.nodes) {
@@ -277,14 +405,27 @@ export class SurfaceScene {
       }
     }
 
-    const altitudeAGL = Math.max(0, Math.round(this.shipPosition.y - groundHeight));
+    const altitudeAGL = Math.max(0, Math.round(this.shipPosition.y - currentGround));
     const speedMps = Math.round(this.shipVelocity.length());
+
+    // Record Telemetry
+    this.debugTelemetry.shipPos.copy(this.shipPosition);
+    this.debugTelemetry.groundHeight = currentGround;
+    this.debugTelemetry.anticipatedGround = anticipatedGround;
+    this.debugTelemetry.actualAGL = this.shipPosition.y - currentGround;
+    this.debugTelemetry.desiredAGL = this.desiredAltitudeAGL;
+    this.debugTelemetry.verticalVelocity = this.verticalVelocity;
+    this.debugTelemetry.verticalAcceleration = this.verticalAcceleration;
+    this.debugTelemetry.speedMps = speedMps;
+    this.debugTelemetry.dt = clampedDt;
 
     return {
       activeScanTarget: scanTarget,
       nearbyResource,
       altitudeAGL,
       speedMps,
+      collectedCredits,
+      nearestCreditPickups,
     };
   }
 
@@ -695,5 +836,6 @@ export class SurfaceScene {
     this.floraGroup.clear();
     this.faunaPopulationManager.faunaGroup.clear();
     this.resourceManager.resourceGroup.clear();
+    this.creditPickupManager.pickupGroup.clear();
   }
 }
