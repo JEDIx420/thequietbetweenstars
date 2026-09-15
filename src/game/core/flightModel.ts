@@ -20,7 +20,8 @@ export class FlightModel {
 
   // Refined flight dynamics parameters
   private readonly maxCruiseSpeed = 160;
-  private readonly acceleration = 75;
+  private readonly baseAcceleration = 75;
+  public accelerationMultiplier = 1.0;
   private readonly linearDamping = 0.988; // Gentle glide
   private readonly turnSpeed = 1.75;
   private readonly angularDamping = 0.86;
@@ -103,7 +104,8 @@ export class FlightModel {
 
     // 4. Momentum & Thrust Vector
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
-    const effectiveThrust = Math.pow(this.currentThrottle, 1.3) * this.acceleration;
+    const accel = this.baseAcceleration * this.accelerationMultiplier;
+    const effectiveThrust = Math.pow(this.currentThrottle, 1.3) * accel;
     this.velocity.addScaledVector(forward, effectiveThrust * clampedDt);
 
     // Space inertia damping

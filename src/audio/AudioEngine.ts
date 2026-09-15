@@ -1,14 +1,5 @@
-/**
- * Procedural Space Synth & Ambient EDM Generative Audio Engine
- * Pure Web Audio API synthesis without external audio file dependencies.
- *
- * Implements:
- * - Inspiring Ambient EDM Title Theme (~96 BPM) with warm polyphonic pads, analog bassline,
- *   subtle electronic percussion pulse, and sparkling celestial arpeggios.
- * - Dynamic flight-phase music context layers (TITLE, CRUISE, APPROACH, ORBIT, ENTRY, SURFACE).
- * - Dynamic engine hum modulated by throttle.
- * - Resonant scan sweeps, collision deflections, and UI feedback tones.
- */
+import * as Tone from 'tone';
+import { ProceduralMusicGenome, type SystemMusicGenome } from './ProceduralMusicGenome';
 
 export type MusicPhaseContext =
   | 'title'
@@ -17,379 +8,230 @@ export type MusicPhaseContext =
   | 'orbit'
   | 'entry'
   | 'surface'
-  | 'deep_cruise';
+  | 'deep_cruise'
+  | 'sentient';
 
-export class AudioEngine {
-  private ctx: AudioContext | null = null;
-  private masterGain: GainNode | null = null;
+export class AudioDirector {
   private isMuted = false;
   private masterVolume = 0.72;
-
-  // Active music mode
   private currentContext: MusicPhaseContext = 'title';
+  private currentGenome: SystemMusicGenome | null = null;
 
-  // Synth nodes
-  private musicBus: GainNode | null = null;
-  private padGain: GainNode | null = null;
-  private bassGain: GainNode | null = null;
-  private leadGain: GainNode | null = null;
-  private beatGain: GainNode | null = null;
-  private droneGain: GainNode | null = null;
+  // Tone synths & instruments
+  private padSynth: Tone.PolySynth | null = null;
+  private bassSynth: Tone.MonoSynth | null = null;
+  private leadSynth: Tone.PolySynth | null = null;
+  private ambientNoise: Tone.Noise | null = null;
 
-  // Master music filter
-  private musicFilter: BiquadFilterNode | null = null;
+  // Tone FX chain
+  private filter: Tone.Filter | null = null;
+  private reverb: Tone.Reverb | null = null;
+  private delay: Tone.FeedbackDelay | null = null;
 
-  // Dynamic thruster synthesis
+  // Direct Web Audio engine for thrusters & responsive sound FX
+  private webAudioCtx: AudioContext | null = null;
+  private webAudioMasterGain: GainNode | null = null;
   private thrusterGain: GainNode | null = null;
   private thrusterOsc: OscillatorNode | null = null;
+  private ionWhineOsc: OscillatorNode | null = null;
+  private ionWhineGain: GainNode | null = null;
 
-  // Sequencer loop timer
-  private sequencerTimer: number | null = null;
-  private beatCount = 0;
+  private loopSequenceId: number | null = null;
+  private stepIndex = 0;
 
   public async start(): Promise<void> {
-    if (!this.ctx) {
+    // 1. Initialize Tone.js
+    await Tone.start();
+    Tone.getTransport().bpm.value = 96;
+
+    if (!this.padSynth) {
+      this.reverb = new Tone.Reverb({ decay: 4.5, wet: 0.35 }).toDestination();
+      this.delay = new Tone.FeedbackDelay('8n', 0.25).connect(this.reverb);
+      this.filter = new Tone.Filter(2600, 'lowpass').connect(this.delay);
+
+      this.padSynth = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 1.2, decay: 1.8, sustain: 0.7, release: 2.5 },
+      }).connect(this.filter);
+      this.padSynth.volume.value = -12;
+
+      this.bassSynth = new Tone.MonoSynth({
+        oscillator: { type: 'sawtooth' },
+        envelope: { attack: 0.1, decay: 0.4, sustain: 0.6, release: 0.8 },
+        filterEnvelope: { attack: 0.05, decay: 0.3, sustain: 0.4, baseFrequency: 80, octaves: 2.5 },
+      }).connect(this.filter);
+      this.bassSynth.volume.value = -10;
+
+      this.leadSynth = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.05, decay: 0.4, sustain: 0.3, release: 1.2 },
+      }).connect(this.delay);
+      this.leadSynth.volume.value = -14;
+
+      this.ambientNoise = new Tone.Noise('pink');
+      const noiseFilter = new Tone.Filter(400, 'lowpass').connect(this.reverb);
+      this.ambientNoise.connect(noiseFilter);
+      this.ambientNoise.volume.value = -32;
+      this.ambientNoise.start();
+    }
+
+    // 2. Initialize low-latency Web Audio for procedural ship thrusters & sound FX
+    if (!this.webAudioCtx) {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) {
-        console.warn('[Audio] Web Audio API not supported.');
-        return;
+      if (AudioCtx) {
+        this.webAudioCtx = new AudioCtx();
+        this.webAudioMasterGain = this.webAudioCtx.createGain();
+        this.webAudioMasterGain.gain.setValueAtTime(this.isMuted ? 0 : this.masterVolume, this.webAudioCtx.currentTime);
+        this.webAudioMasterGain.connect(this.webAudioCtx.destination);
+        this.setupThrusters();
       }
-      this.ctx = new AudioCtx();
-
-      this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.masterVolume, this.ctx.currentTime);
-      this.masterGain.connect(this.ctx.destination);
-
-      this.setupAudioBuses();
-      this.setupThrusters();
     }
 
-    if (this.ctx.state === 'suspended') {
+    if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
       try {
-        await this.ctx.resume();
+        await this.webAudioCtx.resume();
       } catch (err) {
-        console.warn('[Audio] Autoplay policy prevented resume until user interaction.', err);
+        console.warn('[AudioDirector] AudioContext resume waiting for interaction', err);
       }
-    }
-  }
-
-  private setupAudioBuses(): void {
-    if (!this.ctx || !this.masterGain) return;
-
-    this.musicBus = this.ctx.createGain();
-    this.musicBus.gain.setValueAtTime(1.0, this.ctx.currentTime);
-
-    this.musicFilter = this.ctx.createBiquadFilter();
-    this.musicFilter.type = 'lowpass';
-    this.musicFilter.frequency.setValueAtTime(3200, this.ctx.currentTime);
-    this.musicFilter.Q.setValueAtTime(1.2, this.ctx.currentTime);
-
-    this.musicBus.connect(this.musicFilter);
-    this.musicFilter.connect(this.masterGain);
-
-    // Sub-channel buses
-    this.padGain = this.ctx.createGain();
-    this.padGain.gain.setValueAtTime(0.28, this.ctx.currentTime);
-    this.padGain.connect(this.musicBus);
-
-    this.bassGain = this.ctx.createGain();
-    this.bassGain.gain.setValueAtTime(0.22, this.ctx.currentTime);
-    this.bassGain.connect(this.musicBus);
-
-    this.leadGain = this.ctx.createGain();
-    this.leadGain.gain.setValueAtTime(0.18, this.ctx.currentTime);
-    this.leadGain.connect(this.musicBus);
-
-    this.beatGain = this.ctx.createGain();
-    this.beatGain.gain.setValueAtTime(0.16, this.ctx.currentTime);
-    this.beatGain.connect(this.musicBus);
-
-    this.droneGain = this.ctx.createGain();
-    this.droneGain.gain.setValueAtTime(0.20, this.ctx.currentTime);
-    this.droneGain.connect(this.musicBus);
-  }
-
-  /**
-   * Generative EDM / Synth Space Sequencer (~96 BPM = 625ms per quarter-note, 156ms sixteenth)
-   */
-  public playTitleMusic(): void {
-    if (!this.ctx || !this.masterGain) return;
-    this.setContext('title');
-
-    if (this.sequencerTimer !== null) return;
-
-    // Harmonic progression in Eb Major / C Minor
-    // Chords: Ebmaj9 (Eb-G-Bb-D), Cm9 (C-Eb-G-Bb-D), Abmaj7 (Ab-C-Eb-G), Bbadd9 (Bb-D-F-C)
-    const chordRoots = [155.56, 130.81, 103.83, 116.54]; // Bass fundamentals
-    const chordFrequencies = [
-      [155.56, 196.00, 233.08, 293.66], // Eb3, G3, Bb3, D4
-      [130.81, 155.56, 196.00, 233.08], // C3, Eb3, G3, Bb3
-      [103.83, 155.56, 207.65, 233.08], // Ab2, Eb3, Ab3, Bb3
-      [116.54, 174.61, 233.08, 261.63], // Bb2, F3, Bb3, C4
-    ];
-
-    // Melodic pentatonic motives
-    const leadMotifs = [
-      [311.13, 392.00, 466.16, 587.33], // Eb4, G4, Bb4, D5
-      [523.25, 466.16, 392.00, 311.13], // C5, Bb4, G4, Eb4
-      [392.00, 466.16, 523.25, 587.33], // G4, Bb4, C5, D5
-      [622.25, 587.33, 466.16, 392.00], // Eb5, D5, Bb4, G4
-    ];
-
-    const sixteenthMs = 156;
-
-    this.sequencerTimer = window.setInterval(() => {
-      if (!this.ctx || this.isMuted) return;
-
-      const now = this.ctx.currentTime;
-      const step16 = this.beatCount % 64; // 4-bar phrase (16 sixteenth notes per bar)
-      const bar = Math.floor(step16 / 16);
-      const stepInBar = step16 % 16;
-
-      // 1. Kick & Soft Percussion Pulse on Quarter Notes (steps 0, 4, 8, 12)
-      if (stepInBar % 4 === 0) {
-        if (this.currentContext === 'title' || this.currentContext === 'cruise') {
-          this.triggerKick(now);
-        }
-      }
-
-      // 2. Gentle Hi-Hat / Shimmer on 16ths
-      if (stepInBar % 2 === 1 && (this.currentContext === 'title' || this.currentContext === 'cruise')) {
-        this.triggerHat(now);
-      }
-
-      // 3. Sustained Pad Chords (every bar on step 0)
-      if (stepInBar === 0) {
-        const chord = chordFrequencies[bar];
-        this.triggerPadChord(chord, now);
-      }
-
-      // 4. Synth Bassline on quarter beats
-      if (stepInBar % 4 === 0) {
-        const root = chordRoots[bar];
-        this.triggerBass(root, now);
-      }
-
-      // 5. Crystalline Arpeggio Lead
-      if (stepInBar % 2 === 0) {
-        const motif = leadMotifs[bar];
-        const note = motif[(stepInBar / 2) % motif.length];
-        this.triggerLeadArp(note, now);
-      }
-
-      this.beatCount++;
-    }, sixteenthMs);
-  }
-
-  private triggerKick(time: number): void {
-    if (!this.ctx || !this.beatGain) return;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.frequency.setValueAtTime(130, time);
-    osc.frequency.exponentialRampToValueAtTime(42, time + 0.12);
-
-    gain.gain.setValueAtTime(0.24, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.18);
-
-    osc.connect(gain);
-    gain.connect(this.beatGain);
-    osc.start(time);
-    osc.stop(time + 0.2);
-  }
-
-  private triggerHat(time: number): void {
-    if (!this.ctx || !this.beatGain) return;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    const filter = this.ctx.createBiquadFilter();
-
-    osc.type = 'highpass' as any;
-    osc.frequency.setValueAtTime(7000, time);
-
-    filter.type = 'highpass';
-    filter.frequency.setValueAtTime(8000, time);
-
-    gain.gain.setValueAtTime(0.04, time);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.05);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.beatGain);
-    osc.start(time);
-    osc.stop(time + 0.06);
-  }
-
-  private triggerPadChord(frequencies: number[], time: number): void {
-    if (!this.ctx || !this.padGain) return;
-    for (const freq of frequencies) {
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(freq, time);
-
-      gain.gain.setValueAtTime(0.001, time);
-      gain.gain.linearRampToValueAtTime(0.05, time + 0.8);
-      gain.gain.exponentialRampToValueAtTime(0.0001, time + 2.4);
-
-      osc.connect(gain);
-      gain.connect(this.padGain);
-      osc.start(time);
-      osc.stop(time + 2.5);
-    }
-  }
-
-  private triggerBass(frequency: number, time: number): void {
-    if (!this.ctx || !this.bassGain) return;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(frequency / 2, time);
-
-    gain.gain.setValueAtTime(0.12, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.35);
-
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(180, time);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.bassGain);
-    osc.start(time);
-    osc.stop(time + 0.38);
-  }
-
-  private triggerLeadArp(freq: number, time: number): void {
-    if (!this.ctx || !this.leadGain) return;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, time);
-
-    gain.gain.setValueAtTime(0.001, time);
-    gain.gain.linearRampToValueAtTime(0.07, time + 0.04);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.42);
-
-    osc.connect(gain);
-    gain.connect(this.leadGain);
-    osc.start(time);
-    osc.stop(time + 0.45);
-  }
-
-  /**
-   * Set musical context according to current flight phase
-   */
-  public setContext(context: MusicPhaseContext): void {
-    this.currentContext = context;
-    if (!this.ctx) return;
-    const now = this.ctx.currentTime;
-
-    if (!this.padGain || !this.bassGain || !this.beatGain || !this.leadGain || !this.musicFilter) return;
-
-    switch (context) {
-      case 'title':
-        this.musicFilter.frequency.setTargetAtTime(3200, now, 0.5);
-        this.padGain.gain.setTargetAtTime(0.28, now, 0.5);
-        this.bassGain.gain.setTargetAtTime(0.22, now, 0.5);
-        this.leadGain.gain.setTargetAtTime(0.18, now, 0.5);
-        this.beatGain.gain.setTargetAtTime(0.16, now, 0.5);
-        break;
-
-      case 'cruise':
-        this.musicFilter.frequency.setTargetAtTime(2400, now, 0.5);
-        this.padGain.gain.setTargetAtTime(0.24, now, 0.5);
-        this.bassGain.gain.setTargetAtTime(0.18, now, 0.5);
-        this.leadGain.gain.setTargetAtTime(0.14, now, 0.5);
-        this.beatGain.gain.setTargetAtTime(0.12, now, 0.5);
-        break;
-
-      case 'approach':
-        this.musicFilter.frequency.setTargetAtTime(1600, now, 0.5);
-        this.padGain.gain.setTargetAtTime(0.30, now, 0.5);
-        this.bassGain.gain.setTargetAtTime(0.22, now, 0.5);
-        this.leadGain.gain.setTargetAtTime(0.10, now, 0.5);
-        this.beatGain.gain.setTargetAtTime(0.06, now, 0.5);
-        break;
-
-      case 'orbit':
-        // Lyrical, ethereal arpeggio focus with soft filtered pad
-        this.musicFilter.frequency.setTargetAtTime(2800, now, 0.5);
-        this.padGain.gain.setTargetAtTime(0.32, now, 0.5);
-        this.bassGain.gain.setTargetAtTime(0.10, now, 0.5);
-        this.leadGain.gain.setTargetAtTime(0.22, now, 0.5);
-        this.beatGain.gain.setTargetAtTime(0.02, now, 0.5);
-        break;
-
-      case 'entry':
-        // Lowpass muffled atmospheric re-entry tension
-        this.musicFilter.frequency.setTargetAtTime(900, now, 0.5);
-        this.padGain.gain.setTargetAtTime(0.36, now, 0.5);
-        this.bassGain.gain.setTargetAtTime(0.30, now, 0.5);
-        this.leadGain.gain.setTargetAtTime(0.05, now, 0.5);
-        this.beatGain.gain.setTargetAtTime(0.18, now, 0.5);
-        break;
-
-      case 'surface':
-        // Warm ground reconnaissance atmosphere
-        this.musicFilter.frequency.setTargetAtTime(2200, now, 0.5);
-        this.padGain.gain.setTargetAtTime(0.26, now, 0.5);
-        this.bassGain.gain.setTargetAtTime(0.16, now, 0.5);
-        this.leadGain.gain.setTargetAtTime(0.15, now, 0.5);
-        this.beatGain.gain.setTargetAtTime(0.08, now, 0.5);
-        break;
-
-      case 'deep_cruise':
-        // Interstellar hyperspace: rich harmonic drone, resonant arpeggio shimmer, deep bass
-        this.musicFilter.frequency.setTargetAtTime(4500, now, 0.4);
-        this.padGain.gain.setTargetAtTime(0.38, now, 0.4);
-        this.bassGain.gain.setTargetAtTime(0.28, now, 0.4);
-        this.leadGain.gain.setTargetAtTime(0.25, now, 0.4);
-        this.beatGain.gain.setTargetAtTime(0.04, now, 0.4);
-        break;
     }
   }
 
   private setupThrusters(): void {
-    if (!this.ctx || !this.masterGain) return;
-    const now = this.ctx.currentTime;
+    if (!this.webAudioCtx || !this.webAudioMasterGain) return;
+    const now = this.webAudioCtx.currentTime;
 
-    this.thrusterOsc = this.ctx.createOscillator();
+    // Sub-bass rumble
+    this.thrusterOsc = this.webAudioCtx.createOscillator();
     this.thrusterOsc.type = 'triangle';
-    this.thrusterOsc.frequency.setValueAtTime(58, now);
+    this.thrusterOsc.frequency.setValueAtTime(54, now);
 
-    this.thrusterGain = this.ctx.createGain();
+    this.thrusterGain = this.webAudioCtx.createGain();
     this.thrusterGain.gain.setValueAtTime(0, now);
 
-    const thrusterFilter = this.ctx.createBiquadFilter();
-    thrusterFilter.type = 'lowpass';
-    thrusterFilter.frequency.setValueAtTime(120, now);
+    const subFilter = this.webAudioCtx.createBiquadFilter();
+    subFilter.type = 'lowpass';
+    subFilter.frequency.setValueAtTime(120, now);
 
-    this.thrusterOsc.connect(thrusterFilter);
-    thrusterFilter.connect(this.thrusterGain);
-    this.thrusterGain.connect(this.masterGain);
+    this.thrusterOsc.connect(subFilter);
+    subFilter.connect(this.thrusterGain);
+    this.thrusterGain.connect(this.webAudioMasterGain);
     this.thrusterOsc.start(now);
+
+    // Ion whine harmonic
+    this.ionWhineOsc = this.webAudioCtx.createOscillator();
+    this.ionWhineOsc.type = 'sine';
+    this.ionWhineOsc.frequency.setValueAtTime(240, now);
+
+    this.ionWhineGain = this.webAudioCtx.createGain();
+    this.ionWhineGain.gain.setValueAtTime(0, now);
+
+    this.ionWhineOsc.connect(this.ionWhineGain);
+    this.ionWhineGain.connect(this.webAudioMasterGain);
+    this.ionWhineOsc.start(now);
+  }
+
+  public setSystemGenome(systemSeed: number): void {
+    this.currentGenome = ProceduralMusicGenome.generateGenome(systemSeed);
+    Tone.getTransport().bpm.value = this.currentGenome.bpm;
+  }
+
+  public playTitleMusic(): void {
+    this.setContext('title');
+    this.startMusicSequencer();
+  }
+
+  public setContext(context: MusicPhaseContext): void {
+    this.currentContext = context;
+    if (!this.filter) return;
+
+    switch (context) {
+      case 'title':
+      case 'cruise':
+        this.filter.frequency.rampTo(2400, 0.6);
+        if (this.padSynth) this.padSynth.volume.rampTo(-12, 0.5);
+        if (this.bassSynth) this.bassSynth.volume.rampTo(-10, 0.5);
+        break;
+      case 'approach':
+        this.filter.frequency.rampTo(1600, 0.6);
+        if (this.leadSynth) this.leadSynth.volume.rampTo(-18, 0.5);
+        break;
+      case 'orbit':
+        this.filter.frequency.rampTo(3200, 0.6);
+        if (this.leadSynth) this.leadSynth.volume.rampTo(-12, 0.5);
+        break;
+      case 'surface':
+        this.filter.frequency.rampTo(2000, 0.6);
+        if (this.padSynth) this.padSynth.volume.rampTo(-14, 0.5);
+        break;
+      case 'deep_cruise':
+        this.filter.frequency.rampTo(4800, 0.4);
+        if (this.bassSynth) this.bassSynth.volume.rampTo(-8, 0.4);
+        break;
+      case 'sentient':
+        this.filter.frequency.rampTo(2800, 0.5);
+        if (this.leadSynth) this.leadSynth.volume.rampTo(-10, 0.5);
+        break;
+    }
+  }
+
+  private startMusicSequencer(): void {
+    if (this.loopSequenceId !== null) return;
+
+    // Generative chord progressions
+    const chords = [
+      ['Eb3', 'G3', 'Bb3', 'D4'],
+      ['C3', 'Eb3', 'G3', 'Bb3'],
+      ['Ab2', 'Eb3', 'Ab3', 'C4'],
+      ['Bb2', 'F3', 'Bb3', 'D4'],
+    ];
+
+    const leadNotes = ['Eb4', 'G4', 'Bb4', 'D5', 'C5', 'F5'];
+
+    this.loopSequenceId = window.setInterval(() => {
+      if (this.isMuted || !this.padSynth) return;
+
+      const chord = chords[this.stepIndex % chords.length];
+      const time = Tone.now();
+
+      // Trigger chord pad
+      this.padSynth.triggerAttackRelease(chord, '2n', time);
+
+      // Trigger bass note
+      if (this.bassSynth && this.stepIndex % 2 === 0) {
+        this.bassSynth.triggerAttackRelease(chord[0], '1n', time);
+      }
+
+      // Trigger generative melodic lead arpeggio
+      if (this.leadSynth && this.currentContext !== 'entry') {
+        const note = leadNotes[(this.stepIndex * 3) % leadNotes.length];
+        this.leadSynth.triggerAttackRelease(note, '8n', time + 0.4);
+      }
+
+      this.stepIndex++;
+    }, 2400);
   }
 
   public updateThrottle(throttle: number): void {
-    if (!this.ctx || !this.thrusterGain || !this.thrusterOsc) return;
+    if (!this.webAudioCtx || !this.thrusterGain || !this.thrusterOsc || !this.ionWhineGain || !this.ionWhineOsc) return;
 
     const t = Math.max(0, Math.min(1, throttle));
-    const now = this.ctx.currentTime;
+    const now = this.webAudioCtx.currentTime;
 
-    this.thrusterOsc.frequency.setTargetAtTime(58 + t * 52, now, 0.12);
-    this.thrusterGain.gain.setTargetAtTime(t * 0.16, now, 0.12);
+    // Sub rumble ramps with throttle
+    this.thrusterOsc.frequency.setTargetAtTime(54 + t * 45, now, 0.12);
+    this.thrusterGain.gain.setTargetAtTime(t * 0.18, now, 0.12);
+
+    // Ion whine frequency & volume ramp
+    this.ionWhineOsc.frequency.setTargetAtTime(240 + t * 480, now, 0.15);
+    this.ionWhineGain.gain.setTargetAtTime(t * 0.08, now, 0.15);
   }
 
   public playScanEffect(): void {
-    if (!this.ctx || !this.masterGain || this.isMuted) return;
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    const filter = this.ctx.createBiquadFilter();
+    if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
+    const now = this.webAudioCtx.currentTime;
+    const osc = this.webAudioCtx.createOscillator();
+    const gain = this.webAudioCtx.createGain();
+    const filter = this.webAudioCtx.createBiquadFilter();
 
     osc.type = 'sine';
     osc.frequency.setValueAtTime(220, now);
@@ -406,17 +248,17 @@ export class AudioEngine {
 
     osc.connect(filter);
     filter.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.webAudioMasterGain);
 
     osc.start(now);
     osc.stop(now + 2.0);
   }
 
   public playCollisionDeflection(isDanger = false): void {
-    if (!this.ctx || !this.masterGain || this.isMuted) return;
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
+    if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
+    const now = this.webAudioCtx.currentTime;
+    const osc = this.webAudioCtx.createOscillator();
+    const gain = this.webAudioCtx.createGain();
 
     osc.type = isDanger ? 'sawtooth' : 'sine';
     osc.frequency.setValueAtTime(isDanger ? 140 : 280, now);
@@ -426,16 +268,16 @@ export class AudioEngine {
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
 
     osc.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.webAudioMasterGain);
     osc.start(now);
     osc.stop(now + 0.38);
   }
 
   public playBlip(): void {
-    if (!this.ctx || !this.masterGain || this.isMuted) return;
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
+    if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
+    const now = this.webAudioCtx.currentTime;
+    const osc = this.webAudioCtx.createOscillator();
+    const gain = this.webAudioCtx.createGain();
 
     osc.type = 'sine';
     osc.frequency.setValueAtTime(880, now);
@@ -445,19 +287,19 @@ export class AudioEngine {
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
 
     osc.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.webAudioMasterGain);
     osc.start(now);
     osc.stop(now + 0.09);
   }
 
   public playConnectChime(): void {
-    if (!this.ctx || !this.masterGain || this.isMuted) return;
-    const now = this.ctx.currentTime;
+    if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
+    const now = this.webAudioCtx.currentTime;
     const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
     notes.forEach((freq, i) => {
-      if (!this.ctx || !this.masterGain) return;
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
+      if (!this.webAudioCtx || !this.webAudioMasterGain) return;
+      const osc = this.webAudioCtx.createOscillator();
+      const gain = this.webAudioCtx.createGain();
       const t = now + i * 0.08;
 
       osc.type = 'sine';
@@ -468,7 +310,7 @@ export class AudioEngine {
       gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
 
       osc.connect(gain);
-      gain.connect(this.masterGain);
+      gain.connect(this.webAudioMasterGain);
       osc.start(t);
       osc.stop(t + 0.45);
     });
@@ -476,8 +318,11 @@ export class AudioEngine {
 
   public toggleMute(): boolean {
     this.isMuted = !this.isMuted;
-    if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.masterVolume, this.ctx.currentTime);
+    if (this.webAudioMasterGain && this.webAudioCtx) {
+      this.webAudioMasterGain.gain.setValueAtTime(this.isMuted ? 0 : this.masterVolume, this.webAudioCtx.currentTime);
+    }
+    if (this.filter) {
+      Tone.getDestination().mute = this.isMuted;
     }
     return this.isMuted;
   }
@@ -487,4 +332,4 @@ export class AudioEngine {
   }
 }
 
-export const audio = new AudioEngine();
+export const audio = new AudioDirector();

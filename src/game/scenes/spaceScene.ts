@@ -5,6 +5,7 @@ import { InfiniteBackground } from '../universe/InfiniteBackground';
 import { PlanetVisualGenerator } from '../planets/PlanetVisualGenerator';
 import { PlanetEnvironmentGenerator } from '../planets/PlanetEnvironmentProfile';
 import type { PlanetDescriptor, StarSystemDescriptor } from '../systems/PlanetDescriptor';
+import { CourierPod } from '../flight/CourierPod';
 
 export class SpaceScene {
   public scene: THREE.Scene;
@@ -16,6 +17,9 @@ export class SpaceScene {
   public backgroundRoot: THREE.Group;
   public worldRoot: THREE.Group;
   public shipRoot: THREE.Group;
+
+  // Active Courier Pod in current system
+  public activeCourierPod: CourierPod | null = null;
 
   // Local velocity motes
   private dustPoints: THREE.Points;
@@ -362,6 +366,27 @@ export class SpaceScene {
       this.dustPositions[i * 3 + 2] += offset.z;
     }
     attr.needsUpdate = true;
+
+    if (this.activeCourierPod) {
+      this.activeCourierPod.position.add(offset);
+      this.activeCourierPod.group.position.add(offset);
+    }
+  }
+
+  public spawnCourierPod(order: any, spawnPos: THREE.Vector3): CourierPod {
+    if (this.activeCourierPod) {
+      this.worldRoot.remove(this.activeCourierPod.group);
+    }
+    this.activeCourierPod = new CourierPod(order, spawnPos);
+    this.worldRoot.add(this.activeCourierPod.group);
+    return this.activeCourierPod;
+  }
+
+  public removeCourierPod(): void {
+    if (this.activeCourierPod) {
+      this.worldRoot.remove(this.activeCourierPod.group);
+      this.activeCourierPod = null;
+    }
   }
 
   private createProceduralSun(): {
@@ -504,6 +529,11 @@ export class SpaceScene {
       if (p.cloud) p.cloud.rotation.y += dt * 0.024;
       if (p.atmo) p.atmo.rotation.y += dt * 0.020;
       if (p.ring) p.ring.rotation.z += dt * 0.002;
+    }
+
+    // Active Delivery Pod update
+    if (this.activeCourierPod) {
+      this.activeCourierPod.update(dt);
     }
 
     // 5. Cosmic Dust Particle Recycling around Ship

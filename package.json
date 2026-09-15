@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "qrcode": "^1.5.4",
-    "three": "^0.174.0"
+    "three": "^0.174.0",
+    "tone": "^15.1.22"
   },
   "devDependencies": {
     "@types/node": "^22.13.9",

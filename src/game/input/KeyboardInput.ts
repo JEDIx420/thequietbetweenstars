@@ -51,6 +51,8 @@ export class KeyboardInput implements InputSource {
       this.triggeredActions.add('pause');
     } else if (code === 'KeyE') {
       this.triggeredActions.add('interact');
+    } else if (code === 'KeyU') {
+      this.triggeredActions.add('supply');
     } else if (code === 'KeyH' || code === 'Slash') {
       this.triggeredActions.add('help');
     }

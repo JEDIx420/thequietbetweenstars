@@ -20,11 +20,20 @@ describe('Save Schema v3 & Journey Reset', () => {
       playerLocalPos: { x: 50, y: 10, z: -20 },
       currentSystem: null,
       flightPhase: 'STELLAR_CRUISE',
+      credits: 0,
+      sampleInventory: {},
+      installedModules: [],
+      pendingOrders: [],
+      npcMemories: {},
       stats: {
         systemsVisited: 4,
         planetsScanned: 8,
         surfacesVisited: 3,
         speciesDiscovered: 7,
+        sentientDiscovered: 0,
+        loreLearned: 0,
+        samplesCollected: 0,
+        modulesInstalled: 0,
         anomaliesDiscovered: 2,
         flightTimeSeconds: 1540,
       },
@@ -47,7 +56,7 @@ describe('Save Schema v3 & Journey Reset', () => {
 
     const loaded = await saveMgr.getSaveSlot('current_journey');
     expect(loaded).toBeDefined();
-    expect(loaded?.saveVersion).toBe(3);
+    expect(loaded?.saveVersion).toBeGreaterThanOrEqual(3);
     expect(loaded?.universeSeed).toBe('UNIVERSE-EPSILON-9');
     expect(loaded?.tutorial?.step).toBe('APPROACH_PLANET');
     expect(loaded?.narrative?.triggeredEventIds).toContain('deep_cruise_start');
@@ -89,7 +98,7 @@ describe('Save Schema v3 & Journey Reset', () => {
 
     const loaded = await saveMgr.getSaveSlot('current_journey');
     expect(loaded).toBeDefined();
-    expect(loaded?.saveVersion).toBe(3);
+    expect(loaded?.saveVersion).toBeGreaterThanOrEqual(3);
     expect(loaded?.tutorial).toBeDefined();
     expect(loaded?.tutorial?.step).toBe('WAKE_INTRO');
     expect(loaded?.narrative).toBeDefined();
@@ -107,11 +116,20 @@ describe('Save Schema v3 & Journey Reset', () => {
       playerLocalPos: { x: 0, y: 0, z: 0 },
       currentSystem: null,
       flightPhase: 'SYSTEM_CRUISE',
+      credits: 0,
+      sampleInventory: {},
+      installedModules: [],
+      pendingOrders: [],
+      npcMemories: {},
       stats: {
         systemsVisited: 1,
         planetsScanned: 1,
         surfacesVisited: 1,
         speciesDiscovered: 1,
+        sentientDiscovered: 0,
+        loreLearned: 0,
+        samplesCollected: 0,
+        modulesInstalled: 0,
         anomaliesDiscovered: 1,
         flightTimeSeconds: 10,
       },

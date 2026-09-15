@@ -1,7 +1,7 @@
 import { saveManager, type DiscoveryRecord, type JournalEntry } from '../persistence/SaveManager';
 import { audio } from '../audio/AudioEngine';
 
-export type JournalTab = 'WORLDS' | 'LIFE' | 'SYSTEMS' | 'ANOMALIES' | 'NOTES';
+export type JournalTab = 'WORLDS' | 'LIFE' | 'PEOPLES' | 'LORE' | 'SYSTEMS' | 'ANOMALIES' | 'RESOURCES' | 'NOTES';
 
 export class JournalModal {
   private container: HTMLElement;
@@ -53,13 +53,17 @@ export class JournalModal {
       <!-- Navigation Tabs -->
       <div style="
         display: flex;
-        gap: 12px;
+        gap: 10px;
         padding: 14px 32px;
         background: rgba(15, 23, 42, 0.6);
         border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        overflow-x: auto;
       ">
         <button class="journal-tab-btn" data-tab="WORLDS">WORLDS</button>
-        <button class="journal-tab-btn" data-tab="LIFE">LIVING WORLDS</button>
+        <button class="journal-tab-btn" data-tab="LIFE">LIFE</button>
+        <button class="journal-tab-btn" data-tab="PEOPLES">PEOPLES</button>
+        <button class="journal-tab-btn" data-tab="LORE">LORE</button>
+        <button class="journal-tab-btn" data-tab="RESOURCES">RESOURCES</button>
         <button class="journal-tab-btn" data-tab="SYSTEMS">STAR SYSTEMS</button>
         <button class="journal-tab-btn" data-tab="ANOMALIES">ANOMALIES</button>
         <button class="journal-tab-btn" data-tab="NOTES">FLIGHT LOG</button>

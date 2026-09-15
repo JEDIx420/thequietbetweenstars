@@ -1,0 +1,48 @@
+import type { ShipModule } from '../../persistence/SaveManager';
+
+export const SHIP_MODULE_CATALOG: ShipModule[] = [
+  {
+    id: 'mod_propulsion_ion_vector',
+    name: 'Ion Vector Array',
+    category: 'PROPULSION',
+    tier: 1,
+    costCredits: 200,
+    sampleRequirements: [{ category: 'CRYSTALLINE', count: 1 }],
+    statModifiers: { accelerationBonus: 0.35 },
+    visualPart: 'thruster_ring',
+    description: 'High-efficiency vectoring thruster coils that sharpen lateral handling and acceleration.',
+  },
+  {
+    id: 'mod_surface_grav_stabilizer',
+    name: 'Gravitic Lift Stabilizer',
+    category: 'SURFACE_CONTROL',
+    tier: 1,
+    costCredits: 250,
+    sampleRequirements: [{ category: 'MINERAL', count: 2 }],
+    statModifiers: { maxSurfaceAltitude: 45 },
+    visualPart: 'wing_extension',
+    description: 'Expands maximum low-altitude planetary survey ceiling from 30m to 75m AGL.',
+  },
+  {
+    id: 'mod_scanner_deep_ecology',
+    name: 'Deep Ecology Array',
+    category: 'SCANNER',
+    tier: 1,
+    costCredits: 300,
+    sampleRequirements: [{ category: 'BIOLOGICAL', count: 1 }],
+    statModifiers: { scanRadiusBonus: 35 },
+    visualPart: 'sensor_crown',
+    description: 'Boosts sub-space acoustic ping reach and highlights distant species and anomalous nodes.',
+  },
+  {
+    id: 'mod_warp_harmonic_field',
+    name: 'Harmonic Field Coil',
+    category: 'WARP',
+    tier: 2,
+    costCredits: 450,
+    sampleRequirements: [{ category: 'RESONANCE', count: 1 }],
+    statModifiers: { warpStability: 0.4 },
+    visualPart: 'hull_reinforcement',
+    description: 'Calibrates warp displacement field against prime harmonic fluctuations, reducing drift.',
+  },
+];

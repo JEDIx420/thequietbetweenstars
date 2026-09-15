@@ -21,7 +21,11 @@ export type GameAction =
   | 'cancel'
   | 'journal'
   | 'cycle_target'
-  | 'help';
+  | 'help'
+  | 'supply'
+  | 'talk'
+  | 'altitude_up'
+  | 'altitude_down';
 
 export type ActionState = 'down' | 'up' | 'trigger';
 

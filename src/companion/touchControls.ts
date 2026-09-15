@@ -248,6 +248,65 @@ export class TouchControls {
                 touch-action: manipulation;
               ">LOG</button>
             </div>
+
+            <!-- v0.0.7: Altitude / Supply / Talk Actions -->
+            <div style="display: flex; gap: 8px;">
+              <button id="btn-alt-up" class="companion-btn" style="
+                width: 70px;
+                padding: 8px 0;
+                background: rgba(15, 23, 42, 0.7);
+                border: 1px solid rgba(56, 189, 248, 0.3);
+                border-radius: 8px;
+                color: #38bdf8;
+                font-size: 11px;
+                font-weight: 700;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">ALT ▲</button>
+
+              <button id="btn-alt-down" class="companion-btn" style="
+                width: 70px;
+                padding: 8px 0;
+                background: rgba(15, 23, 42, 0.7);
+                border: 1px solid rgba(56, 189, 248, 0.3);
+                border-radius: 8px;
+                color: #38bdf8;
+                font-size: 11px;
+                font-weight: 700;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">ALT ▼</button>
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+              <button id="btn-supply" class="companion-btn" style="
+                width: 70px;
+                padding: 8px 0;
+                background: rgba(16, 185, 129, 0.15);
+                border: 1px solid rgba(16, 185, 129, 0.4);
+                border-radius: 8px;
+                color: #34d399;
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 0.05em;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">SUPPLY</button>
+
+              <button id="btn-talk" class="companion-btn" style="
+                width: 70px;
+                padding: 8px 0;
+                background: rgba(168, 85, 247, 0.15);
+                border: 1px solid rgba(168, 85, 247, 0.4);
+                border-radius: 8px;
+                color: #c084fc;
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 0.05em;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">TALK</button>
+            </div>
           </div>
 
           <!-- Right Touch Zone: Vertical Throttle Slider -->
@@ -390,6 +449,10 @@ export class TouchControls {
     bindBtn('#btn-autopilot', 'autopilot');
     bindBtn('#btn-target', 'cycle_target');
     bindBtn('#btn-journal', 'journal');
+    bindBtn('#btn-alt-up', 'altitude_up');
+    bindBtn('#btn-alt-down', 'altitude_down');
+    bindBtn('#btn-supply', 'supply');
+    bindBtn('#btn-talk', 'talk');
   }
 
   private onJoystickPointerDown(e: PointerEvent): void {

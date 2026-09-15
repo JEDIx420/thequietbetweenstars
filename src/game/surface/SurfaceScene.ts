@@ -9,7 +9,10 @@ import { LandmarkGenerator } from './LandmarkGenerator';
 import { SimplexNoise2D } from './noise';
 import { ParticleTextureGenerator } from './particleTexture';
 import { FloraGenerator } from './FloraGenerator';
-import { FaunaGenerator, type ActiveCreature } from './FaunaGenerator';
+import { EcologyGenerator, type PlanetEcologyProfile } from '../ecology/PlanetEcologyProfile';
+import { SentientSpeciesGenerator, type SentientSpeciesProfile, type NPCIdentity } from '../ecology/SentientSpeciesProfile';
+import { FaunaPopulationManager } from '../ecology/FaunaPopulationManager';
+import { ResourceNodeManager, type SampleNode } from './ResourceNodeManager';
 
 export class SurfaceScene {
   public scene: THREE.Scene;
@@ -18,12 +21,15 @@ export class SurfaceScene {
   public planet: PlanetDescriptor;
   public site: LandingSite;
 
-  // Surface flight dynamics
+  // Surface flight dynamics & altitude control
   public shipPosition = new THREE.Vector3(0, 18, 0);
   public shipVelocity = new THREE.Vector3(0, 0, 0);
   public shipYaw = 0;
   public shipPitch = 0;
   public shipRoll = 0;
+  public desiredAltitudeAGL = 18.0; // Dynamic pilot-controlled height AGL
+  public minAltitudeAGL = 7.0;
+  public maxAltitudeAGL = 45.0; // Extensible with upgrades
 
   // Atmospheric sky and lighting
   private proceduralSky: ProceduralSky;
@@ -46,9 +52,12 @@ export class SurfaceScene {
   private activeFloraChunks: Map<string, THREE.InstancedMesh[]> = new Map();
   private scannableProps: Array<{ mesh: THREE.Object3D; name: string; info: string }> = [];
 
-  // Living Fauna
-  private faunaGroup = new THREE.Group();
-  private activeFauna: ActiveCreature[] = [];
+  // Living Ecology, Sentient Species & Resource Nodes
+  public ecologyProfile: PlanetEcologyProfile;
+  public sentientProfile: SentientSpeciesProfile | null;
+  public notableNPCs: NPCIdentity[] = [];
+  public faunaPopulationManager: FaunaPopulationManager;
+  public resourceManager: ResourceNodeManager;
 
   // Coherent noise engine
   private noise: SimplexNoise2D;
@@ -62,7 +71,21 @@ export class SurfaceScene {
     this.scene = new THREE.Scene();
     this.noise = new SimplexNoise2D(region.regionSeed || planet.seed);
 
-    // 1. Procedural Atmospheric Sky Dome & Volumetric Fog
+    // 1. Derive deterministic planetary ecology & sentient giants
+    this.ecologyProfile = EcologyGenerator.deriveEcology(profile, planet.seed, planet.id);
+    this.sentientProfile = SentientSpeciesGenerator.generateSpecies(profile, planet.seed, planet.id, this.ecologyProfile);
+    if (this.sentientProfile) {
+      this.notableNPCs = SentientSpeciesGenerator.generateNotableNPCs(this.sentientProfile, 3, planet.seed);
+    }
+
+    this.faunaPopulationManager = new FaunaPopulationManager(
+      this.ecologyProfile,
+      region,
+      this.sentientProfile,
+      this.notableNPCs
+    );
+
+    // 2. Procedural Atmospheric Sky Dome & Volumetric Fog
     this.proceduralSky = new ProceduralSky(profile.atmosphere);
     this.scene.add(this.proceduralSky.mesh);
 
@@ -70,7 +93,7 @@ export class SurfaceScene {
     const fogDensity = profile.atmosphere.fogDensity * (region.fogModifier.densityMultiplier || 1.0);
     this.scene.fog = new THREE.FogExp2(new THREE.Color(fogColorHex), fogDensity);
 
-    // 2. Star Lighting (Derived directly from system stellar class & regional palette)
+    // 3. Star Lighting
     const hemiLight = new THREE.HemisphereLight(
       new THREE.Color(profile.atmosphere.skyHorizon),
       new THREE.Color(region.localSurfacePalette.lowland),
@@ -85,25 +108,29 @@ export class SurfaceScene {
     sunLight.position.set(400, 600, 300);
     this.scene.add(sunLight);
 
-    // 3. Environmental Atmosphere Particles (Snow, ash, dust, mist, spores) with soft texture
+    // 4. Environmental Atmosphere Particles
     const particleType = region.particleModifier.type || profile.atmosphere.particleType;
     if (particleType !== 'none') {
       this.particlePoints = this.createAtmosphericParticles(particleType, region.particleModifier.densityMultiplier || 1.0);
       this.scene.add(this.particlePoints);
     }
 
-    // 4. Distant Horizon Mountain Silhouette Ring (Adds sense of planetary scale)
+    // 5. Distant Horizon Mountain Silhouette Ring
     this.distantHorizonRing = this.createDistantHorizon();
     this.scene.add(this.distantHorizonRing);
 
-    // 5. Groups for Terrain, Liquid, Props, Flora, and Fauna
+    // 6. Groups for Terrain, Liquid, Props, Flora, Fauna & Resources
     this.scene.add(this.terrainGroup);
     this.scene.add(this.liquidGroup);
     this.scene.add(this.propsGroup);
     this.scene.add(this.floraGroup);
-    this.scene.add(this.faunaGroup);
+    this.scene.add(this.faunaPopulationManager.faunaGroup);
 
-    // 6. Survey Craft
+    // Resource Node Manager
+    this.resourceManager = new ResourceNodeManager(region, this.shipPosition, (x, z) => this.getTerrainHeight(x, z));
+    this.scene.add(this.resourceManager.resourceGroup);
+
+    // 7. Survey Craft
     this.surveyCraft = new SurveyCraft();
     this.shipGroup = this.surveyCraft.group;
     this.shipGroup.position.copy(this.shipPosition);
@@ -111,19 +138,34 @@ export class SurfaceScene {
 
     // Initial terrain generation
     this.updateTerrain(this.shipPosition);
-
-    // Spawn Fauna around landing point
-    this.spawnFauna(this.shipPosition);
   }
 
   public static readonly WORLD_UP = new THREE.Vector3(0, 1, 0);
+
+  public adjustAltitude(delta: number): void {
+    this.desiredAltitudeAGL = THREE.MathUtils.clamp(
+      this.desiredAltitudeAGL + delta,
+      this.minAltitudeAGL,
+      this.maxAltitudeAGL
+    );
+  }
 
   public update(
     input: NormalizedInputState,
     dt: number,
     camera: THREE.PerspectiveCamera
-  ): { activeScanTarget: { name: string; info: string } | null } {
+  ): {
+    activeScanTarget: { name: string; info: string; isSentient?: boolean; npcData?: NPCIdentity } | null;
+    nearbyResource: SampleNode | null;
+    altitudeAGL: number;
+    speedMps: number;
+  } {
     const clampedDt = Math.min(dt, 0.06);
+
+    // Handle roll-based altitude keys (Q: descend, E: ascend)
+    if (input.roll !== 0) {
+      this.adjustAltitude(input.roll * clampedDt * 18.0);
+    }
 
     // 1. Hover-Stabilized Surface Movement Model
     this.shipYaw += -input.axes.x * clampedDt * 1.8;
@@ -143,13 +185,15 @@ export class SurfaceScene {
     this.shipVelocity.lerp(targetVel, clampedDt * 3.5);
     this.shipPosition.addScaledVector(this.shipVelocity, clampedDt);
 
-    // Altitude floor relative to procedural terrain
+    // Dynamic Altitude with spring/damped terrain following
     const groundHeight = this.getTerrainHeight(this.shipPosition.x, this.shipPosition.z);
-    const minHoverAltitude = groundHeight + 8.5;
-    if (this.shipPosition.y < minHoverAltitude) {
-      this.shipPosition.y += (minHoverAltitude - this.shipPosition.y) * clampedDt * 6.0;
+    const targetAltitude = groundHeight + this.desiredAltitudeAGL;
+
+    if (this.shipPosition.y < groundHeight + this.minAltitudeAGL) {
+      // Hard anti-collision ceiling floor
+      this.shipPosition.y += (groundHeight + this.minAltitudeAGL - this.shipPosition.y) * clampedDt * 8.0;
     } else {
-      this.shipPosition.y = THREE.MathUtils.lerp(this.shipPosition.y, minHoverAltitude + 3, clampedDt * 2.0);
+      this.shipPosition.y = THREE.MathUtils.lerp(this.shipPosition.y, targetAltitude, clampedDt * 3.0);
     }
 
     this.shipGroup.position.copy(this.shipPosition);
@@ -189,20 +233,18 @@ export class SurfaceScene {
       this.particlePoints.position.copy(this.shipPosition);
     }
 
-    // 3. Update living fauna
+    // 3. Update streamed living ecology (Ground, Aerial, Megafauna & Sentient Giants)
     const getHeightFn = (x: number, z: number) => this.getTerrainHeight(x, z);
-    for (const creature of this.activeFauna) {
-      creature.update(clampedDt, getHeightFn);
-    }
+    this.faunaPopulationManager.update(this.shipPosition, input.throttle, clampedDt, getHeightFn);
 
     // 4. Terrain and liquid streaming updates
     this.updateTerrain(this.shipPosition);
 
-    // 5. Check for nearby scannable landmark or fauna
-    let scanTarget: { name: string; info: string } | null = null;
-    let minDist = 55;
+    // 5. Check for nearby scannable landmark, fauna, sentient giant, or survey sample
+    let scanTarget: { name: string; info: string; isSentient?: boolean; npcData?: NPCIdentity } | null = null;
+    let minDist = 65;
 
-    // Check props
+    // Check props & landmarks
     for (const prop of this.scannableProps) {
       const dist = this.shipPosition.distanceTo(prop.mesh.position);
       if (dist < minDist) {
@@ -211,17 +253,39 @@ export class SurfaceScene {
       }
     }
 
-    // Check fauna
-    for (const creature of this.activeFauna) {
+    // Check fauna & giants
+    for (const creature of this.faunaPopulationManager.getActiveCreatures()) {
       const dist = this.shipPosition.distanceTo(creature.group.position);
       if (dist < minDist) {
         minDist = dist;
         const info = `${creature.scanInfo.behaviour}\nDiet: ${creature.scanInfo.diet}\nTemperament: ${creature.scanInfo.temperament}\nAdaptation: ${creature.scanInfo.adaptation}`;
-        scanTarget = { name: creature.scanInfo.name, info };
+        scanTarget = {
+          name: creature.scanInfo.name,
+          info,
+          isSentient: creature.scanInfo.isSentient,
+          npcData: creature.scanInfo.npcData,
+        };
       }
     }
 
-    return { activeScanTarget: scanTarget };
+    // Check nearby collectible survey sample node
+    let nearbyResource: SampleNode | null = null;
+    for (const node of this.resourceManager.nodes) {
+      if (!node.collected && this.shipPosition.distanceTo(node.mesh.position) < 28) {
+        nearbyResource = node;
+        break;
+      }
+    }
+
+    const altitudeAGL = Math.max(0, Math.round(this.shipPosition.y - groundHeight));
+    const speedMps = Math.round(this.shipVelocity.length());
+
+    return {
+      activeScanTarget: scanTarget,
+      nearbyResource,
+      altitudeAGL,
+      speedMps,
+    };
   }
 
   public getTerrainHeight(x: number, z: number): number {
@@ -537,19 +601,6 @@ export class SurfaceScene {
     }
   }
 
-  private spawnFauna(centerPos: THREE.Vector3): void {
-    const creatures = FaunaGenerator.createFauna(
-      this.site.region,
-      centerPos,
-      (x, z) => this.getTerrainHeight(x, z)
-    );
-
-    for (const c of creatures) {
-      this.activeFauna.push(c);
-      this.faunaGroup.add(c.group);
-    }
-  }
-
   private createAtmosphericParticles(
     particleType: 'dust' | 'snow' | 'ash' | 'spores' | 'mist',
     densityMultiplier: number
@@ -642,6 +693,7 @@ export class SurfaceScene {
     this.liquidGroup.clear();
     this.propsGroup.clear();
     this.floraGroup.clear();
-    this.faunaGroup.clear();
+    this.faunaPopulationManager.faunaGroup.clear();
+    this.resourceManager.resourceGroup.clear();
   }
 }

@@ -100,7 +100,8 @@ export class NavRadar {
 
   public setPlanets(
     planets: Array<{ descriptor: PlanetDescriptor; position: THREE.Vector3 }>,
-    anomalies: SpaceAnomalyDescriptor[] = []
+    anomalies: SpaceAnomalyDescriptor[] = [],
+    courierPodPos?: THREE.Vector3
   ): void {
     const list: RadarTargetItem[] = [];
 
@@ -128,6 +129,18 @@ export class NavRadar {
         color: '#f59e0b',
         isAnomaly: true,
         anomaly: a,
+      });
+    }
+
+    // Add active courier pod delivery target if present
+    if (courierPodPos) {
+      list.push({
+        id: 'courier_pod',
+        name: 'SUPPLY COURIER POD',
+        type: 'delivery_pod',
+        position: courierPodPos,
+        color: '#38bdf8',
+        isAnomaly: false,
       });
     }
 

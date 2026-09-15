@@ -29,11 +29,20 @@ describe('SaveManager IndexedDB v2 & Journey Persistence', () => {
       playerLocalPos: { x: 120, y: 35, z: -50 },
       currentSystem: null,
       flightPhase: 'SYSTEM_CRUISE',
+      credits: 100,
+      sampleInventory: {},
+      installedModules: [],
+      pendingOrders: [],
+      npcMemories: {},
       stats: {
         systemsVisited: 3,
         planetsScanned: 5,
         surfacesVisited: 2,
         speciesDiscovered: 4,
+        sentientDiscovered: 0,
+        loreLearned: 0,
+        samplesCollected: 0,
+        modulesInstalled: 0,
         anomaliesDiscovered: 1,
         flightTimeSeconds: 420,
       },
@@ -97,7 +106,7 @@ describe('SaveManager IndexedDB v2 & Journey Persistence', () => {
 
     const entries = await saveMgr.getJournalEntries();
     expect(entries.length).toBeGreaterThan(0);
-    const found = entries.find(e => e.id === 'journal-001');
+    const found = entries.find((e: JournalEntry) => e.id === 'journal-001');
     expect(found).toBeDefined();
     expect(found?.title).toBe('Arrival at Aurelia');
   });

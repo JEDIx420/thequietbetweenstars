@@ -25,7 +25,13 @@ export class TemplateNarrativeProvider implements NarrativeTextProvider {
           },
           {
             speaker: this.speakerName,
-            text: 'We are in deep orbit. No urgent mission logged. Pick a heading whenever you are ready.',
+            text: 'Survey charter accepted: explore uncharted systems, catalog living ecologies, gather specimens, and requisition modules via courier supply.',
+            durationMs: 5000,
+            audioTone: 'chime',
+          },
+          {
+            speaker: this.speakerName,
+            text: 'No weapons. No combat mandates. Just the quiet between stars. Pick a heading whenever you are ready.',
             durationMs: 4400,
             audioTone: 'normal',
           },

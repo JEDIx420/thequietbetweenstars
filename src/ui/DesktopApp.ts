@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import QRCode from 'qrcode';
 import { audio } from '../audio/AudioEngine';
 import { storage } from '../persistence/StorageManager';
@@ -20,17 +21,20 @@ import { FloatingOrigin } from '../game/universe/FloatingOrigin';
 import { SectorManager } from '../game/universe/SectorManager';
 import { LandingSiteGenerator, type LandingSite } from '../game/systems/LandingSiteGenerator';
 import { CompanionDiagnosticsModal } from './CompanionDiagnosticsModal';
-import { StarChartModal } from './StarChartModal';
+import { HolographicNavModal } from './HolographicNavModal';
 import { JournalModal } from './JournalModal';
 import { HelpModal } from './HelpModal';
+import { SupplyModal } from './SupplyModal';
 import { DialoguePresenter } from './DialoguePresenter';
+import { StructuredConversationProvider } from '../narrative/ConversationDirector';
 import { NarrativeDirector } from '../narrative/NarrativeDirector';
 import { TutorialDirector } from '../tutorial/TutorialDirector';
 import type { NarrativeContext } from '../narrative/NarrativeTypes';
 import { NavRadar } from '../game/ui/NavRadar';
 import { DeepCruiseController } from '../game/flight/DeepCruiseController';
 import { AutopilotController } from '../game/flight/AutopilotController';
-import { saveManager, type PlayerSaveSlot } from '../persistence/SaveManager';
+import { saveManager, type PlayerSaveSlot, type ShipModule } from '../persistence/SaveManager';
+import type { NPCIdentity } from '../game/ecology/SentientSpeciesProfile';
 import type { ConnectionState } from '../connection/connectionState';
 import type { StarSystemDescriptor } from '../game/systems/PlanetDescriptor';
 
@@ -64,9 +68,10 @@ export class DesktopApp {
   public deepCruiseController!: DeepCruiseController;
   public autopilotController!: AutopilotController;
   public navRadar!: NavRadar;
-  public starChartModal!: StarChartModal;
+  public holographicNavModal!: HolographicNavModal;
   public journalModal!: JournalModal;
   public helpModal!: HelpModal;
+  public supplyModal!: SupplyModal;
 
   // Narrative & Tutorial Systems
   public dialoguePresenter!: DialoguePresenter;
@@ -79,6 +84,12 @@ export class DesktopApp {
   public visitedSurfaces = new Set<string>();
   public discoveredSpecies = new Set<string>();
   public discoveredAnomalies = new Set<string>();
+  public credits = 0;
+  public sampleInventory: Record<string, number> = {};
+  public installedModules = new Set<string>();
+  public pendingOrders: any[] = [];
+  public npcMemories: Record<string, any> = {};
+  public activeNPCInConversation: NPCIdentity | null = null;
   private journeyStartTime = Date.now();
 
   private hasSavedJourney = false;
@@ -163,6 +174,11 @@ export class DesktopApp {
       }
     });
 
+    // Wire interactive conversation choices
+    this.dialoguePresenter.setChoiceCallback((topic: string) => {
+      this.handleConversationChoice(topic);
+    });
+
     // 2. Navigation & Autopilot subsystems
     this.autopilotController = new AutopilotController(this.flightModel);
     this.navRadar = new NavRadar(this.canvasContainer, this.autopilotController);
@@ -172,8 +188,8 @@ export class DesktopApp {
       this.narrativeDirector.trigger('first_target_selected', { targetName: target.name }, this.getNarrativeContext(), { forceOnce: true });
     });
     this.navRadar.setOnOpenSystemMap(() => {
-      this.starChartModal.setScale('SYSTEM');
-      this.starChartModal.open();
+      this.holographicNavModal.setScale('SYSTEM');
+      this.holographicNavModal.open();
     });
 
     // 3. Interstellar Deep Cruise subsystem
@@ -191,8 +207,8 @@ export class DesktopApp {
       this.saveCurrentJourney();
     });
 
-    // 4. Modals: Star Chart (M), Ship Log Journal (J) & Help Manual (H)
-    this.starChartModal = new StarChartModal(
+    // 4. Modals: Holographic 3D Nav (M), Journal (J), Help (H), Supply (U)
+    this.holographicNavModal = new HolographicNavModal(
       this.container,
       this.sectorManager,
       this.worldPosition,
@@ -200,13 +216,22 @@ export class DesktopApp {
         this.engageInterstellarCruise(targetSys);
       }
     );
-    this.starChartModal.setOnCourseSet((targetSys) => {
+    this.holographicNavModal.setOnCourseSet((targetSys) => {
       this.showHudNotice(`COURSE LOCKED // ${targetSys.name.toUpperCase()}`);
       this.tutorialDirector.onPlayerSetCourse(targetSys.name, `${Math.round(this.worldPosition.sector.x - targetSys.sectorX)} sec`);
     });
 
     this.journalModal = new JournalModal(this.container);
     this.helpModal = new HelpModal(this.container);
+
+    this.supplyModal = new SupplyModal(this.container, {
+      onOrderModule: (mod) => {
+        this.handleModuleOrder(mod);
+      },
+      onClose: () => {
+        audio.playBlip();
+      },
+    });
 
     // Wire music contexts to state machine
     this.stateMachine.onPhaseChange((_from, to) => {
@@ -258,22 +283,51 @@ export class DesktopApp {
       const throttle = input.throttle;
       audio.updateThrottle(throttle);
 
-      if (res.activeScanTarget) {
-        this.updateContextPrompt(`PROXIMITY: ${res.activeScanTarget.name} // SPACE TO SCAN`);
-      } else {
-        this.updateContextPrompt('SURFACE EXPLORATION // SPACE: TERRAIN RADAR · E: RETURN TO ORBIT');
+      // Telemetry HUD updates
+      const spdEl = this.uiContainer.querySelector('#telemetry-speed');
+      const thrEl = this.uiContainer.querySelector('#telemetry-throttle');
+      const crEl = this.uiContainer.querySelector('#telemetry-credits');
+      if (spdEl) spdEl.textContent = `${res.speedMps}`;
+      if (thrEl) thrEl.textContent = `${Math.round(throttle * 100)}% (ALT ${res.altitudeAGL}m)`;
+      if (crEl) crEl.textContent = `${this.credits}`;
+
+      // Handle companion altitude adjustments
+      if (this.inputManager.consumeAction('altitude_up')) {
+        this.surfaceScene.adjustAltitude(12.0);
+      }
+      if (this.inputManager.consumeAction('altitude_down')) {
+        this.surfaceScene.adjustAltitude(-12.0);
       }
 
-      if (this.inputManager.consumeAction('scan')) {
-        audio.playScanEffect();
-        this.tutorialDirector.onPlayerScan();
-
-        if (res.activeScanTarget) {
-          this.showHudNotice(`SCANNED: ${res.activeScanTarget.name} — LOG UPDATED`);
-          this.recordSurfaceDiscovery(res.activeScanTarget.name, res.activeScanTarget.info);
-          this.tutorialDirector.onPlayerDiscovery();
+      if (res.nearbyResource) {
+        this.updateContextPrompt(`SURVEY SAMPLE DETECTED: ${res.nearbyResource.name} // PRESS SPACE TO COLLECT`);
+      } else if (res.activeScanTarget) {
+        if (res.activeScanTarget.isSentient) {
+          this.updateContextPrompt(`SENTIENT BEACON: ${res.activeScanTarget.name.toUpperCase()} // PRESS SPACE TO COMMUNICATE`);
         } else {
-          this.showHudNotice('SURFACE RADAR: MINERAL STRATA CONFIRMED');
+          this.updateContextPrompt(`PROXIMITY: ${res.activeScanTarget.name} // SPACE TO SCAN`);
+        }
+      } else {
+        this.updateContextPrompt('SURFACE EXPLORATION // SPACE: RADAR · Q/E: ALTITUDE · U: SUPPLY · ESC/E: ORBIT');
+      }
+
+      // Contextual action: Collect sample or initiate conversation or scan
+      if (this.inputManager.consumeAction('scan') || this.inputManager.consumeAction('talk') || this.inputManager.consumeAction('interact')) {
+        if (res.nearbyResource) {
+          this.collectSurveySample(res.nearbyResource);
+        } else if (res.activeScanTarget?.isSentient && res.activeScanTarget.npcData) {
+          this.startGiantConversation(res.activeScanTarget.npcData);
+        } else {
+          audio.playScanEffect();
+          this.tutorialDirector.onPlayerScan();
+
+          if (res.activeScanTarget) {
+            this.showHudNotice(`SCANNED: ${res.activeScanTarget.name} — LOG UPDATED`);
+            this.recordSurfaceDiscovery(res.activeScanTarget.name, res.activeScanTarget.info);
+            this.tutorialDirector.onPlayerDiscovery();
+          } else {
+            this.showHudNotice('SURFACE RADAR: MINERAL STRATA CONFIRMED');
+          }
         }
       }
 
@@ -308,6 +362,17 @@ export class DesktopApp {
       if (this.uiState === 'playing') {
         audio.updateThrottle(throttle);
       }
+
+      // Telemetry in space
+      const spdEl = this.uiContainer.querySelector('#telemetry-speed');
+      const thrEl = this.uiContainer.querySelector('#telemetry-throttle');
+      const crEl = this.uiContainer.querySelector('#telemetry-credits');
+      if (spdEl) spdEl.textContent = `${Math.round(this.flightModel.getSpeed())}`;
+      if (thrEl) thrEl.textContent = `${Math.round(throttle * 100)}%`;
+      if (crEl) crEl.textContent = `${this.credits}`;
+
+      // Check for pending courier deliveries and courier pod docking in space
+      this.updateCourierDelivery(shipPos);
 
       // Check Approach Controller for planets
       const targetPlanet = this.approachController.update(shipPos, this.spaceScene.activePlanetList);
@@ -367,6 +432,8 @@ export class DesktopApp {
 
       // Update Local Nav Radar
       if (this.navRadar && this.uiState === 'playing') {
+        const podPos = this.spaceScene.activeCourierPod ? this.spaceScene.activeCourierPod.position : undefined;
+        this.navRadar.setPlanets(this.spaceScene.activePlanetList, this.spaceScene.currentSystem?.anomalies || [], podPos);
         this.navRadar.update(shipPos, this.flightModel.quaternion, this.spaceScene.sunPos);
       }
 
@@ -408,10 +475,15 @@ export class DesktopApp {
     // Modal & Control Actions
     if (this.inputManager.consumeAction('map')) {
       audio.playBlip();
-      this.starChartModal.toggle();
-      if (this.starChartModal.getIsOpen()) {
+      this.holographicNavModal.toggle();
+      if (this.holographicNavModal.getIsOpen()) {
         this.tutorialDirector.onPlayerOpenMap();
       }
+    }
+
+    if (this.inputManager.consumeAction('supply')) {
+      audio.playBlip();
+      this.openSupplyModal();
     }
 
     if (this.inputManager.consumeAction('journal')) {
@@ -439,8 +511,8 @@ export class DesktopApp {
     if (this.inputManager.consumeAction('autopilot')) {
       audio.playBlip();
       // If course is set to another star system in star chart, engage Deep Cruise!
-      if (this.starChartModal.activeCourseSystem && this.stateMachine.getPhase() === FlightPhase.SYSTEM_CRUISE) {
-        this.engageInterstellarCruise(this.starChartModal.activeCourseSystem);
+      if (this.holographicNavModal.activeCourseSystem && this.stateMachine.getPhase() === FlightPhase.SYSTEM_CRUISE) {
+        this.engageInterstellarCruise(this.holographicNavModal.activeCourseSystem);
       } else {
         const active = this.autopilotController.toggle();
         if (active) {
@@ -706,7 +778,34 @@ export class DesktopApp {
       );
     }
     if (slot.targetSystem) {
-      this.starChartModal.activeCourseSystem = slot.targetSystem;
+      this.holographicNavModal.activeCourseSystem = slot.targetSystem;
+    }
+
+    // Restore v0.0.7 progression state
+    this.credits = slot.credits ?? 0;
+    this.sampleInventory = slot.sampleInventory ? { ...slot.sampleInventory } : {};
+    this.installedModules = new Set(slot.installedModules || []);
+    this.pendingOrders = slot.pendingOrders ? [...slot.pendingOrders] : [];
+    this.npcMemories = slot.npcMemories ? { ...slot.npcMemories } : {};
+
+    // Apply installed modules to ship models and flight dynamics
+    this.applyInstalledModules();
+  }
+
+  public applyInstalledModules(): void {
+    const modulesList = Array.from(this.installedModules);
+    this.spaceScene.surveyCraft.setInstalledModules(modulesList);
+    if (this.surfaceScene) {
+      this.surfaceScene.surveyCraft.setInstalledModules(modulesList);
+      if (this.installedModules.has('mod_surface_grav_stabilizer')) {
+        this.surfaceScene.maxAltitudeAGL = 75.0;
+      }
+    }
+
+    if (this.installedModules.has('mod_propulsion_ion_vector')) {
+      this.flightModel.accelerationMultiplier = 1.35;
+    } else {
+      this.flightModel.accelerationMultiplier = 1.0;
     }
   }
 
@@ -715,7 +814,7 @@ export class DesktopApp {
 
     const slot: PlayerSaveSlot = {
       slotId: 'current_journey',
-      saveVersion: 3,
+      saveVersion: 4,
       updatedAt: Date.now(),
       universeSeed: this.sectorManager.universeSeed,
       playerSector: { ...this.worldPosition.sector },
@@ -725,13 +824,22 @@ export class DesktopApp {
         z: this.flightModel.position.z,
       },
       currentSystem: this.spaceScene.currentSystem,
-      targetSystem: this.starChartModal.activeCourseSystem,
+      targetSystem: this.holographicNavModal.activeCourseSystem,
       flightPhase: this.stateMachine.getPhase(),
+      credits: this.credits,
+      sampleInventory: { ...this.sampleInventory },
+      installedModules: Array.from(this.installedModules),
+      pendingOrders: [...this.pendingOrders],
+      npcMemories: { ...this.npcMemories },
       stats: {
         systemsVisited: Math.max(1, this.visitedSystems.size),
         planetsScanned: this.scannedPlanets.size,
         surfacesVisited: this.visitedSurfaces.size,
         speciesDiscovered: this.discoveredSpecies.size,
+        sentientDiscovered: Object.keys(this.npcMemories).length,
+        loreLearned: Object.values(this.npcMemories).reduce((acc: number, m: any) => acc + (m.factsRevealed?.length || 0), 0),
+        samplesCollected: Object.values(this.sampleInventory).reduce((acc: number, cnt: number) => acc + cnt, 0),
+        modulesInstalled: this.installedModules.size,
         anomaliesDiscovered: this.discoveredAnomalies.size,
         flightTimeSeconds: flightTimeSec,
       },
@@ -1176,6 +1284,17 @@ export class DesktopApp {
               cursor: pointer;
             ">MAP [M]</button>
 
+            <button id="btn-open-supply" style="
+              background: rgba(16, 185, 129, 0.15);
+              border: 1px solid rgba(52, 211, 153, 0.4);
+              border-radius: 8px;
+              color: #34d399;
+              padding: 7px 14px;
+              font-size: 11px;
+              font-weight: 700;
+              cursor: pointer;
+            ">SUPPLY [U]</button>
+
             <button id="btn-open-journal" style="
               background: rgba(15, 23, 42, 0.75);
               border: 1px solid rgba(148, 163, 184, 0.25);
@@ -1209,6 +1328,24 @@ export class DesktopApp {
         </div>
 
         <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; align-self: center;">
+          <!-- Telemetry readouts -->
+          <div id="hud-telemetry-bar" style="
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(15, 23, 42, 0.75);
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            padding: 4px 14px;
+            border-radius: 12px;
+            font-family: ui-monospace, monospace;
+            font-size: 11px;
+            color: #94a3b8;
+          ">
+            <span>SPD: <strong id="telemetry-speed" style="color: #38bdf8;">0</strong> m/s</span>
+            <span>THR: <strong id="telemetry-throttle" style="color: #38bdf8;">0%</strong></span>
+            <span>CREDITS: <strong id="telemetry-credits" style="color: #34d399;">${this.credits}</strong></span>
+          </div>
+
           <div id="proximity-indicator" style="
             display: none;
             align-items: center;
@@ -1245,7 +1382,7 @@ export class DesktopApp {
             line-height: 1.6;
             font-family: ui-monospace, monospace;
           ">
-            ${mode === 'keyboard' ? 'W/S Pitch · A/D Yaw · Q/E Roll · Shift/Ctrl Throttle · Space Scan' : 'Steer with Companion Joystick · Adjust Throttle · Press SCAN'}
+            ${mode === 'keyboard' ? 'W/S Pitch · A/D Yaw · Q/E Roll · Shift/Ctrl Throttle · Space Scan · U Supply' : 'Steer with Companion Joystick · Adjust Throttle · Press SCAN · Tap SUPPLY'}
           </div>
 
           <div style="
@@ -1270,7 +1407,12 @@ export class DesktopApp {
 
     this.uiContainer.querySelector('#btn-open-chart')?.addEventListener('click', () => {
       audio.playBlip();
-      this.starChartModal.toggle();
+      this.holographicNavModal.toggle();
+    });
+
+    this.uiContainer.querySelector('#btn-open-supply')?.addEventListener('click', () => {
+      audio.playBlip();
+      this.openSupplyModal();
     });
 
     this.uiContainer.querySelector('#btn-open-journal')?.addEventListener('click', () => {
@@ -1485,6 +1627,225 @@ export class DesktopApp {
     setTimeout(() => {
       if (el) el.style.opacity = '0';
     }, 3000);
+  }
+
+  public collectSurveySample(node: any): void {
+    if (!this.surfaceScene) return;
+    const collected = this.surfaceScene.resourceManager.collectNode(node.id);
+    if (!collected) return;
+
+    audio.playConnectChime();
+    this.credits += collected.creditValue;
+    this.sampleInventory[collected.category] = (this.sampleInventory[collected.category] || 0) + 1;
+
+    saveManager.recordDiscovery({
+      id: `sample:${collected.id}`,
+      type: 'resource',
+      name: `${collected.name} (${collected.category})`,
+      systemName: this.spaceScene.currentSystem?.name || 'Local Star',
+      sector: { ...this.worldPosition.sector },
+      timestamp: Date.now(),
+      details: `${collected.description} Valued at ${collected.creditValue} survey credits.`,
+      category: 'RESOURCES',
+    });
+
+    this.showHudNotice(`SAMPLE CATALOGUED: ${collected.name.toUpperCase()} (+${collected.creditValue} CREDITS)`);
+    this.saveCurrentJourney();
+  }
+
+  public startGiantConversation(npc: NPCIdentity): void {
+    this.activeNPCInConversation = npc;
+    const memory = this.npcMemories[npc.npcId];
+    const timesMet = memory ? memory.timesMet : 0;
+
+    const turn = StructuredConversationProvider.startConversation(npc, timesMet);
+    this.dialoguePresenter.showInteractiveConversation(turn.speakerName, turn.text, turn.choices);
+
+    // Record or update memory
+    if (!this.npcMemories[npc.npcId]) {
+      this.npcMemories[npc.npcId] = {
+        npcId: npc.npcId,
+        speciesId: npc.speciesId,
+        name: npc.name,
+        timesMet: 1,
+        lastMet: Date.now(),
+        topicsDiscussed: [],
+        factsRevealed: [],
+        familiarity: 0.2,
+      };
+
+      saveManager.recordDiscovery({
+        id: `giant:${npc.npcId}`,
+        type: 'sentient',
+        name: `${npc.name} (${npc.title})`,
+        systemName: this.spaceScene.currentSystem?.name || 'Local Star',
+        sector: { ...this.worldPosition.sector },
+        timestamp: Date.now(),
+        details: `Sentient giant of this world. Personality: ${npc.personality}. Currently observing: ${npc.currentConcern}`,
+        category: 'PEOPLES',
+      });
+    } else {
+      this.npcMemories[npc.npcId].timesMet++;
+      this.npcMemories[npc.npcId].lastMet = Date.now();
+      this.npcMemories[npc.npcId].familiarity = Math.min(1.0, this.npcMemories[npc.npcId].familiarity + 0.2);
+    }
+
+    this.saveCurrentJourney();
+  }
+
+  public handleConversationChoice(topic: string): void {
+    if (!this.activeNPCInConversation) return;
+
+    const npc = this.activeNPCInConversation;
+    const memory = this.npcMemories[npc.npcId];
+    if (memory && !memory.topicsDiscussed.includes(topic)) {
+      memory.topicsDiscussed.push(topic);
+    }
+
+    const turn = StructuredConversationProvider.handleChoice(npc, topic);
+    this.dialoguePresenter.showInteractiveConversation(turn.speakerName, turn.text, turn.choices);
+
+    if (turn.revealedLoreTitle && turn.revealedLoreContent) {
+      if (memory && !memory.factsRevealed.includes(turn.revealedLoreTitle)) {
+        memory.factsRevealed.push(turn.revealedLoreTitle);
+      }
+
+      saveManager.recordDiscovery({
+        id: `lore:${npc.npcId}:${topic}`,
+        type: 'lore',
+        name: turn.revealedLoreTitle,
+        systemName: this.spaceScene.currentSystem?.name || 'Local Star',
+        sector: { ...this.worldPosition.sector },
+        timestamp: Date.now(),
+        details: turn.revealedLoreContent,
+        category: 'LORE',
+      });
+
+      this.showHudNotice(`LORE DISCOVERED: ${turn.revealedLoreTitle.toUpperCase()}`);
+      this.saveCurrentJourney();
+    }
+
+    if (topic === 'farewell' || turn.choices.length === 0) {
+      this.activeNPCInConversation = null;
+    }
+  }
+
+  public openSupplyModal(): void {
+    const slot: PlayerSaveSlot = {
+      slotId: 'current_journey',
+      saveVersion: 4,
+      updatedAt: Date.now(),
+      universeSeed: this.sectorManager.universeSeed,
+      playerSector: { ...this.worldPosition.sector },
+      playerLocalPos: {
+        x: this.flightModel.position.x,
+        y: this.flightModel.position.y,
+        z: this.flightModel.position.z,
+      },
+      currentSystem: this.spaceScene.currentSystem,
+      targetSystem: this.holographicNavModal.activeCourseSystem,
+      flightPhase: this.stateMachine.getPhase(),
+      credits: this.credits,
+      sampleInventory: { ...this.sampleInventory },
+      installedModules: Array.from(this.installedModules),
+      pendingOrders: [...this.pendingOrders],
+      npcMemories: { ...this.npcMemories },
+      stats: {
+        systemsVisited: Math.max(1, this.visitedSystems.size),
+        planetsScanned: this.scannedPlanets.size,
+        surfacesVisited: this.visitedSurfaces.size,
+        speciesDiscovered: this.discoveredSpecies.size,
+        sentientDiscovered: Object.keys(this.npcMemories).length,
+        loreLearned: Object.values(this.npcMemories).reduce((acc: number, m: any) => acc + (m.factsRevealed?.length || 0), 0),
+        samplesCollected: Object.values(this.sampleInventory).reduce((acc: number, cnt: number) => acc + cnt, 0),
+        modulesInstalled: this.installedModules.size,
+        anomaliesDiscovered: this.discoveredAnomalies.size,
+        flightTimeSeconds: Math.round((Date.now() - this.journeyStartTime) / 1000),
+      },
+      tutorial: this.tutorialDirector.getState(),
+      narrative: {
+        triggeredEventIds: this.narrativeDirector.getTriggeredEventIds(),
+        resonanceFlags: this.narrativeDirector.getResonanceFlags(),
+      },
+    };
+
+    this.supplyModal.show(slot);
+  }
+
+  public handleModuleOrder(mod: ShipModule): void {
+    if (this.credits < mod.costCredits) return;
+
+    // Check & deduct samples
+    for (const req of mod.sampleRequirements) {
+      const avail = this.sampleInventory[req.category] || 0;
+      if (avail < req.count) return;
+    }
+
+    this.credits -= mod.costCredits;
+    for (const req of mod.sampleRequirements) {
+      this.sampleInventory[req.category] -= req.count;
+    }
+
+    const order = {
+      orderId: `order_${Date.now()}_${mod.id}`,
+      moduleId: mod.id,
+      orderedAt: Date.now(),
+      deliveryEtaSec: 8,
+      destinationSystemName: this.spaceScene.currentSystem?.name || 'Local System',
+      status: 'IN_TRANSIT' as const,
+    };
+
+    this.pendingOrders.push(order);
+    audio.playConnectChime();
+    this.showHudNotice(`REQUISITION TRANSMITTED: ${mod.name.toUpperCase()} // COURIER POD DISPATCHED`);
+    this.saveCurrentJourney();
+  }
+
+  public updateCourierDelivery(shipPos: any): void {
+    const now = Date.now();
+
+    // Check pending orders arriving in space
+    for (const order of this.pendingOrders) {
+      if (order.status === 'IN_TRANSIT') {
+        const elapsedSec = (now - order.orderedAt) / 1000;
+        if (elapsedSec >= order.deliveryEtaSec && !this.spaceScene.activeCourierPod) {
+          order.status = 'ARRIVED';
+          const spawnOffset = new THREE.Vector3(70, 15, -90);
+          const spawnPos = (shipPos as THREE.Vector3).clone().add(spawnOffset);
+          this.spaceScene.spawnCourierPod(order, spawnPos);
+          this.showHudNotice(`COURIER POD INCOMING // SUB-SPACE DELIVERY CAPSULE ARRIVED NEARBY`);
+          audio.playConnectChime();
+        }
+      }
+    }
+
+    // Check docking range with active courier pod
+    if (this.spaceScene.activeCourierPod) {
+      const pod = this.spaceScene.activeCourierPod;
+      const dist = shipPos.distanceTo ? shipPos.distanceTo(pod.position) : 999;
+
+      if (dist < 45) {
+        this.updateContextPrompt(`DOCKING CORRIDOR ALIGNED: COURIER POD [${Math.round(dist)}m] // SPACE TO DOCK & INSTALL`);
+        if (this.inputManager.consumeAction('scan') || this.inputManager.consumeAction('confirm') || this.inputManager.consumeAction('interact')) {
+          this.dockCourierPod(pod);
+        }
+      }
+    }
+  }
+
+  private dockCourierPod(pod: any): void {
+    const modId = pod.order.moduleId;
+    this.installedModules.add(modId);
+
+    // Update order status
+    const o = this.pendingOrders.find((p) => p.orderId === pod.order.orderId);
+    if (o) o.status = 'INSTALLED';
+
+    this.spaceScene.removeCourierPod();
+    this.applyInstalledModules();
+    audio.playConnectChime();
+    this.showHudNotice(`MODULE INTEGRATION COMPLETE: ${modId.toUpperCase()}`);
+    this.saveCurrentJourney();
   }
 
   public dispose(): void {
