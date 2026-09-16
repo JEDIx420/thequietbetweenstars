@@ -507,8 +507,8 @@ export class SpaceScene {
   ): void {
     this.clock += dt;
 
-    // 1. Update Infinite Starfield & Nebula to follow camera (with warp hyperspace stretch)
-    this.infiniteBackground.update(cameraPos, this.clock, this.warpFactor, this.warpHeading);
+    // 1. Update Infinite Starfield & Nebula to follow camera (with warp hyperspace stretch & shooting stars)
+    this.infiniteBackground.update(cameraPos, this.clock, this.warpFactor, this.warpHeading, dt);
 
     // 2. Survey Craft internal animations (strictly never alters physics transform)
     const flightMode = this.warpFactor > 0.1 ? 'warp' : 'space';

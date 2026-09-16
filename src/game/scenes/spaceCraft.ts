@@ -7,6 +7,7 @@ interface EngineMeshSet {
   core: THREE.Mesh;
   innerPlume: THREE.Mesh;
   outerPlume: THREE.Mesh;
+  shockDiamonds: THREE.Mesh;
 }
 
 interface WingVaneSet {
@@ -277,6 +278,10 @@ export class SurveyCraft {
     const outerGeo = new THREE.ConeGeometry(0.38, 3.2, 12);
     outerGeo.rotateX(-Math.PI / 2);
 
+    // Shock diamond supersonic expansion disc
+    const shockGeo = new THREE.CylinderGeometry(0.04, 0.22, 1.8, 8);
+    shockGeo.rotateX(Math.PI / 2);
+
     for (let i = 0; i < 4; i++) {
       const pos = engineOffsets[i];
 
@@ -304,18 +309,29 @@ export class SurveyCraft {
       innerPlume.position.set(pos.x, pos.y, pos.z + 1.4);
       this.hullGroup.add(innerPlume);
 
-      // Translucent deep blue outer plume
+      // Translucent deep electric blue outer plume
       const outerMat = new THREE.MeshBasicMaterial({
         color: 0x0284c7,
         transparent: true,
-        opacity: 0.35,
+        opacity: 0.45,
         blending: THREE.AdditiveBlending,
       });
       const outerPlume = new THREE.Mesh(outerGeo, outerMat);
       outerPlume.position.set(pos.x, pos.y, pos.z + 1.8);
       this.hullGroup.add(outerPlume);
 
-      this.engines.push({ housing, core, innerPlume, outerPlume });
+      // Shock diamonds glowing filament
+      const shockMat = new THREE.MeshBasicMaterial({
+        color: 0xe0f2fe,
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+      });
+      const shockDiamonds = new THREE.Mesh(shockGeo, shockMat);
+      shockDiamonds.position.set(pos.x, pos.y, pos.z + 1.2);
+      this.hullGroup.add(shockDiamonds);
+
+      this.engines.push({ housing, core, innerPlume, outerPlume, shockDiamonds });
     }
   }
 
@@ -421,14 +437,17 @@ export class SurveyCraft {
     this.vaneLL.rootPivot.rotation.z = spreadAngle * 0.9;
     this.vaneLR.rootPivot.rotation.z = -spreadAngle * 0.9;
 
-    // 2. Dynamic 4-Engine Plumes
-    const t = Math.max(0.04, throttle);
-    const flicker = 1.0 + Math.sin(this.clock * 28.0) * 0.08;
+    // 2. Dynamic 4-Engine Powerful Afterburner Plumes
+    const t = Math.max(0.06, throttle);
+    const flicker = 1.0 + Math.sin(this.clock * 42.0) * 0.12 + Math.cos(this.clock * 74.0) * 0.06;
+    const boostMult = t > 0.85 ? 1.45 : 1.0;
 
     for (const eng of this.engines) {
-      eng.core.scale.set(1, 1, (0.5 + t * 1.5) * flicker);
-      eng.innerPlume.scale.set(1, 1, (0.3 + t * 2.8) * flicker);
-      eng.outerPlume.scale.set(1, 1, (0.2 + t * 3.4) * flicker);
+      eng.core.scale.set(0.9 + t * 0.5, 0.9 + t * 0.5, (0.6 + t * 2.2) * flicker * boostMult);
+      eng.innerPlume.scale.set(0.8 + t * 0.8, 0.8 + t * 0.8, (0.5 + t * 4.2) * flicker * boostMult);
+      eng.outerPlume.scale.set(0.9 + t * 1.1, 0.9 + t * 1.1, (0.4 + t * 5.0) * flicker * boostMult);
+      eng.shockDiamonds.scale.set(1.0 + t * 0.6, 1.0 + t * 0.6, (0.3 + t * 3.8) * flicker);
+      (eng.shockDiamonds.material as THREE.MeshBasicMaterial).opacity = 0.2 + t * 0.75;
     }
 
     // 3. Sensor Suite Pulsing

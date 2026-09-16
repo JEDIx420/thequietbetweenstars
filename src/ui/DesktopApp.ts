@@ -862,12 +862,16 @@ export class DesktopApp {
       }
       await storage.updateSettings({ introSeen: true });
 
-      // Trigger 18-second in-engine New Journey Cinematic
+      // Trigger 18-second in-engine New Journey Cinematic with shooting stars
       this.uiState = 'cinematic';
       this.uiContainer.innerHTML = '';
-      this.newJourneyCinematic.play(this.flightModel.position, () => {
-        this.renderModeSelectScreen();
-      });
+      this.newJourneyCinematic.play(
+        this.flightModel.position,
+        () => {
+          this.renderModeSelectScreen();
+        },
+        this.spaceScene.scene
+      );
     });
   }
 

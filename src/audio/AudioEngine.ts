@@ -98,47 +98,79 @@ export class AudioDirector {
     }
   }
 
+  // Aggressive Heavy Starfighter Propulsion Nodes
+  private thrusterSubFilter: BiquadFilterNode | null = null;
+  private thrusterRoarFilter: BiquadFilterNode | null = null;
+  private thrusterTurbineOsc: OscillatorNode | null = null;
+  private thrusterTurbineGain: GainNode | null = null;
+  private thrusterDistortion: WaveShaperNode | null = null;
+  private thrusterNoiseNode: AudioBufferSourceNode | null = null;
+  private thrusterNoiseGain: GainNode | null = null;
+  private thrusterNoiseFilter: BiquadFilterNode | null = null;
+
+  private makeDistortionCurve(amount: number): Float32Array {
+    const k = typeof amount === 'number' ? amount : 50;
+    const n_samples = 44100;
+    const curve = new Float32Array(n_samples);
+    const deg = Math.PI / 180;
+    for (let i = 0; i < n_samples; ++i) {
+      const x = (i * 2) / n_samples - 1;
+      curve[i] = ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
+    }
+    return curve;
+  }
+
   private setupThrusters(): void {
     if (!this.webAudioCtx || !this.webAudioMasterGain) return;
     const now = this.webAudioCtx.currentTime;
 
-    // 4-exhaust engine cluster detuned base frequencies for acoustic richness
-    const subFrequencies = [52.0, 54.2, 53.8, 55.5];
-    const ionFrequencies = [240.0, 243.5, 238.0, 245.2];
+    // 4-exhaust engine cluster base frequencies (aggressive guttural saw & triangle mix)
+    const subFrequencies = [42.0, 43.8, 41.2, 44.5];
+    const ionFrequencies = [185.0, 192.0, 180.0, 198.5];
 
     this.thrusterOscs = [];
     this.thrusterGains = [];
     this.ionWhineOscs = [];
     this.ionWhineGains = [];
 
-    const subMasterFilter = this.webAudioCtx.createBiquadFilter();
-    subMasterFilter.type = 'lowpass';
-    subMasterFilter.frequency.setValueAtTime(140, now);
-    subMasterFilter.connect(this.webAudioMasterGain);
+    // Master Sub Bass Filter (Punchy low end roar)
+    this.thrusterSubFilter = this.webAudioCtx.createBiquadFilter();
+    this.thrusterSubFilter.type = 'lowpass';
+    this.thrusterSubFilter.frequency.setValueAtTime(180, now);
+    this.thrusterSubFilter.Q.setValueAtTime(3.5, now);
 
+    // Warm Analog Distortion Waveshaper for aggressive military/starfighter engine bite
+    this.thrusterDistortion = this.webAudioCtx.createWaveShaper();
+    this.thrusterDistortion.curve = this.makeDistortionCurve(35) as any;
+    this.thrusterDistortion.oversample = '4x';
+
+    this.thrusterSubFilter.connect(this.thrusterDistortion);
+    this.thrusterDistortion.connect(this.webAudioMasterGain);
+
+    // 1. Four Guttural Engine Nozzles
     for (let i = 0; i < 4; i++) {
-      // Sub rumble
+      // Sub rumble oscillator (sawtooth for aggressive engine roar harmonics)
       const sOsc = this.webAudioCtx.createOscillator();
-      sOsc.type = 'triangle';
+      sOsc.type = 'sawtooth';
       sOsc.frequency.setValueAtTime(subFrequencies[i], now);
 
       const sGain = this.webAudioCtx.createGain();
-      sGain.gain.setValueAtTime(0, now);
+      sGain.gain.setValueAtTime(0.02, now); // Quiet idle rumble
 
       sOsc.connect(sGain);
-      sGain.connect(subMasterFilter);
+      sGain.connect(this.thrusterSubFilter);
       sOsc.start(now);
 
       this.thrusterOscs.push(sOsc);
       this.thrusterGains.push(sGain);
 
-      // Ion whine harmonic
+      // Magnetoplasma Ion Whine (triangle with subtle overdrive)
       const iOsc = this.webAudioCtx.createOscillator();
-      iOsc.type = 'sine';
+      iOsc.type = 'triangle';
       iOsc.frequency.setValueAtTime(ionFrequencies[i], now);
 
       const iGain = this.webAudioCtx.createGain();
-      iGain.gain.setValueAtTime(0, now);
+      iGain.gain.setValueAtTime(0.005, now);
 
       iOsc.connect(iGain);
       iGain.connect(this.webAudioMasterGain);
@@ -147,6 +179,49 @@ export class AudioDirector {
       this.ionWhineOscs.push(iOsc);
       this.ionWhineGains.push(iGain);
     }
+
+    // 2. High-Thrust Turbo Jet Compressor Scream
+    this.thrusterTurbineOsc = this.webAudioCtx.createOscillator();
+    this.thrusterTurbineOsc.type = 'sawtooth';
+    this.thrusterTurbineOsc.frequency.setValueAtTime(320, now);
+
+    this.thrusterTurbineGain = this.webAudioCtx.createGain();
+    this.thrusterTurbineGain.gain.setValueAtTime(0, now);
+
+    this.thrusterRoarFilter = this.webAudioCtx.createBiquadFilter();
+    this.thrusterRoarFilter.type = 'bandpass';
+    this.thrusterRoarFilter.frequency.setValueAtTime(750, now);
+    this.thrusterRoarFilter.Q.setValueAtTime(4.0, now);
+
+    this.thrusterTurbineOsc.connect(this.thrusterRoarFilter);
+    this.thrusterRoarFilter.connect(this.thrusterTurbineGain);
+    this.thrusterTurbineGain.connect(this.webAudioMasterGain);
+    this.thrusterTurbineOsc.start(now);
+
+    // 3. Supersonic Jet Afterburner Exhaust Noise (Aerodynamic Plasma Blowtorch)
+    const bufferSize = this.webAudioCtx.sampleRate * 2;
+    const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = Math.random() * 2 - 1;
+    }
+
+    this.thrusterNoiseNode = this.webAudioCtx.createBufferSource();
+    this.thrusterNoiseNode.buffer = noiseBuffer;
+    this.thrusterNoiseNode.loop = true;
+
+    this.thrusterNoiseFilter = this.webAudioCtx.createBiquadFilter();
+    this.thrusterNoiseFilter.type = 'bandpass';
+    this.thrusterNoiseFilter.frequency.setValueAtTime(480, now);
+    this.thrusterNoiseFilter.Q.setValueAtTime(1.8, now);
+
+    this.thrusterNoiseGain = this.webAudioCtx.createGain();
+    this.thrusterNoiseGain.gain.setValueAtTime(0, now);
+
+    this.thrusterNoiseNode.connect(this.thrusterNoiseFilter);
+    this.thrusterNoiseFilter.connect(this.thrusterNoiseGain);
+    this.thrusterNoiseGain.connect(this.webAudioMasterGain);
+    this.thrusterNoiseNode.start(now);
   }
 
   public setSystemGenome(systemSeed: number): void {
@@ -347,23 +422,44 @@ export class AudioDirector {
     const t = Math.max(0, Math.min(1, throttle));
     const now = this.webAudioCtx.currentTime;
 
-    // Sub rumble ramps across all 4 exhausts
-    const baseFreqs = [52.0, 54.2, 53.8, 55.5];
-    const ionFreqs = [240.0, 243.5, 238.0, 245.2];
+    // Sub-bass heavy starfighter rumble across 4 exhausts
+    const baseFreqs = [42.0, 43.8, 41.2, 44.5];
+    const ionFreqs = [185.0, 192.0, 180.0, 198.5];
+
+    // Ramp master sub bass filter cutoff upward as throttle increases for thunderous bite
+    if (this.thrusterSubFilter) {
+      this.thrusterSubFilter.frequency.setTargetAtTime(140 + t * 450, now, 0.08);
+    }
 
     for (let i = 0; i < 4; i++) {
       if (this.thrusterOscs[i]) {
-        this.thrusterOscs[i].frequency.setTargetAtTime(baseFreqs[i] + t * 45, now, 0.12);
+        // Base frequency aggressive octave pitch rise under heavy throttle
+        this.thrusterOscs[i].frequency.setTargetAtTime(baseFreqs[i] + t * 68, now, 0.10);
       }
       if (this.thrusterGains[i]) {
-        this.thrusterGains[i].gain.setTargetAtTime((t * 0.18) / 4.0, now, 0.12);
+        // High gain for gut-rumbling low end
+        this.thrusterGains[i].gain.setTargetAtTime((0.02 + t * 0.42) / 4.0, now, 0.10);
       }
       if (this.ionWhineOscs[i]) {
-        this.ionWhineOscs[i].frequency.setTargetAtTime(ionFreqs[i] + t * 480, now, 0.15);
+        this.ionWhineOscs[i].frequency.setTargetAtTime(ionFreqs[i] + t * 720, now, 0.12);
       }
       if (this.ionWhineGains[i]) {
-        this.ionWhineGains[i].gain.setTargetAtTime((t * 0.08) / 4.0, now, 0.15);
+        this.ionWhineGains[i].gain.setTargetAtTime((0.005 + t * 0.12) / 4.0, now, 0.12);
       }
+    }
+
+    // High-thrust turbine compressor scream (piercing jet whine)
+    if (this.thrusterTurbineOsc && this.thrusterTurbineGain && this.thrusterRoarFilter) {
+      this.thrusterTurbineOsc.frequency.setTargetAtTime(320 + t * 1450, now, 0.14);
+      this.thrusterRoarFilter.frequency.setTargetAtTime(750 + t * 1800, now, 0.14);
+      this.thrusterTurbineGain.gain.setTargetAtTime(t * 0.16, now, 0.10);
+    }
+
+    // Supersonic plasma exhaust blowtorch noise (afterburner roar)
+    if (this.thrusterNoiseGain && this.thrusterNoiseFilter) {
+      this.thrusterNoiseFilter.frequency.setTargetAtTime(450 + t * 2400, now, 0.08);
+      this.thrusterNoiseFilter.Q.setTargetAtTime(1.5 + t * 2.5, now, 0.08);
+      this.thrusterNoiseGain.gain.setTargetAtTime(t * 0.22, now, 0.08);
     }
   }
 
