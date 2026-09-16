@@ -31,11 +31,14 @@ export class AudioDirector {
   // Direct Web Audio engine for thrusters & responsive sound FX
   private webAudioCtx: AudioContext | null = null;
   private webAudioMasterGain: GainNode | null = null;
-  // 4-Engine thruster cluster
-  private thrusterOscs: OscillatorNode[] = [];
-  private thrusterGains: GainNode[] = [];
-  private ionWhineOscs: OscillatorNode[] = [];
-  private ionWhineGains: GainNode[] = [];
+  // Jet Propulsion Engine Nodes (Aerodynamic Bypass Whoosh, Deep Body Displacement & Quiet Spool)
+  private jetAirflowNoise: AudioBufferSourceNode | null = null;
+  private jetAirflowFilter: BiquadFilterNode | null = null;
+  private jetAirflowGain: GainNode | null = null;
+  private jetRumbleFilter: BiquadFilterNode | null = null;
+  private jetRumbleGain: GainNode | null = null;
+  private jetSpoolOsc: OscillatorNode | null = null;
+  private jetSpoolGain: GainNode | null = null;
   private loopSequenceId: number | null = null;
   private stepIndex = 0;
   private isOverturePlaying = false;
@@ -102,110 +105,66 @@ export class AudioDirector {
     }
   }
 
-  // Majestic Sci-Fi Starship Propulsion Nodes
-  private thrusterSubFilter: BiquadFilterNode | null = null;
-  private thrusterRoarFilter: BiquadFilterNode | null = null;
-  private thrusterTurbineOsc: OscillatorNode | null = null;
-  private thrusterTurbineGain: GainNode | null = null;
-  private thrusterNoiseNode: AudioBufferSourceNode | null = null;
-  private thrusterNoiseGain: GainNode | null = null;
-  private thrusterNoiseFilter: BiquadFilterNode | null = null;
-
   private setupThrusters(): void {
     if (!this.webAudioCtx || !this.webAudioMasterGain) return;
     const now = this.webAudioCtx.currentTime;
 
-    // Deep sub-bass gravitic resonance & singing ion frequencies
-    const subFrequencies = [36.0, 38.2, 35.5, 39.1];
-    const ionFrequencies = [142.0, 144.5, 141.0, 146.2];
-
-    this.thrusterOscs = [];
-    this.thrusterGains = [];
-    this.ionWhineOscs = [];
-    this.ionWhineGains = [];
-
-    // Master Sub Bass Filter (Warm, deep, rumbling low-pass without harsh distortion)
-    this.thrusterSubFilter = this.webAudioCtx.createBiquadFilter();
-    this.thrusterSubFilter.type = 'lowpass';
-    this.thrusterSubFilter.frequency.setValueAtTime(120, now);
-    this.thrusterSubFilter.Q.setValueAtTime(1.8, now);
-    this.thrusterSubFilter.connect(this.webAudioMasterGain);
-
-    // 1. Four Resonant Magnetoplasma Drive Exhausts
-    for (let i = 0; i < 4; i++) {
-      // Sub-bass gravitic core: warm triangle/sine waves for deep hull resonance
-      const sOsc = this.webAudioCtx.createOscillator();
-      sOsc.type = i % 2 === 0 ? 'triangle' : 'sine';
-      sOsc.frequency.setValueAtTime(subFrequencies[i], now);
-
-      const sGain = this.webAudioCtx.createGain();
-      sGain.gain.setValueAtTime(0.04, now); // Gentle idle purr
-
-      sOsc.connect(sGain);
-      sGain.connect(this.thrusterSubFilter);
-      sOsc.start(now);
-
-      this.thrusterOscs.push(sOsc);
-      this.thrusterGains.push(sGain);
-
-      // Acoustic singing ion drive (pure detuned sine for crystalline space sci-fi shimmer)
-      const iOsc = this.webAudioCtx.createOscillator();
-      iOsc.type = 'sine';
-      iOsc.frequency.setValueAtTime(ionFrequencies[i], now);
-
-      const iGain = this.webAudioCtx.createGain();
-      iGain.gain.setValueAtTime(0.008, now);
-
-      iOsc.connect(iGain);
-      iGain.connect(this.webAudioMasterGain);
-      iOsc.start(now);
-
-      this.ionWhineOscs.push(iOsc);
-      this.ionWhineGains.push(iGain);
-    }
-
-    // 2. High-Efficiency Ion Core Resonator
-    this.thrusterTurbineOsc = this.webAudioCtx.createOscillator();
-    this.thrusterTurbineOsc.type = 'sine';
-    this.thrusterTurbineOsc.frequency.setValueAtTime(210, now);
-
-    this.thrusterTurbineGain = this.webAudioCtx.createGain();
-    this.thrusterTurbineGain.gain.setValueAtTime(0.002, now);
-
-    this.thrusterRoarFilter = this.webAudioCtx.createBiquadFilter();
-    this.thrusterRoarFilter.type = 'bandpass';
-    this.thrusterRoarFilter.frequency.setValueAtTime(420, now);
-    this.thrusterRoarFilter.Q.setValueAtTime(2.2, now);
-
-    this.thrusterTurbineOsc.connect(this.thrusterRoarFilter);
-    this.thrusterRoarFilter.connect(this.thrusterTurbineGain);
-    this.thrusterTurbineGain.connect(this.webAudioMasterGain);
-    this.thrusterTurbineOsc.start(now);
-
-    // 3. Smooth Plasma Exhaust Wash (Pressurized ion flow through magnetic nozzles)
+    // Create 2-second looped pink-weighted noise buffer (aerodynamic air rush)
     const bufferSize = this.webAudioCtx.sampleRate * 2;
     const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
     const output = noiseBuffer.getChannelData(0);
+    let b0 = 0, b1 = 0, b2 = 0;
     for (let i = 0; i < bufferSize; i++) {
-      output[i] = Math.random() * 2 - 1;
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.96900 * b2 + white * 0.1538520;
+      output[i] = (b0 + b1 + b2 + white * 0.5362) * 0.10;
     }
 
-    this.thrusterNoiseNode = this.webAudioCtx.createBufferSource();
-    this.thrusterNoiseNode.buffer = noiseBuffer;
-    this.thrusterNoiseNode.loop = true;
+    this.jetAirflowNoise = this.webAudioCtx.createBufferSource();
+    this.jetAirflowNoise.buffer = noiseBuffer;
+    this.jetAirflowNoise.loop = true;
 
-    this.thrusterNoiseFilter = this.webAudioCtx.createBiquadFilter();
-    this.thrusterNoiseFilter.type = 'bandpass';
-    this.thrusterNoiseFilter.frequency.setValueAtTime(320, now);
-    this.thrusterNoiseFilter.Q.setValueAtTime(1.4, now);
+    // 1. Aerodynamic Bypass Airflow (smooth, quiet jet whoosh)
+    this.jetAirflowFilter = this.webAudioCtx.createBiquadFilter();
+    this.jetAirflowFilter.type = 'lowpass';
+    this.jetAirflowFilter.frequency.setValueAtTime(220, now);
+    this.jetAirflowFilter.Q.setValueAtTime(1.0, now);
 
-    this.thrusterNoiseGain = this.webAudioCtx.createGain();
-    this.thrusterNoiseGain.gain.setValueAtTime(0.006, now); // Soft atmospheric air wash at idle
+    this.jetAirflowGain = this.webAudioCtx.createGain();
+    this.jetAirflowGain.gain.setValueAtTime(0.012, now); // Gentle idle whoosh
 
-    this.thrusterNoiseNode.connect(this.thrusterNoiseFilter);
-    this.thrusterNoiseFilter.connect(this.thrusterNoiseGain);
-    this.thrusterNoiseGain.connect(this.webAudioMasterGain);
-    this.thrusterNoiseNode.start(now);
+    this.jetAirflowNoise.connect(this.jetAirflowFilter);
+    this.jetAirflowFilter.connect(this.jetAirflowGain);
+    this.jetAirflowGain.connect(this.webAudioMasterGain);
+
+    // 2. Deep Jet Body / Hull Displacement (warm low-end rumble)
+    this.jetRumbleFilter = this.webAudioCtx.createBiquadFilter();
+    this.jetRumbleFilter.type = 'lowpass';
+    this.jetRumbleFilter.frequency.setValueAtTime(75, now);
+    this.jetRumbleFilter.Q.setValueAtTime(0.8, now);
+
+    this.jetRumbleGain = this.webAudioCtx.createGain();
+    this.jetRumbleGain.gain.setValueAtTime(0.014, now); // Low body displacement
+
+    this.jetAirflowNoise.connect(this.jetRumbleFilter);
+    this.jetRumbleFilter.connect(this.jetRumbleGain);
+    this.jetRumbleGain.connect(this.webAudioMasterGain);
+
+    this.jetAirflowNoise.start(now);
+
+    // 3. High-Bypass Jet Turbine Spool (subtle, pure sine spool-up)
+    this.jetSpoolOsc = this.webAudioCtx.createOscillator();
+    this.jetSpoolOsc.type = 'sine';
+    this.jetSpoolOsc.frequency.setValueAtTime(540, now);
+
+    this.jetSpoolGain = this.webAudioCtx.createGain();
+    this.jetSpoolGain.gain.setValueAtTime(0.0018, now); // Whisper-quiet at idle
+
+    this.jetSpoolOsc.connect(this.jetSpoolGain);
+    this.jetSpoolGain.connect(this.webAudioMasterGain);
+    this.jetSpoolOsc.start(now);
   }
 
   public setSystemGenome(systemSeed: number): void {
@@ -411,51 +370,30 @@ export class AudioDirector {
   }
 
   public updateThrottle(throttle: number): void {
-    if (!this.webAudioCtx || this.thrusterGains.length === 0) return;
+    if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
 
     const t = Math.max(0, Math.min(1, throttle));
     const now = this.webAudioCtx.currentTime;
 
-    // Deep sub-bass gravitic resonance across 4 exhausts (warm sine/triangle)
-    const baseFreqs = [36.0, 38.2, 35.5, 39.1];
-    const ionFreqs = [142.0, 144.5, 141.0, 146.2];
-
-    // Sub-bass filter smoothly opens up with acceleration
-    if (this.thrusterSubFilter) {
-      this.thrusterSubFilter.frequency.setTargetAtTime(110 + t * 160, now, 0.08);
+    // 1. Aerodynamic Bypass Airflow: filter smoothly sweeps from 220Hz up to 520Hz
+    if (this.jetAirflowFilter && this.jetAirflowGain) {
+      this.jetAirflowFilter.frequency.setTargetAtTime(220 + t * 300, now, 0.08);
+      // Quiet gain scaling: idle 0.012 -> full throttle 0.038
+      this.jetAirflowGain.gain.setTargetAtTime(0.012 + t * 0.026, now, 0.08);
     }
 
-    for (let i = 0; i < 4; i++) {
-      if (this.thrusterOscs[i]) {
-        // Deep sub-bass pitch glide under acceleration
-        this.thrusterOscs[i].frequency.setTargetAtTime(baseFreqs[i] + t * 24, now, 0.10);
-      }
-      if (this.thrusterGains[i]) {
-        // Smooth gravitic hum gain (idle: 0.04 -> full: 0.28)
-        this.thrusterGains[i].gain.setTargetAtTime((0.04 + t * 0.24) / 4.0, now, 0.10);
-      }
-      if (this.ionWhineOscs[i]) {
-        // Singing ion drive pitch-bend (pure, crystalline sci-fi tone)
-        this.ionWhineOscs[i].frequency.setTargetAtTime(ionFreqs[i] + t * 155, now, 0.12);
-      }
-      if (this.ionWhineGains[i]) {
-        // Shimmering ion drive volume
-        this.ionWhineGains[i].gain.setTargetAtTime((0.008 + t * 0.065) / 4.0, now, 0.12);
-      }
+    // 2. Low-frequency jet body displacement: 75Hz -> 125Hz
+    if (this.jetRumbleFilter && this.jetRumbleGain) {
+      this.jetRumbleFilter.frequency.setTargetAtTime(75 + t * 50, now, 0.10);
+      // Quiet rumble: idle 0.014 -> full throttle 0.032
+      this.jetRumbleGain.gain.setTargetAtTime(0.014 + t * 0.018, now, 0.10);
     }
 
-    // High-efficiency ion core resonator (clean sine singing acoustic center)
-    if (this.thrusterTurbineOsc && this.thrusterTurbineGain && this.thrusterRoarFilter) {
-      this.thrusterTurbineOsc.frequency.setTargetAtTime(210 + t * 180, now, 0.12);
-      this.thrusterRoarFilter.frequency.setTargetAtTime(420 + t * 380, now, 0.12);
-      this.thrusterTurbineGain.gain.setTargetAtTime(0.002 + t * 0.045, now, 0.10);
-    }
-
-    // Smooth plasma exhaust stream (airy, pressurized ion thrust wash - NO chainsaw buzz)
-    if (this.thrusterNoiseGain && this.thrusterNoiseFilter) {
-      this.thrusterNoiseFilter.frequency.setTargetAtTime(300 + t * 540, now, 0.08);
-      this.thrusterNoiseFilter.Q.setTargetAtTime(1.4 + t * 0.6, now, 0.08);
-      this.thrusterNoiseGain.gain.setTargetAtTime(0.006 + t * 0.09, now, 0.08);
+    // 3. High-Bypass Turbine Spool-Up: 540Hz -> 1140Hz
+    if (this.jetSpoolOsc && this.jetSpoolGain) {
+      this.jetSpoolOsc.frequency.setTargetAtTime(540 + t * 600, now, 0.12);
+      // Very quiet turbine whine: idle 0.0018 -> full throttle 0.0068
+      this.jetSpoolGain.gain.setTargetAtTime(0.0018 + t * 0.0050, now, 0.12);
     }
   }
 

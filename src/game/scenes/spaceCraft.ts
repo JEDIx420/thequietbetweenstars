@@ -269,21 +269,31 @@ export class SurveyCraft {
       { x: 0.65, y: -0.32, z: 2.1 },  // Lower Right
     ];
 
-    const coreGeo = new THREE.CylinderGeometry(0.12, 0.22, 0.7, 12);
+    const coreHeight = 0.6;
+    const coreGeo = new THREE.CylinderGeometry(0.08, 0.20, coreHeight, 12);
+    coreGeo.translate(0, coreHeight / 2, 0);
     coreGeo.rotateX(Math.PI / 2);
 
-    const innerGeo = new THREE.ConeGeometry(0.24, 2.2, 12);
-    innerGeo.rotateX(-Math.PI / 2);
+    const innerHeight = 2.4;
+    const innerGeo = new THREE.ConeGeometry(0.24, innerHeight, 12);
+    innerGeo.translate(0, innerHeight / 2, 0);
+    innerGeo.rotateX(Math.PI / 2);
 
-    const outerGeo = new THREE.ConeGeometry(0.38, 3.2, 12);
-    outerGeo.rotateX(-Math.PI / 2);
+    const outerHeight = 3.6;
+    const outerGeo = new THREE.ConeGeometry(0.36, outerHeight, 12);
+    outerGeo.translate(0, outerHeight / 2, 0);
+    outerGeo.rotateX(Math.PI / 2);
 
     // Shock diamond supersonic expansion disc
-    const shockGeo = new THREE.CylinderGeometry(0.04, 0.22, 1.8, 8);
+    const shockHeight = 2.0;
+    const shockGeo = new THREE.CylinderGeometry(0.03, 0.16, shockHeight, 8);
+    shockGeo.translate(0, shockHeight / 2, 0);
     shockGeo.rotateX(Math.PI / 2);
 
     for (let i = 0; i < 4; i++) {
       const pos = engineOffsets[i];
+      // Housing is length 1.1 centered at pos.z; rear exhaust rim is at pos.z + 0.55
+      const nozzleZ = pos.z + 0.55;
 
       // Cylindrical engine housing
       const housingGeo = new THREE.CylinderGeometry(0.26, 0.28, 1.1, 12);
@@ -292,13 +302,13 @@ export class SurveyCraft {
       housing.position.set(pos.x, pos.y, pos.z);
       this.hullGroup.add(housing);
 
-      // Hot white emission core
+      // Hot white emission core anchored right at nozzle exit
       const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
       const core = new THREE.Mesh(coreGeo, coreMat);
-      core.position.set(pos.x, pos.y, pos.z + 0.45);
+      core.position.set(pos.x, pos.y, nozzleZ);
       this.hullGroup.add(core);
 
-      // Cyan energetic inner plume
+      // Cyan energetic inner plume extending purely backward (+Z)
       const innerMat = new THREE.MeshBasicMaterial({
         color: 0x38bdf8,
         transparent: true,
@@ -306,10 +316,10 @@ export class SurveyCraft {
         blending: THREE.AdditiveBlending,
       });
       const innerPlume = new THREE.Mesh(innerGeo, innerMat);
-      innerPlume.position.set(pos.x, pos.y, pos.z + 1.4);
+      innerPlume.position.set(pos.x, pos.y, nozzleZ);
       this.hullGroup.add(innerPlume);
 
-      // Translucent deep electric blue outer plume
+      // Translucent deep electric blue outer plume extending purely backward (+Z)
       const outerMat = new THREE.MeshBasicMaterial({
         color: 0x0284c7,
         transparent: true,
@@ -317,10 +327,10 @@ export class SurveyCraft {
         blending: THREE.AdditiveBlending,
       });
       const outerPlume = new THREE.Mesh(outerGeo, outerMat);
-      outerPlume.position.set(pos.x, pos.y, pos.z + 1.8);
+      outerPlume.position.set(pos.x, pos.y, nozzleZ);
       this.hullGroup.add(outerPlume);
 
-      // Shock diamonds glowing filament
+      // Shock diamonds glowing filament anchored at nozzle exit
       const shockMat = new THREE.MeshBasicMaterial({
         color: 0xe0f2fe,
         transparent: true,
@@ -328,7 +338,7 @@ export class SurveyCraft {
         blending: THREE.AdditiveBlending,
       });
       const shockDiamonds = new THREE.Mesh(shockGeo, shockMat);
-      shockDiamonds.position.set(pos.x, pos.y, pos.z + 1.2);
+      shockDiamonds.position.set(pos.x, pos.y, nozzleZ);
       this.hullGroup.add(shockDiamonds);
 
       this.engines.push({ housing, core, innerPlume, outerPlume, shockDiamonds });

@@ -20,8 +20,9 @@ export class TitleRevealSequence {
   private camera: THREE.PerspectiveCamera | null = null;
   private animFrameId: number | null = null;
   private isFinished = false;
+  private isHyperspaceJump = false;
+  private warpStartTime = 0;
   private onCompleteCallback: (() => void) | null = null;
-  private timeoutId: number | null = null;
 
   // Visual objects (Zero-CPU-mutation GPU hierarchy)
   private starLayers: THREE.Points[] = [];
@@ -182,50 +183,61 @@ export class TitleRevealSequence {
         A Peaceful Space Odyssey
       </div>
 
-      <!-- Skip Prompt -->
-      <div style="
+      <!-- Begin Journey Prompt -->
+      <div id="intro-begin-prompt" style="
         position: fixed;
-        bottom: 28px;
+        bottom: 34px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
         font-family: ui-monospace, monospace;
-        font-size: 11px;
-        letter-spacing: 0.25em;
-        color: #64748b;
+        letter-spacing: 0.26em;
         text-transform: uppercase;
-        animation: skipBlink 2.0s infinite ease-in-out;
+        animation: skipBlink 2.2s infinite ease-in-out;
+        cursor: pointer;
+        pointer-events: auto;
       ">
-        [ CLICK OR PRESS SPACE TO SKIP ]
+        <div style="
+          font-size: clamp(11px, 1.4vw, 13px);
+          font-weight: 600;
+          color: #f8fafc;
+          letter-spacing: 0.28em;
+          text-shadow: 0 0 16px rgba(56, 189, 248, 0.8), 0 0 32px rgba(14, 165, 233, 0.5);
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        ">
+          PRESS [SPACE] OR [ENTER] TO BEGIN
+        </div>
+        <div style="font-size: 10px; color: #64748b; letter-spacing: 0.22em;">
+          OR CLICK ANYWHERE
+        </div>
       </div>
     `;
 
+    contentEl.id = 'title-reveal-content';
     this.overlayEl.appendChild(contentEl);
     this.container.appendChild(this.overlayEl);
 
     // Initialize 3D Space Scene
     this.init3D();
 
-    // Event listeners for skipping
-    const onSkip = (e: Event) => {
+    // Event listeners for fast hyperspace transition to title screen
+    const onTrigger = (e: Event) => {
       e.preventDefault();
       e.stopPropagation();
-      this.finish();
+      this.triggerHyperspaceTransition();
     };
 
-    this.overlayEl.addEventListener('click', onSkip, { once: true });
+    this.overlayEl.addEventListener('click', onTrigger, { once: true });
     this.keyHandler = (e: KeyboardEvent) => {
       if (e.key === ' ' || e.key === 'Escape' || e.key === 'Enter') {
-        if (this.keyHandler) {
-          window.removeEventListener('keydown', this.keyHandler);
-          this.keyHandler = null;
-        }
-        this.finish();
+        e.preventDefault();
+        this.triggerHyperspaceTransition();
       }
     };
     window.addEventListener('keydown', this.keyHandler);
-
-    // Auto-advance after 4.0 seconds
-    this.timeoutId = window.setTimeout(() => {
-      this.finish();
-    }, 4000);
   }
 
   private init3D(): void {
@@ -385,7 +397,13 @@ export class TitleRevealSequence {
     const dt = 0.016;
 
     // 1. Camera forward hyperspace acceleration
-    this.camera.position.z -= dt * (40.0 + elapsed * 35.0);
+    let forwardSpeed = Math.min(75.0, 35.0 + elapsed * 8.0);
+    if (this.isHyperspaceJump) {
+      const warpProgress = Math.min(1.0, (performance.now() - this.warpStartTime) / 380);
+      forwardSpeed = 250.0 + warpProgress * 2400.0;
+    }
+
+    this.camera.position.z -= dt * forwardSpeed;
     this.camera.rotation.z = Math.sin(elapsed * 0.6) * 0.015;
 
     // 2. Animate Starfield Layers via Group Translation (ZERO vertex buffer uploads)
@@ -398,10 +416,11 @@ export class TitleRevealSequence {
     }
 
     // 3. Animate Shooting Stars via Object Translation (ZERO buffer mutations)
+    const speedMult = this.isHyperspaceJump ? 3.5 : 1.0;
     for (let i = 0; i < this.shootingStarMeshes.length; i++) {
       const streak = this.shootingStarMeshes[i];
       const vel = streak.userData.vel as THREE.Vector3;
-      streak.position.addScaledVector(vel, dt);
+      streak.position.addScaledVector(vel, dt * speedMult);
 
       // Boundary reset
       if (streak.position.x > streak.userData.boundaryX || streak.position.z < this.camera.position.z - 350) {
@@ -415,12 +434,73 @@ export class TitleRevealSequence {
 
     // 4. Subtle rotation on nebula
     if (this.nebulaCloud) {
-      this.nebulaCloud.rotation.z += dt * 0.03;
+      this.nebulaCloud.rotation.z += dt * (this.isHyperspaceJump ? 0.2 : 0.03);
     }
 
     this.renderer.render(this.scene, this.camera);
     this.animFrameId = requestAnimationFrame(this.animate);
   };
+
+  private triggerHyperspaceTransition(): void {
+    if (this.isFinished || this.isHyperspaceJump) return;
+    this.isHyperspaceJump = true;
+    this.warpStartTime = performance.now();
+
+    if (this.keyHandler) {
+      window.removeEventListener('keydown', this.keyHandler);
+      this.keyHandler = null;
+    }
+
+    // 1. Fast text scaling and dissolve (260ms)
+    const contentEl = this.overlayEl?.querySelector('#title-reveal-content') as HTMLElement;
+    if (contentEl) {
+      contentEl.style.transition = 'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s ease';
+      contentEl.style.transform = 'scale(1.22)';
+      contentEl.style.opacity = '0';
+    }
+
+    // 2. Anamorphic Warp Flash beam
+    if (this.overlayEl) {
+      const warpFlash = document.createElement('div');
+      warpFlash.style.cssText = `
+        position: absolute;
+        inset: 0;
+        z-index: 40;
+        pointer-events: none;
+        background: radial-gradient(circle at center, rgba(255, 255, 255, 0.95) 0%, rgba(56, 189, 248, 0.65) 30%, rgba(2, 6, 23, 0) 75%);
+        opacity: 0;
+        transform: scale(0.6);
+        transition: opacity 0.15s ease-out, transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+      `;
+      this.overlayEl.appendChild(warpFlash);
+      requestAnimationFrame(() => {
+        warpFlash.style.opacity = '1';
+        warpFlash.style.transform = 'scale(1.4)';
+      });
+    }
+
+    // 3. Mount title screen at warp peak (~160ms)
+    setTimeout(() => {
+      if (this.onCompleteCallback) {
+        this.onCompleteCallback();
+        this.onCompleteCallback = null;
+      }
+    }, 160);
+
+    // 4. Fade out entire overlay
+    setTimeout(() => {
+      if (this.overlayEl) {
+        this.overlayEl.style.transition = 'opacity 0.22s ease-out';
+        this.overlayEl.style.opacity = '0';
+        this.overlayEl.style.pointerEvents = 'none';
+      }
+    }, 180);
+
+    // 5. Clean up WebGL resources and remove from DOM
+    setTimeout(() => {
+      this.finish();
+    }, 400);
+  }
 
   private finish(): void {
     if (this.isFinished) return;
@@ -431,58 +511,41 @@ export class TitleRevealSequence {
       this.keyHandler = null;
     }
 
-    if (this.timeoutId !== null) {
-      clearTimeout(this.timeoutId);
-      this.timeoutId = null;
+    if (this.animFrameId !== null) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
     }
 
-    if (this.overlayEl) {
-      this.overlayEl.style.opacity = '0';
-      this.overlayEl.style.pointerEvents = 'none';
-
-      // Immediately notify parent to start rendering the Title Screen UI underneath
-      // while this overlay smoothly crossfades out over 750ms
-      if (this.onCompleteCallback) {
-        this.onCompleteCallback();
-        this.onCompleteCallback = null;
-      }
-
-      setTimeout(() => {
-        if (this.animFrameId !== null) {
-          cancelAnimationFrame(this.animFrameId);
-          this.animFrameId = null;
+    // Deep clean Three.js resources
+    if (this.scene) {
+      this.scene.traverse((obj) => {
+        if ((obj as THREE.Mesh).geometry) {
+          (obj as THREE.Mesh).geometry.dispose();
         }
-
-        // Deep clean Three.js resources after crossfade completes
-        if (this.scene) {
-          this.scene.traverse((obj) => {
-            if ((obj as THREE.Mesh).geometry) {
-              (obj as THREE.Mesh).geometry.dispose();
-            }
-            if ((obj as THREE.Mesh).material) {
-              const mat = (obj as THREE.Mesh).material;
-              if (Array.isArray(mat)) {
-                mat.forEach((m) => m.dispose());
-              } else {
-                mat.dispose();
-              }
-            }
-          });
-          this.scene.clear();
-          this.scene = null;
+        if ((obj as THREE.Mesh).material) {
+          const mat = (obj as THREE.Mesh).material;
+          if (Array.isArray(mat)) {
+            mat.forEach((m) => m.dispose());
+          } else {
+            mat.dispose();
+          }
         }
+      });
+      this.scene.clear();
+      this.scene = null;
+    }
 
-        if (this.renderer) {
-          this.renderer.dispose();
-          this.renderer = null;
-        }
+    if (this.renderer) {
+      this.renderer.dispose();
+      this.renderer = null;
+    }
 
-        if (this.overlayEl && this.overlayEl.parentNode) {
-          this.overlayEl.parentNode.removeChild(this.overlayEl);
-          this.overlayEl = null;
-        }
-      }, 750);
-    } else if (this.onCompleteCallback) {
+    if (this.overlayEl && this.overlayEl.parentNode) {
+      this.overlayEl.parentNode.removeChild(this.overlayEl);
+      this.overlayEl = null;
+    }
+
+    if (this.onCompleteCallback) {
       this.onCompleteCallback();
       this.onCompleteCallback = null;
     }
