@@ -50,6 +50,8 @@ export class CinematicCameraDirector {
     return this.currentCaption;
   }
 
+  private lookTarget = new THREE.Vector3();
+
   public update(dt: number, camera: THREE.PerspectiveCamera): void {
     if (!this.isPlaying || this.keyframes.length === 0) return;
 
@@ -78,8 +80,8 @@ export class CinematicCameraDirector {
     const t = THREE.MathUtils.smoothstep(rawT, 0, 1);
 
     camera.position.lerpVectors(k0.cameraPosition, k1.cameraPosition, t);
-    const lookTarget = new THREE.Vector3().lerpVectors(k0.targetPosition, k1.targetPosition, t);
-    camera.lookAt(lookTarget);
+    this.lookTarget.lerpVectors(k0.targetPosition, k1.targetPosition, t);
+    camera.lookAt(this.lookTarget);
 
     if (k0.fov && k1.fov) {
       camera.fov = THREE.MathUtils.lerp(k0.fov, k1.fov, t);

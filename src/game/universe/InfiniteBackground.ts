@@ -11,27 +11,22 @@ export class InfiniteBackground {
   private twinkleStarfield: THREE.Points;
   private nebulaPoints: THREE.Points;
 
-  // Cosmic Shooting Stars
-  private shootingStars: THREE.LineSegments;
-  private shootingStarPositions: Float32Array;
-  private shootingStarVelocities: THREE.Vector3[] = [];
-  private shootingStarCount = 24;
+  // Cosmic Shooting Stars (Zero buffer re-upload)
+  private shootingStarsGroup: THREE.Group;
+  private shootingStarLines: THREE.Line[] = [];
+  private shootingStarCount = 14;
 
   constructor() {
     this.group = new THREE.Group();
     this.deepStarfield = this.createDeepStarfield();
     this.twinkleStarfield = this.createTwinkleStarfield();
     this.nebulaPoints = this.createCosmicNebula();
-
-    const shootingData = this.createShootingStars();
-    this.shootingStars = shootingData.lines;
-    this.shootingStarPositions = shootingData.positions;
-    this.shootingStarVelocities = shootingData.velocities;
+    this.shootingStarsGroup = this.createShootingStars();
 
     this.group.add(this.deepStarfield);
     this.group.add(this.twinkleStarfield);
     this.group.add(this.nebulaPoints);
-    this.group.add(this.shootingStars);
+    this.group.add(this.shootingStarsGroup);
   }
 
   private createDeepStarfield(): THREE.Points {
@@ -161,53 +156,47 @@ export class InfiniteBackground {
     return new THREE.Points(geometry, material);
   }
 
-  private createShootingStars(): {
-    lines: THREE.LineSegments;
-    positions: Float32Array;
-    velocities: THREE.Vector3[];
-  } {
+  private createShootingStars(): THREE.Group {
+    const group = new THREE.Group();
+    this.shootingStarLines = [];
     const count = this.shootingStarCount;
-    const positions = new Float32Array(count * 6);
-    const velocities: THREE.Vector3[] = [];
-
     const spawnRadius = 2200;
-
-    for (let i = 0; i < count; i++) {
-      const x = (Math.random() - 0.5) * spawnRadius;
-      const y = (Math.random() - 0.5) * spawnRadius * 0.7;
-      const z = (Math.random() - 0.5) * spawnRadius;
-      const len = 120 + Math.random() * 220;
-
-      // Trajectory heading
-      const dirX = 0.7 + (Math.random() - 0.5) * 0.4;
-      const dirY = 0.3 + (Math.random() - 0.5) * 0.3;
-      const dirZ = -0.6 + (Math.random() - 0.5) * 0.4;
-
-      positions[i * 6] = x;
-      positions[i * 6 + 1] = y;
-      positions[i * 6 + 2] = z;
-
-      positions[i * 6 + 3] = x - dirX * len;
-      positions[i * 6 + 4] = y - dirY * len;
-      positions[i * 6 + 5] = z - dirZ * len;
-
-      const speed = 400 + Math.random() * 600;
-      velocities.push(new THREE.Vector3(dirX * speed, dirY * speed, dirZ * speed));
-    }
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
     const mat = new THREE.LineBasicMaterial({
       color: 0x38bdf8,
       transparent: true,
       opacity: 0.75,
       blending: THREE.AdditiveBlending,
-      linewidth: 2,
     });
 
-    const lines = new THREE.LineSegments(geo, mat);
-    return { lines, positions, velocities };
+    for (let i = 0; i < count; i++) {
+      const len = 120 + Math.random() * 200;
+      const dirX = 0.7 + (Math.random() - 0.5) * 0.4;
+      const dirY = 0.3 + (Math.random() - 0.5) * 0.3;
+      const dirZ = -0.6 + (Math.random() - 0.5) * 0.4;
+
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(-dirX * len, -dirY * len, -dirZ * len),
+      ]);
+
+      const line = new THREE.Line(geo, mat);
+      const speed = 400 + Math.random() * 500;
+      line.userData = {
+        vel: new THREE.Vector3(dirX * speed, dirY * speed, dirZ * speed),
+      };
+
+      line.position.set(
+        (Math.random() - 0.5) * spawnRadius,
+        (Math.random() - 0.5) * spawnRadius * 0.7,
+        (Math.random() - 0.5) * spawnRadius
+      );
+
+      this.shootingStarLines.push(line);
+      group.add(line);
+    }
+
+    return group;
   }
 
   /**
@@ -221,44 +210,27 @@ export class InfiniteBackground {
     const twinkleMat = this.twinkleStarfield.material as THREE.PointsMaterial;
     twinkleMat.opacity = 0.65 + Math.sin(clock * 3.5) * 0.25;
 
-    // Animate shooting stars
-    const posAttr = this.shootingStars.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const arr = this.shootingStarPositions;
+    // Animate shooting stars (Zero buffer re-upload)
     const limit = 2200;
-
-    for (let i = 0; i < this.shootingStarCount; i++) {
-      const vel = this.shootingStarVelocities[i];
+    for (let i = 0; i < this.shootingStarLines.length; i++) {
+      const line = this.shootingStarLines[i];
+      const vel = line.userData.vel as THREE.Vector3;
       const speedMult = 1.0 + warpFactor * 3.0;
 
-      arr[i * 6] += vel.x * dt * speedMult;
-      arr[i * 6 + 1] += vel.y * dt * speedMult;
-      arr[i * 6 + 2] += vel.z * dt * speedMult;
+      line.position.addScaledVector(vel, dt * speedMult);
 
-      arr[i * 6 + 3] += vel.x * dt * speedMult;
-      arr[i * 6 + 4] += vel.y * dt * speedMult;
-      arr[i * 6 + 5] += vel.z * dt * speedMult;
-
-      // Wrap if exceeding boundary
       if (
-        Math.abs(arr[i * 6]) > limit ||
-        Math.abs(arr[i * 6 + 1]) > limit ||
-        Math.abs(arr[i * 6 + 2]) > limit
+        Math.abs(line.position.x) > limit ||
+        Math.abs(line.position.y) > limit ||
+        Math.abs(line.position.z) > limit
       ) {
-        const x = (Math.random() - 0.5) * limit;
-        const y = (Math.random() - 0.5) * limit * 0.6;
-        const z = -limit * 0.8 + Math.random() * (limit * 1.6);
-        const len = 120 + Math.random() * 240;
-
-        arr[i * 6] = x;
-        arr[i * 6 + 1] = y;
-        arr[i * 6 + 2] = z;
-
-        arr[i * 6 + 3] = x - (vel.x / Math.max(1, vel.length())) * len;
-        arr[i * 6 + 4] = y - (vel.y / Math.max(1, vel.length())) * len;
-        arr[i * 6 + 5] = z - (vel.z / Math.max(1, vel.length())) * len;
+        line.position.set(
+          (Math.random() - 0.5) * limit,
+          (Math.random() - 0.5) * limit * 0.6,
+          -limit * 0.8 + Math.random() * (limit * 1.6)
+        );
       }
     }
-    posAttr.needsUpdate = true;
 
     if (warpFactor > 0 && warpHeading) {
       // Warp stretch: scale points along velocity vector

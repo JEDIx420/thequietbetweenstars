@@ -19,10 +19,9 @@ export class NewJourneyCinematic {
   private isFinished = false;
   private onCompleteCallback: (() => void) | null = null;
 
-  // In-engine cinematic shooting stars
-  private cinematicMeteors: THREE.LineSegments | null = null;
-  private meteorPositions: Float32Array | null = null;
-  private meteorVelocities: THREE.Vector3[] = [];
+  // In-engine cinematic shooting stars (Zero buffer re-upload)
+  private cinematicMeteorsGroup: THREE.Group | null = null;
+  private cinematicMeteorLines: THREE.Line[] = [];
   private sceneRef: THREE.Scene | null = null;
 
   constructor(private container: HTMLElement) {
@@ -129,38 +128,41 @@ export class NewJourneyCinematic {
   private createCinematicMeteors(shipPos: THREE.Vector3): void {
     if (!this.sceneRef) return;
 
-    const count = 30;
-    const geo = new THREE.BufferGeometry();
-    this.meteorPositions = new Float32Array(count * 6);
-    this.meteorVelocities = [];
+    const count = 12;
+    this.cinematicMeteorsGroup = new THREE.Group();
+    this.cinematicMeteorLines = [];
 
-    for (let i = 0; i < count; i++) {
-      const x = shipPos.x + (Math.random() - 0.5) * 400;
-      const y = shipPos.y + (Math.random() - 0.5) * 250;
-      const z = shipPos.z + (Math.random() - 0.5) * 300;
-      const len = 35 + Math.random() * 65;
-
-      this.meteorPositions[i * 6] = x;
-      this.meteorPositions[i * 6 + 1] = y;
-      this.meteorPositions[i * 6 + 2] = z;
-
-      this.meteorPositions[i * 6 + 3] = x - len * 0.8;
-      this.meteorPositions[i * 6 + 4] = y - len * 0.3;
-      this.meteorPositions[i * 6 + 5] = z + len * 0.6;
-
-      const spd = 200 + Math.random() * 300;
-      this.meteorVelocities.push(new THREE.Vector3(spd * 0.8, spd * 0.3, -spd * 0.6));
-    }
-
-    geo.setAttribute('position', new THREE.BufferAttribute(this.meteorPositions, 3));
     const mat = new THREE.LineBasicMaterial({
       color: 0x38bdf8,
       transparent: true,
       opacity: 0.85,
       blending: THREE.AdditiveBlending,
     });
-    this.cinematicMeteors = new THREE.LineSegments(geo, mat);
-    this.sceneRef.add(this.cinematicMeteors);
+
+    for (let i = 0; i < count; i++) {
+      const len = 40 + Math.random() * 60;
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(-len * 0.8, -len * 0.3, len * 0.6),
+      ]);
+
+      const line = new THREE.Line(geo, mat);
+      const spd = 220 + Math.random() * 260;
+      line.userData = {
+        vel: new THREE.Vector3(spd * 0.8, spd * 0.3, -spd * 0.6),
+      };
+
+      line.position.set(
+        shipPos.x + (Math.random() - 0.5) * 350,
+        shipPos.y + (Math.random() - 0.5) * 200,
+        shipPos.z + (Math.random() - 0.5) * 250
+      );
+
+      this.cinematicMeteorLines.push(line);
+      this.cinematicMeteorsGroup.add(line);
+    }
+
+    this.sceneRef.add(this.cinematicMeteorsGroup);
   }
 
   private createUI(): void {
@@ -221,13 +223,13 @@ export class NewJourneyCinematic {
         align-self: center;
         text-align: center;
         max-width: 720px;
-        padding: 24px 36px;
-        background: rgba(3, 7, 18, 0.72);
-        backdrop-filter: blur(12px);
-        border: 1px solid rgba(56, 189, 248, 0.35);
+        padding: 22px 34px;
+        background: rgba(3, 7, 18, 0.92);
+        border: 1px solid rgba(56, 189, 248, 0.4);
         border-radius: 16px;
-        box-shadow: 0 10px 45px rgba(0, 0, 0, 0.75), 0 0 25px rgba(56, 189, 248, 0.15);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.85);
         margin-bottom: 35px;
+        will-change: transform, opacity;
       ">
         <div id="cinematic-title" style="
           font-size: 14px;
@@ -302,32 +304,20 @@ export class NewJourneyCinematic {
 
     this.director.update(dt, camera);
 
-    // Animate cinematic shooting stars
-    if (this.cinematicMeteors && this.meteorPositions) {
-      const posAttr = this.cinematicMeteors.geometry.getAttribute('position') as THREE.BufferAttribute;
-      const arr = this.meteorPositions;
+    // Animate cinematic shooting stars (Zero buffer re-upload)
+    for (let i = 0; i < this.cinematicMeteorLines.length; i++) {
+      const line = this.cinematicMeteorLines[i];
+      const vel = line.userData.vel as THREE.Vector3;
+      line.position.addScaledVector(vel, dt);
 
-      for (let i = 0; i < this.meteorVelocities.length; i++) {
-        const vel = this.meteorVelocities[i];
-        arr[i * 6] += vel.x * dt;
-        arr[i * 6 + 1] += vel.y * dt;
-        arr[i * 6 + 2] += vel.z * dt;
-
-        arr[i * 6 + 3] += vel.x * dt;
-        arr[i * 6 + 4] += vel.y * dt;
-        arr[i * 6 + 5] += vel.z * dt;
-
-        // Reset if flying too far
-        if (Math.abs(arr[i * 6] - camera.position.x) > 300) {
-          arr[i * 6] = camera.position.x - 200 - Math.random() * 100;
-          arr[i * 6 + 1] = camera.position.y - 100 - Math.random() * 80;
-          arr[i * 6 + 2] = camera.position.z - 100 + Math.random() * 200;
-          arr[i * 6 + 3] = arr[i * 6] - 40;
-          arr[i * 6 + 4] = arr[i * 6 + 1] - 15;
-          arr[i * 6 + 5] = arr[i * 6 + 2] + 30;
-        }
+      // Boundary reset
+      if (Math.abs(line.position.x - camera.position.x) > 280) {
+        line.position.set(
+          camera.position.x - 220 - Math.random() * 100,
+          camera.position.y - 120 - Math.random() * 80,
+          camera.position.z - 100 + Math.random() * 200
+        );
       }
-      posAttr.needsUpdate = true;
     }
 
     const caption = this.director.getCurrentCaption();
@@ -345,11 +335,18 @@ export class NewJourneyCinematic {
     if (this.isFinished) return;
     this.isFinished = true;
 
-    if (this.cinematicMeteors && this.sceneRef) {
-      this.sceneRef.remove(this.cinematicMeteors);
-      this.cinematicMeteors.geometry.dispose();
-      (this.cinematicMeteors.material as THREE.Material).dispose();
-      this.cinematicMeteors = null;
+    if (this.cinematicMeteorsGroup && this.sceneRef) {
+      this.cinematicMeteorsGroup.traverse((obj) => {
+        if ((obj as THREE.Line).geometry) {
+          (obj as THREE.Line).geometry.dispose();
+        }
+        if ((obj as THREE.Line).material) {
+          ((obj as THREE.Line).material as THREE.Material).dispose();
+        }
+      });
+      this.sceneRef.remove(this.cinematicMeteorsGroup);
+      this.cinematicMeteorsGroup = null;
+      this.cinematicMeteorLines = [];
     }
 
     if (this.overlayEl) {

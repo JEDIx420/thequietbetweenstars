@@ -110,6 +110,7 @@ export class DesktopApp {
   private uiState: UIState = 'title';
   private lastTime = performance.now();
   private isRunning = false;
+  private isTitleRevealActive = true;
   private lastDeflectionSoundTime = 0;
   private currentControlMode: 'companion' | 'keyboard' = 'keyboard';
   private newJourneyCinematic!: NewJourneyCinematic;
@@ -136,6 +137,7 @@ export class DesktopApp {
     // 3-Second Live Title Reveal Sequence on page load
     const titleSequence = new TitleRevealSequence(this.container);
     titleSequence.play(() => {
+      this.isTitleRevealActive = false;
       this.renderTitleScreen();
     });
   }
@@ -280,6 +282,12 @@ export class DesktopApp {
 
   private gameLoop(time: number): void {
     if (!this.isRunning) return;
+
+    if (this.isTitleRevealActive) {
+      this.lastTime = time;
+      requestAnimationFrame((t) => this.gameLoop(t));
+      return;
+    }
 
     const dt = Math.min((time - this.lastTime) * 0.001, 0.06);
     this.lastTime = time;
