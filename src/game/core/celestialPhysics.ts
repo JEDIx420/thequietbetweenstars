@@ -28,6 +28,10 @@ export class CelestialPhysicsSystem {
     this.bodies = bodies;
   }
 
+  public setBodies(bodies: CelestialBody[]): void {
+    this.bodies = bodies;
+  }
+
   public addBody(body: CelestialBody): void {
     this.bodies.push(body);
   }

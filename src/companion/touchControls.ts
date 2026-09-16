@@ -521,6 +521,18 @@ export class TouchControls {
   private onThrottlePointerUp(e: PointerEvent): void {
     if (e.pointerId !== this.throttlePointerId) return;
     this.throttlePointerId = null;
+
+    // Spring return to 0 (real accelerator pedal physics)
+    this.currentThrottle = 0;
+    this.throttleFillEl.style.height = '0%';
+    this.throttleKnobEl.style.bottom = '0px';
+    this.throttleLabelEl.textContent = '0%';
+    this.callbacks.onInput({
+      axes: this.currentAxes,
+      look: { x: 0, y: 0 },
+      throttle: 0,
+    });
+    this.lastSentThrottle = 0;
   }
 
   private updateThrottlePosition(clientY: number): void {

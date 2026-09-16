@@ -436,17 +436,24 @@ export class TitleRevealSequence {
       this.timeoutId = null;
     }
 
-    if (this.animFrameId !== null) {
-      cancelAnimationFrame(this.animFrameId);
-      this.animFrameId = null;
-    }
-
     if (this.overlayEl) {
       this.overlayEl.style.opacity = '0';
       this.overlayEl.style.pointerEvents = 'none';
 
+      // Immediately notify parent to start rendering the Title Screen UI underneath
+      // while this overlay smoothly crossfades out over 750ms
+      if (this.onCompleteCallback) {
+        this.onCompleteCallback();
+        this.onCompleteCallback = null;
+      }
+
       setTimeout(() => {
-        // Deep clean Three.js resources
+        if (this.animFrameId !== null) {
+          cancelAnimationFrame(this.animFrameId);
+          this.animFrameId = null;
+        }
+
+        // Deep clean Three.js resources after crossfade completes
         if (this.scene) {
           this.scene.traverse((obj) => {
             if ((obj as THREE.Mesh).geometry) {
@@ -473,11 +480,6 @@ export class TitleRevealSequence {
         if (this.overlayEl && this.overlayEl.parentNode) {
           this.overlayEl.parentNode.removeChild(this.overlayEl);
           this.overlayEl = null;
-        }
-
-        if (this.onCompleteCallback) {
-          this.onCompleteCallback();
-          this.onCompleteCallback = null;
         }
       }, 750);
     } else if (this.onCompleteCallback) {

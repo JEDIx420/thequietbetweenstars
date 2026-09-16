@@ -749,7 +749,7 @@ export class DesktopApp {
     this.hasSavedJourney = await saveManager.hasSavedJourney();
 
     this.uiContainer.innerHTML = `
-      <div style="
+      <div id="title-screen-container" style="
         position: absolute;
         inset: 0;
         display: flex;
@@ -759,6 +759,8 @@ export class DesktopApp {
         pointer-events: auto;
         font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         background: radial-gradient(circle at 50% 50%, rgba(13, 21, 39, 0.45) 0%, rgba(3, 3, 7, 0.8) 100%);
+        opacity: 0;
+        transition: opacity 0.85s cubic-bezier(0.16, 1, 0.3, 1);
       ">
         <div style="
           font-size: 13px;
@@ -845,6 +847,17 @@ export class DesktopApp {
       </div>
     `;
 
+    const titleCard = this.uiContainer.querySelector('#title-screen-container') as HTMLElement;
+    if (titleCard) {
+      requestAnimationFrame(() => {
+        titleCard.style.opacity = '1';
+      });
+    }
+
+    if (this.audioUnlocked) {
+      audio.playTitleMusic();
+    }
+
     this.uiContainer.querySelector('#btn-continue')?.addEventListener('click', async () => {
       await audio.start();
       audio.stopTitleOverture();
@@ -899,6 +912,7 @@ export class DesktopApp {
     // If a non-origin star system was active, load it into SpaceScene
     if (slot.currentSystem) {
       this.spaceScene.loadSystem(slot.currentSystem);
+      this.flightModel.setPhysicsSystem(this.spaceScene.physics);
       this.navRadar.setPlanets(this.spaceScene.activePlanetList, slot.currentSystem.anomalies || []);
     }
 
@@ -1153,7 +1167,7 @@ export class DesktopApp {
             <div style="font-size: 34px; margin-bottom: 16px;">⌨️</div>
             <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 10px 0; color: #e2e8f0;">KEYBOARD & MOUSE</h3>
             <p style="font-size: 13px; color: #94a3b8; line-height: 1.6; margin: 0 0 20px 0;">
-              Fly directly on your computer using W/S pitch, A/D yaw, Shift/Ctrl throttle, and Space scan.
+              Fly directly on your computer using W/S pitch, A/D yaw, Shift accelerator, and Space scan.
             </p>
             <span style="font-size: 12px; color: #94a3b8; letter-spacing: 0.1em; font-weight: 600;">PLAY NOW →</span>
           </div>
@@ -1519,7 +1533,7 @@ export class DesktopApp {
             line-height: 1.6;
             font-family: ui-monospace, monospace;
           ">
-            ${mode === 'keyboard' ? 'W/S Pitch · A/D Yaw · Q/E Roll · Shift/Ctrl Throttle · Space Scan · U Supply' : 'Steer with Companion Joystick · Adjust Throttle · Press SCAN · Tap SUPPLY'}
+            ${mode === 'keyboard' ? 'W/S Pitch · A/D Yaw · Q/E Roll · Hold Shift Accelerate · Space Scan · U Supply' : 'Steer with Companion Joystick · Throttle Accelerator · Press SCAN · Tap SUPPLY'}
           </div>
 
           <div style="

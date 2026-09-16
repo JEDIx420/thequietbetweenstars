@@ -332,7 +332,11 @@ export class SpaceScene {
       });
     }
 
-    this.physics = new CelestialPhysicsSystem(bodies);
+    if (this.physics) {
+      this.physics.setBodies(bodies);
+    } else {
+      this.physics = new CelestialPhysicsSystem(bodies);
+    }
 
     // 5. Update Star Color & Illumination
     const starColor = new THREE.Color(system.star.lightColor || 0xfff7ed);

@@ -92,13 +92,24 @@ export class KeyboardInput implements InputSource {
       targetRoll += 1;
     }
 
-    // Throttle adjustments: Shift ramps up, Ctrl / Alt ramps down, Backspace cuts
-    if (this.activeKeys.has('ShiftLeft') || this.activeKeys.has('ShiftRight')) {
-      this.currentThrottle = clamp(this.currentThrottle + 0.02, 0, 1);
-    } else if (this.activeKeys.has('ControlLeft') || this.activeKeys.has('ControlRight') || this.activeKeys.has('AltLeft')) {
-      this.currentThrottle = clamp(this.currentThrottle - 0.02, 0, 1);
-    } else if (this.activeKeys.has('Backspace')) {
-      this.currentThrottle = 0;
+    // Throttle adjustments: Real accelerator pedal dynamics
+    // Holding Shift increases thrust smoothly up towards 1.0 (100%).
+    // Releasing Shift automatically reduces thrust smoothly back down towards 0.0 (idle).
+    // Ctrl / Alt / Backspace applies active retro-thrust braking.
+    const isAccelerating = this.activeKeys.has('ShiftLeft') || this.activeKeys.has('ShiftRight');
+    const isBraking = this.activeKeys.has('ControlLeft') || this.activeKeys.has('ControlRight') || this.activeKeys.has('AltLeft') || this.activeKeys.has('Backspace');
+
+    if (isAccelerating) {
+      // Rapid acceleration response up to 100%
+      this.currentThrottle = clamp(this.currentThrottle + 0.035, 0, 1);
+    } else if (isBraking) {
+      // Fast active retro-braking
+      this.currentThrottle = clamp(this.currentThrottle - 0.07, 0, 1);
+    } else {
+      // Natural accelerator release: smoothly reduce throttle back down to 0
+      if (this.currentThrottle > 0) {
+        this.currentThrottle = Math.max(0, this.currentThrottle - 0.025);
+      }
     }
 
     // Smooth response

@@ -151,6 +151,9 @@ export class DeepCruiseController {
 
       // Load new system into SpaceScene
       this.spaceScene.loadSystem(targetSys);
+      if (typeof this.flightModel.setPhysicsSystem === 'function' && this.spaceScene.physics) {
+        this.flightModel.setPhysicsSystem(this.spaceScene.physics);
+      }
 
       if (this.onArrivalCallback) {
         this.onArrivalCallback(targetSys);

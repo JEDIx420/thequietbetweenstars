@@ -235,7 +235,7 @@ export class TutorialDirector {
         break;
 
       case 'THROTTLE_INPUT':
-        text = isKb ? 'PROPULSION: Advance throttle forward [Shift to increase]' : 'PROPULSION: Slide the Throttle control up';
+        text = isKb ? 'PROPULSION: Advance throttle forward [Hold Shift to Accelerate]' : 'PROPULSION: Slide the Throttle control up';
         companionAction = 'throttle';
         break;
 
