@@ -36,6 +36,7 @@ import { AutopilotController } from '../game/flight/AutopilotController';
 import { saveManager, type PlayerSaveSlot, type ShipModule } from '../persistence/SaveManager';
 import { TitleRevealSequence } from './TitleRevealSequence';
 import { NewJourneyCinematic } from './NewJourneyCinematic';
+import { ExpeditionBriefing } from './ExpeditionBriefing';
 import type { NPCIdentity } from '../game/ecology/SentientSpeciesProfile';
 import type { ConnectionState } from '../connection/connectionState';
 import type { StarSystemDescriptor } from '../game/systems/PlanetDescriptor';
@@ -115,6 +116,12 @@ export class DesktopApp {
   private currentControlMode: 'companion' | 'keyboard' = 'keyboard';
   private newJourneyCinematic!: NewJourneyCinematic;
   private audioUnlocked = false;
+
+  // In-Space Minimal Warp Countdown HUD
+  private inSpaceWarpCountdownTimer: number | null = null;
+  private inSpaceWarpCountdownTarget: StarSystemDescriptor | null = null;
+  private inSpaceWarpCountdownValue = 0;
+  private inSpaceWarpCountdownEl: HTMLElement | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -217,6 +224,7 @@ export class DesktopApp {
       this.spaceScene
     );
     this.deepCruiseController.setOnArrival((targetSys) => {
+      audio.setSystemGenome(targetSys.seed || 42000);
       this.navRadar.setPlanets(this.spaceScene.activePlanetList, targetSys.anomalies || []);
       this.showHudNotice(`ARRIVED // STAR SYSTEM: ${targetSys.name.toUpperCase()}`);
       audio.playConnectChime();
@@ -231,7 +239,7 @@ export class DesktopApp {
       this.sectorManager,
       this.worldPosition,
       (targetSys) => {
-        this.engageInterstellarCruise(targetSys);
+        this.startInSpaceWarpCountdown(targetSys);
       }
     );
     this.holographicNavModal.setOnCourseSet((targetSys) => {
@@ -606,7 +614,7 @@ export class DesktopApp {
       // If course is set to another star system in star chart, engage Deep Cruise!
       const phase = this.stateMachine.getPhase();
       if (this.holographicNavModal.activeCourseSystem && phase !== FlightPhase.SURFACE_FLIGHT && phase !== FlightPhase.STELLAR_CRUISE) {
-        this.engageInterstellarCruise(this.holographicNavModal.activeCourseSystem);
+        this.startInSpaceWarpCountdown(this.holographicNavModal.activeCourseSystem);
       } else {
         const active = this.autopilotController.toggle();
         if (active) {
@@ -657,6 +665,7 @@ export class DesktopApp {
         Array.from(this.collectedCreditIds)
       );
       this.stateMachine.transitionTo(FlightPhase.SURFACE_FLIGHT);
+      audio.setPlanetGenome(this.orbitController.planet!.seed, this.orbitController.planet);
       this.renderSurfaceHUD();
       this.showHudNotice(`ATMOSPHERIC PENETRATION COMPLETE // COMMENCING HOVER RECONNAISSANCE`);
     }, 2200);
@@ -675,6 +684,7 @@ export class DesktopApp {
         this.surfaceScene = null;
       }
       this.stateMachine.transitionTo(FlightPhase.ORBIT);
+      audio.setSystemGenome(this.spaceScene.currentSystem?.seed || 42000);
       this.renderOrbitInspectionHUD();
       this.showHudNotice('ORBITAL ALTITUDE RESTORED');
     }, 1800);
@@ -683,6 +693,7 @@ export class DesktopApp {
   private leaveOrbitToSpace(): void {
     this.orbitController.leaveOrbit();
     this.stateMachine.transitionTo(FlightPhase.SYSTEM_CRUISE);
+    audio.setSystemGenome(this.spaceScene.currentSystem?.seed || 42000);
     this.renderFlightHUD(this.currentControlMode);
     this.showHudNotice('ORBIT DISENGAGED // CRUISE FLIGHT RESTORED');
   }
@@ -868,19 +879,22 @@ export class DesktopApp {
       audio.playTitleMusic();
     }
 
+    const titleReadyTime = Date.now() + 450;
+
     this.uiContainer.querySelector('#btn-continue')?.addEventListener('click', async () => {
+      if (Date.now() < titleReadyTime) return;
+      audio.playBlip();
       await audio.start();
-      audio.stopTitleOverture();
-      audio.setContext('cruise');
       await this.loadSavedJourney();
       this.renderModeSelectScreen();
     });
 
     const btnBegin = this.uiContainer.querySelector('#btn-begin') as HTMLElement;
     btnBegin.addEventListener('click', async () => {
+      if (Date.now() < titleReadyTime) return;
+      audio.playBlip();
       await audio.start();
-      audio.stopTitleOverture();
-      audio.setContext('cruise');
+      audio.setContext('cinematic');
       if (this.hasSavedJourney) {
         await saveManager.clearJourney();
         this.visitedSystems.clear();
@@ -899,7 +913,10 @@ export class DesktopApp {
       this.newJourneyCinematic.play(
         this.flightModel.position,
         () => {
-          this.renderModeSelectScreen();
+          const briefing = new ExpeditionBriefing(this.container);
+          briefing.show(() => {
+            this.renderModeSelectScreen();
+          });
         },
         this.spaceScene.scene
       );
@@ -922,6 +939,7 @@ export class DesktopApp {
     // If a non-origin star system was active, load it into SpaceScene
     if (slot.currentSystem) {
       this.spaceScene.loadSystem(slot.currentSystem);
+      audio.setSystemGenome(slot.currentSystem.seed || 42000);
       this.flightModel.setPhysicsSystem(this.spaceScene.physics);
       this.navRadar.setPlanets(this.spaceScene.activePlanetList, slot.currentSystem.anomalies || []);
     }
@@ -1088,6 +1106,117 @@ export class DesktopApp {
     if (engaged) {
       this.showHudNotice(`WARP DRIVE CHARGING // HEADING SET TO ${targetSys.name.toUpperCase()}`);
       this.tutorialDirector.onPlayerEngageCruise(targetSys.name);
+    }
+  }
+
+  public startInSpaceWarpCountdown(targetSys: StarSystemDescriptor): void {
+    this.abortInSpaceWarpCountdown();
+    this.inSpaceWarpCountdownTarget = targetSys;
+    this.inSpaceWarpCountdownValue = 5;
+
+    // Create or show minimal in-space HUD pill at the bottom of the screen
+    if (!this.inSpaceWarpCountdownEl) {
+      this.inSpaceWarpCountdownEl = document.createElement('div');
+      this.inSpaceWarpCountdownEl.id = 'hud-inspace-warp-countdown';
+      this.inSpaceWarpCountdownEl.style.cssText = `
+        position: absolute;
+        bottom: clamp(32px, 8vh, 60px);
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 2000;
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 10px 24px;
+        background: rgba(3, 7, 18, 0.88);
+        border: 1px solid rgba(56, 189, 248, 0.5);
+        border-radius: 9999px;
+        backdrop-filter: blur(12px);
+        box-shadow: 0 0 30px rgba(56, 189, 248, 0.25);
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        color: #f8fafc;
+        transition: all 0.2s ease;
+      `;
+      this.uiContainer.appendChild(this.inSpaceWarpCountdownEl);
+    }
+
+    const renderPill = () => {
+      if (!this.inSpaceWarpCountdownEl) return;
+      this.inSpaceWarpCountdownEl.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 10px #38bdf8;"></span>
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.2em; color: #38bdf8; text-transform: uppercase;">
+            WARP DRIVE CHARGING
+          </span>
+        </div>
+        <div style="font-size: 12px; color: #cbd5e1; font-family: ui-monospace, monospace; border-left: 1px solid rgba(56, 189, 248, 0.3); padding-left: 14px;">
+          TARGET: <strong style="color: #f8fafc;">${targetSys.name.toUpperCase()}</strong>
+        </div>
+        <div id="inspace-warp-digit" style="
+          font-size: 20px;
+          font-weight: 800;
+          color: #38bdf8;
+          font-family: ui-monospace, monospace;
+          background: rgba(56, 189, 248, 0.15);
+          padding: 2px 14px;
+          border-radius: 6px;
+          border: 1px solid rgba(56, 189, 248, 0.4);
+          text-shadow: 0 0 12px rgba(56, 189, 248, 0.8);
+        ">
+          ${this.inSpaceWarpCountdownValue}
+        </div>
+        <button id="inspace-warp-abort-btn" style="
+          background: rgba(239, 68, 68, 0.15);
+          border: 1px solid rgba(239, 68, 68, 0.5);
+          color: #fca5a5;
+          border-radius: 9999px;
+          padding: 4px 12px;
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: 0.1em;
+          cursor: pointer;
+        ">ABORT [ESC]</button>
+      `;
+
+      this.inSpaceWarpCountdownEl.querySelector('#inspace-warp-abort-btn')?.addEventListener('click', () => {
+        this.abortInSpaceWarpCountdown();
+      });
+    };
+
+    this.inSpaceWarpCountdownEl.style.display = 'flex';
+    renderPill();
+    audio.playWarpCountdownTick(5);
+
+    this.inSpaceWarpCountdownTimer = window.setInterval(() => {
+      this.inSpaceWarpCountdownValue--;
+
+      if (this.inSpaceWarpCountdownValue > 0) {
+        renderPill();
+        audio.playWarpCountdownTick(this.inSpaceWarpCountdownValue);
+      } else {
+        const target = this.inSpaceWarpCountdownTarget;
+        this.abortInSpaceWarpCountdown();
+        if (target) {
+          audio.playWarpEntry();
+          this.engageInterstellarCruise(target);
+        }
+      }
+    }, 1000);
+  }
+
+  public abortInSpaceWarpCountdown(): void {
+    if (this.inSpaceWarpCountdownTimer !== null) {
+      clearInterval(this.inSpaceWarpCountdownTimer);
+      this.inSpaceWarpCountdownTimer = null;
+    }
+    if (this.inSpaceWarpCountdownEl) {
+      this.inSpaceWarpCountdownEl.style.display = 'none';
+    }
+    if (this.inSpaceWarpCountdownTarget) {
+      audio.playBlip();
+      this.showHudNotice('WARP SEQUENCE ABORTED');
+      this.inSpaceWarpCountdownTarget = null;
     }
   }
 
@@ -1398,6 +1527,7 @@ export class DesktopApp {
 
   private enterFlightMode(mode: 'companion' | 'keyboard'): void {
     this.uiState = 'playing';
+    audio.stopTitleOverture();
     audio.setContext('cruise');
     this.tutorialDirector.setInputMode(mode);
     if (!this.tutorialDirector.isComplete()) {
@@ -2012,6 +2142,12 @@ export class DesktopApp {
 
   private setupDebugKeyListeners(): void {
     window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' || e.code === 'Escape') {
+        if (this.inSpaceWarpCountdownTimer !== null) {
+          e.preventDefault();
+          this.abortInSpaceWarpCountdown();
+        }
+      }
       if (e.key === 'F3' || e.code === 'F3') {
         e.preventDefault();
         this.debugTelemetryVisible = !this.debugTelemetryVisible;
@@ -2092,6 +2228,8 @@ export class DesktopApp {
 
   public dispose(): void {
     this.isRunning = false;
+    this.abortInSpaceWarpCountdown();
+    if (this.inSpaceWarpCountdownEl) this.inSpaceWarpCountdownEl.remove();
     if (this.peer) this.peer.dispose();
     if (this.debugTelemetryEl) this.debugTelemetryEl.remove();
   }

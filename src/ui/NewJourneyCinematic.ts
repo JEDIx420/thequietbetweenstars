@@ -1,14 +1,15 @@
 import * as THREE from 'three';
 import { CinematicCameraDirector, type CinematicKeyframe } from './CinematicCameraDirector';
+import { audio } from '../audio/AudioEngine';
 
 /**
  * NewJourneyCinematic.ts
  * 
- * High-octane cinematic sequence for New Journey:
- * Scene 1: The Cosmic Frontier (Camera speeds through asteroid debris with blazing shooting stars)
- * Scene 2: High Orbital Insertion (Flyby past Aurelia's shimmering atmosphere and ring system)
- * Scene 3: The Starfighter Reveal (Close dramatic orbit sweep around the aggressive 4-wing Survey Craft)
- * Scene 4: Engine Roar & Departure (Thrusters flare from idle into afterburner boost as the craft accelerates into hyperspace)
+ * Cinematic sequence for New Journey:
+ * Scene 1: Beyond the Last Route
+ * Scene 2: Your Assignment
+ * Scene 3: Your Ship
+ * Scene 4: No Finish Line (Dedicated Engine Power-Up)
  */
 
 export class NewJourneyCinematic {
@@ -18,6 +19,7 @@ export class NewJourneyCinematic {
   private captionBodyEl: HTMLElement | null = null;
   private isFinished = false;
   private onCompleteCallback: (() => void) | null = null;
+  private hasTriggeredIgnition = false;
 
   // In-engine cinematic shooting stars (Zero buffer re-upload)
   private cinematicMeteorsGroup: THREE.Group | null = null;
@@ -39,27 +41,28 @@ export class NewJourneyCinematic {
   public play(
     shipPosition: THREE.Vector3,
     onComplete: () => void,
-    scene?: THREE.Scene
+    spaceScene?: THREE.Scene
   ): void {
     this.onCompleteCallback = onComplete;
     this.isFinished = false;
-    this.sceneRef = scene || null;
+    this.hasTriggeredIgnition = false;
+    this.sceneRef = spaceScene || null;
 
-    // Create cinematic meteor streaks in the space scene
+    // Create dynamic shooting stars across the cinematic path
     if (this.sceneRef) {
       this.createCinematicMeteors(shipPosition);
     }
 
     // Dynamic camera keyframes for high-drama sweep
     const kfs: CinematicKeyframe[] = [
-      // 0s - 4.5s: SCENE 1 - Deep Space Frontier & Meteor Field
+      // 0s - 4.5s: SCENE 1 - Beyond the Last Route
       {
         timeSeconds: 0,
         cameraPosition: shipPosition.clone().add(new THREE.Vector3(140, 60, 210)),
         targetPosition: shipPosition.clone().add(new THREE.Vector3(0, -10, -60)),
         fov: 48,
-        captionTitle: 'SECTOR QUIET-001 // THE DEEP FRONTIER',
-        captionBody: 'Beyond the charted shipping lanes lies the uncharted abyss of the outer arms.',
+        captionTitle: 'BEYOND THE LAST ROUTE',
+        captionBody: 'The settled lanes end here. Ahead are star systems no one has surveyed, worlds no one has named, and signals no one has explained.',
       },
       {
         timeSeconds: 4.5,
@@ -68,14 +71,14 @@ export class NewJourneyCinematic {
         fov: 56,
       },
 
-      // 4.5s - 9.0s: SCENE 2 - The Orbital Flyby
+      // 4.5s - 9.0s: SCENE 2 - Your Assignment
       {
         timeSeconds: 4.51,
         cameraPosition: shipPosition.clone().add(new THREE.Vector3(-65, 22, 55)),
         targetPosition: shipPosition.clone().add(new THREE.Vector3(0, 4, 10)),
         fov: 46,
-        captionTitle: 'AURELIA CORRIDOR // HIGH ORBITAL ENTRY',
-        captionBody: 'Sensor beacons confirm bio-resonance harmonics across the equatorial expanse.',
+        captionTitle: 'YOUR ASSIGNMENT',
+        captionBody: 'Fly where you want. Scan distant worlds, descend to their surfaces, catalogue what lives there, and see what the maps have missed.',
       },
       {
         timeSeconds: 9.0,
@@ -84,14 +87,14 @@ export class NewJourneyCinematic {
         fov: 52,
       },
 
-      // 9.0s - 13.5s: SCENE 3 - The Survey Starfighter Power-Up
+      // 9.0s - 13.5s: SCENE 3 - Your Ship
       {
         timeSeconds: 9.01,
         cameraPosition: shipPosition.clone().add(new THREE.Vector3(12, -3, 14)),
         targetPosition: shipPosition.clone().add(new THREE.Vector3(0, 0, -2)),
         fov: 44,
-        captionTitle: 'VESSEL STATUS // SURVEY STARFIGHTER SC-1',
-        captionBody: 'Four-vane vector articulation synchronized. Magnetoplasma drives at 100% readiness.',
+        captionTitle: 'YOUR SHIP',
+        captionBody: 'The SC-1 is a survey craft, not a warship. Fly it by hand or let the autopilot hold a course. Everything else begins with curiosity.',
       },
       {
         timeSeconds: 13.5,
@@ -100,14 +103,14 @@ export class NewJourneyCinematic {
         fov: 58,
       },
 
-      // 13.5s - 17.0s: SCENE 4 - Full Throttle Ignition & Departure
+      // 13.5s - 17.0s: SCENE 4 - No Finish Line (Ignition)
       {
         timeSeconds: 13.51,
         cameraPosition: shipPosition.clone().add(new THREE.Vector3(0, 3.8, 14.5)),
         targetPosition: shipPosition.clone().add(new THREE.Vector3(0, 0, -50)),
         fov: 68,
-        captionTitle: 'ENGINES ENGAGED // HYPER-DRIVE ARMED',
-        captionBody: 'All flight systems are yours, Explorer. Go make history.',
+        captionTitle: 'NO FINISH LINE',
+        captionBody: 'Follow strange signals. Meet whatever is out there. Upgrade the ship as the journey grows. There is no battle to win — only more universe to find.',
       },
       {
         timeSeconds: 17.0,
@@ -324,6 +327,10 @@ export class NewJourneyCinematic {
     if (caption && this.captionTitleEl && this.captionBodyEl) {
       if (this.captionTitleEl.textContent !== caption.title) {
         this.captionTitleEl.textContent = caption.title;
+        if (caption.title === 'NO FINISH LINE' && !this.hasTriggeredIgnition) {
+          this.hasTriggeredIgnition = true;
+          audio.playCinematicEngineIgnition();
+        }
       }
       if (this.captionBodyEl.textContent !== caption.body) {
         this.captionBodyEl.textContent = caption.body;

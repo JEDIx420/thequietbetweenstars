@@ -125,6 +125,19 @@ export class TitleRevealSequence {
           0%, 100% { opacity: 0.3; }
           50% { opacity: 0.7; }
         }
+
+        @keyframes ctaBreathing {
+          0%, 100% {
+            opacity: 0.85;
+            box-shadow: 0 0 16px rgba(56, 189, 248, 0.2);
+            transform: translateX(-50%) scale(1);
+          }
+          50% {
+            opacity: 1;
+            box-shadow: 0 0 28px rgba(56, 189, 248, 0.45);
+            transform: translateX(-50%) scale(1.02);
+          }
+        }
       </style>
 
       <!-- Horizontal Cinematic Anamorphic Flare Beam -->
@@ -183,41 +196,51 @@ export class TitleRevealSequence {
         A Peaceful Space Odyssey
       </div>
 
-      <!-- Begin Journey Prompt -->
-      <div id="intro-begin-prompt" style="
-        position: fixed;
-        bottom: 34px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 6px;
-        font-family: ui-monospace, monospace;
-        letter-spacing: 0.26em;
-        text-transform: uppercase;
-        animation: skipBlink 2.2s infinite ease-in-out;
-        cursor: pointer;
-        pointer-events: auto;
-      ">
-        <div style="
-          font-size: clamp(11px, 1.4vw, 13px);
-          font-weight: 600;
-          color: #f8fafc;
-          letter-spacing: 0.28em;
-          text-shadow: 0 0 16px rgba(56, 189, 248, 0.8), 0 0 32px rgba(14, 165, 233, 0.5);
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        ">
-          PRESS [SPACE] OR [ENTER] TO BEGIN
-        </div>
-        <div style="font-size: 10px; color: #64748b; letter-spacing: 0.22em;">
-          OR CLICK ANYWHERE
-        </div>
       </div>
     `;
 
     contentEl.id = 'title-reveal-content';
     this.overlayEl.appendChild(contentEl);
+
+    // Viewport-Level CTA Plate (Target lower 12-16% of viewport, never overlapping central titles)
+    const ctaEl = document.createElement('div');
+    ctaEl.id = 'title-reveal-cta';
+    ctaEl.style.cssText = `
+      position: absolute;
+      bottom: clamp(40px, 14vh, 110px);
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 25;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 10px 28px;
+      background: rgba(8, 14, 26, 0.78);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 9999px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 0 24px rgba(56, 189, 248, 0.22);
+      font-family: ui-monospace, monospace;
+      font-size: clamp(11px, 1.3vw, 13px);
+      font-weight: 600;
+      color: #ffffff;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      cursor: pointer;
+      pointer-events: auto;
+      animation: ctaBreathing 2.4s infinite ease-in-out;
+      user-select: none;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+    `;
+    ctaEl.innerHTML = `
+      <span>PRESS</span>
+      <span style="color: #38bdf8; font-weight: 700;">SPACE / ENTER</span>
+      <span>OR CLICK TO CONTINUE</span>
+    `;
+    this.overlayEl.appendChild(ctaEl);
+
     this.container.appendChild(this.overlayEl);
 
     // Initialize 3D Space Scene
@@ -457,6 +480,13 @@ export class TitleRevealSequence {
       contentEl.style.transition = 'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s ease';
       contentEl.style.transform = 'scale(1.22)';
       contentEl.style.opacity = '0';
+    }
+
+    const ctaEl = this.overlayEl?.querySelector('#title-reveal-cta') as HTMLElement;
+    if (ctaEl) {
+      ctaEl.style.transition = 'opacity 0.18s ease-out, transform 0.2s ease-out';
+      ctaEl.style.opacity = '0';
+      ctaEl.style.transform = 'translateX(-50%) scale(0.94)';
     }
 
     // 2. Anamorphic Warp Flash beam

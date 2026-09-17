@@ -255,11 +255,11 @@ export class TutorialDirector {
         break;
 
       case 'SET_COURSE':
-        text = 'COURSE PLOT: Select a remote star system and click SET COURSE';
+        text = 'CARTOGRAPHY: Select a destination in Star Chart [M] and click LOCK COURSE or ENGAGE WARP DRIVE';
         break;
 
       case 'ENGAGE_CRUISE':
-        text = isKb ? 'INTERSTELLAR: Activate Deep Cruise [X or Engage button]' : 'INTERSTELLAR: Tap AUTO / ENGAGE on controller';
+        text = isKb ? 'INTERSTELLAR: Warp Drive ready — press [X] or engage via Star Chart [M]' : 'INTERSTELLAR: Tap WARP / AUTO on controller';
         companionAction = 'autopilot';
         break;
 

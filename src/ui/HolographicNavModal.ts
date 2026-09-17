@@ -922,7 +922,10 @@ export class HolographicNavModal {
     });
 
     this.detailsPanel.querySelector('#holo-btn-engage-warp')?.addEventListener('click', () => {
-      this.startWarpCountdown(sys);
+      audio.playBlip();
+      this.activeCourseSystem = sys;
+      this.close();
+      this.onSelectDestination(sys);
     });
   }
 

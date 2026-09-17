@@ -1,8 +1,11 @@
 import * as Tone from 'tone';
 import { ProceduralMusicGenome, type SystemMusicGenome } from './ProceduralMusicGenome';
+import { HarmonyHelper } from './HarmonyHelper';
 
 export type MusicPhaseContext =
   | 'title'
+  | 'cinematic'
+  | 'briefing'
   | 'cruise'
   | 'approach'
   | 'orbit'
@@ -16,6 +19,9 @@ export class AudioDirector {
   private masterVolume = 0.72;
   private currentContext: MusicPhaseContext = 'title';
   private currentGenome: SystemMusicGenome | null = null;
+  private currentSystemChords: string[][] = [];
+  private currentSystemBass: string[] = [];
+  private currentSystemScaleNotes: string[] = [];
 
   // Tone synths & instruments
   private padSynth: Tone.PolySynth | null = null;
@@ -31,7 +37,8 @@ export class AudioDirector {
   // Direct Web Audio engine for thrusters & responsive sound FX
   private webAudioCtx: AudioContext | null = null;
   private webAudioMasterGain: GainNode | null = null;
-  // Jet Propulsion Engine Nodes (Aerodynamic Bypass Whoosh, Deep Body Displacement & Quiet Spool)
+
+  // Spacecraft Propulsion Nodes (Physical Sub Mass, Propulsion Roar, Ion Spool)
   private jetAirflowNoise: AudioBufferSourceNode | null = null;
   private jetAirflowFilter: BiquadFilterNode | null = null;
   private jetAirflowGain: GainNode | null = null;
@@ -39,8 +46,17 @@ export class AudioDirector {
   private jetRumbleGain: GainNode | null = null;
   private jetSpoolOsc: OscillatorNode | null = null;
   private jetSpoolGain: GainNode | null = null;
+  private jetSubOsc: OscillatorNode | null = null;
+  private jetSubGain: GainNode | null = null;
+  private prevThrottle = 0;
+  private lastTransientTime = 0;
+
+  // Warp Hyperspace Audio Nodes
   private warpSlipstreamNode: AudioBufferSourceNode | null = null;
   private warpSlipstreamGain: GainNode | null = null;
+  private warpDroneOsc: OscillatorNode | null = null;
+  private warpDroneGain: GainNode | null = null;
+
   private loopSequenceId: number | null = null;
   private stepIndex = 0;
   private isOverturePlaying = false;
@@ -167,11 +183,47 @@ export class AudioDirector {
     this.jetSpoolOsc.connect(this.jetSpoolGain);
     this.jetSpoolGain.connect(this.webAudioMasterGain);
     this.jetSpoolOsc.start(now);
+
+    // 4. Physical Sub / Hull Body Displacement (38–75 Hz physical mass)
+    this.jetSubOsc = this.webAudioCtx.createOscillator();
+    this.jetSubOsc.type = 'sine';
+    this.jetSubOsc.frequency.setValueAtTime(42, now);
+
+    this.jetSubGain = this.webAudioCtx.createGain();
+    this.jetSubGain.gain.setValueAtTime(0.012, now);
+
+    this.jetSubOsc.connect(this.jetSubGain);
+    this.jetSubGain.connect(this.webAudioMasterGain);
+    this.jetSubOsc.start(now);
   }
 
   public setSystemGenome(systemSeed: number): void {
     this.currentGenome = ProceduralMusicGenome.generateGenome(systemSeed);
     Tone.getTransport().bpm.value = this.currentGenome.bpm;
+
+    const prog = this.currentGenome.progression[0] || [`${this.currentGenome.rootNote}maj7`, 'Gmaj7', 'Amaj7', `${this.currentGenome.rootNote}maj7`];
+    this.currentSystemChords = prog.map((c: string) => HarmonyHelper.parseChordToNotes(c, 3));
+    this.currentSystemBass = prog.map((c: string) => HarmonyHelper.parseChordToNotes(c, 1)[0] || `${this.currentGenome!.rootNote}1`);
+    this.currentSystemScaleNotes = HarmonyHelper.getScaleNotes(this.currentGenome.rootNote, this.currentGenome.scaleType, [4, 5]);
+
+    if (this.filter) {
+      const baseCutoff = 1400 + this.currentGenome.brightness * 2200;
+      this.filter.frequency.rampTo(baseCutoff, 2.0);
+    }
+  }
+
+  public setPlanetGenome(planetSeed: number, _profile?: any): void {
+    const surfaceSeed = (this.currentGenome ? this.currentGenome.seed : 42000) ^ (planetSeed * 37);
+    const planetGenome = ProceduralMusicGenome.generateGenome(surfaceSeed);
+    const prog = planetGenome.progression[1] || planetGenome.progression[0];
+    this.currentSystemChords = prog.map((c: string) => HarmonyHelper.parseChordToNotes(c, 3));
+    this.currentSystemBass = prog.map((c: string) => HarmonyHelper.parseChordToNotes(c, 1)[0] || `${planetGenome.rootNote}1`);
+    this.currentSystemScaleNotes = HarmonyHelper.getScaleNotes(planetGenome.rootNote, planetGenome.scaleType, [3, 4]);
+
+    if (this.filter) {
+      const surfaceCutoff = 1100 + planetGenome.brightness * 1600;
+      this.filter.frequency.rampTo(surfaceCutoff, 2.0);
+    }
   }
 
   /**
@@ -183,6 +235,11 @@ export class AudioDirector {
    * 4. Theme: Lydian melodic motif evoking quiet awe
    * 5. Release: Tapering gentle resonance ready for flight
    */
+  /**
+   * Title Overture: 114 BPM propulsive sci-fi space-opera overture
+   * Features rolling bass pulse, wide majestic synth pads, driving arpeggio motif,
+   * and soaring melodic lines evoking cosmic grandeur and momentum.
+   */
   public playTitleOverture(): void {
     if (this.isOverturePlaying) return;
     this.isOverturePlaying = true;
@@ -193,83 +250,90 @@ export class AudioDirector {
       this.loopSequenceId = null;
     }
 
-    const overtureMovements = [
-      // 1. VOID (0 - 16s): Eb1 drone, gentle resonance
-      {
-        durationMs: 16000,
-        pad: ['Eb3', 'Bb3'],
-        bass: 'Eb2',
-        melody: ['Eb4', 'Bb4'],
-        filterFreq: 1200,
-        padVol: -16,
-      },
-      // 2. AWAKENING (16 - 32s): Ebmaj9 expansion
-      {
-        durationMs: 16000,
-        pad: ['Eb3', 'G3', 'Bb3', 'D4'],
-        bass: 'Eb2',
-        melody: ['G4', 'Bb4', 'D5', 'F5'],
-        filterFreq: 1800,
-        padVol: -13,
-      },
-      // 3. EXPANSION (32 - 48s): Cm9 to Abmaj7(#11)
-      {
-        durationMs: 16000,
-        pad: ['C3', 'G3', 'Bb3', 'Eb4'],
-        bass: 'C2',
-        melody: ['Eb5', 'D5', 'Bb4', 'G4'],
-        filterFreq: 2400,
-        padVol: -11,
-      },
-      // 4. THEME (48 - 68s): Aurelia Lydian theme
-      {
-        durationMs: 20000,
-        pad: ['Ab2', 'Eb3', 'G3', 'C4'],
-        bass: 'Ab1',
-        melody: ['C5', 'D5', 'Eb5', 'G5', 'F5', 'D5'],
-        filterFreq: 3000,
-        padVol: -10,
-      },
-      // 5. RELEASE (68s+): Soft Bb suspended into quiet loop
-      {
-        durationMs: 16000,
-        pad: ['Bb2', 'F3', 'Bb3', 'D4'],
-        bass: 'Bb1',
-        melody: ['F5', 'D5', 'Bb4'],
-        filterFreq: 2200,
-        padVol: -14,
-      },
+    if (this.overtureTimerId !== null) {
+      clearInterval(this.overtureTimerId);
+      this.overtureTimerId = null;
+    }
+
+    Tone.getTransport().bpm.value = 114;
+
+    // Harmonic space-opera chord progression (4 bars)
+    const progression = [
+      { chord: ['C3', 'G3', 'Eb4', 'G4', 'Bb4'], root: 'C2', bassNotes: ['C2', 'C2', 'C3', 'C2'] },
+      { chord: ['Ab2', 'Eb3', 'Ab3', 'C4', 'Eb4'], root: 'Ab1', bassNotes: ['Ab1', 'Ab1', 'Ab2', 'Ab1'] },
+      { chord: ['Eb3', 'Bb3', 'Eb4', 'G4', 'Bb4'], root: 'Eb2', bassNotes: ['Eb2', 'Eb2', 'Eb3', 'Eb2'] },
+      { chord: ['Bb2', 'F3', 'Bb3', 'D4', 'F4'], root: 'Bb1', bassNotes: ['Bb1', 'Bb1', 'Bb2', 'Bb1'] },
     ];
 
-    let movementIndex = 0;
+    const arpeggioMap = [
+      ['C4', 'Eb4', 'G4', 'Bb4', 'C5', 'G4', 'Eb4', 'G4'],
+      ['Ab3', 'C4', 'Eb4', 'Ab4', 'C5', 'Eb4', 'C4', 'Eb4'],
+      ['Eb4', 'G4', 'Bb4', 'Eb5', 'G5', 'Eb5', 'Bb4', 'G4'],
+      ['Bb3', 'D4', 'F4', 'Bb4', 'D5', 'F5', 'D5', 'Bb4'],
+    ];
 
-    const playMovement = () => {
-      if (!this.isOverturePlaying || this.isMuted || !this.padSynth) return;
+    const leadMotifs = [
+      ['Eb5', 'G5', 'F5', 'D5'],
+      ['C5', 'Eb5', 'Ab5', 'G5'],
+      ['Bb5', 'G5', 'Eb5', 'F5'],
+      ['D5', 'F5', 'G5', 'Bb5'],
+    ];
 
-      const mov = overtureMovements[movementIndex % overtureMovements.length];
+    let step = 0;
+    // 114 BPM: 1 beat = 526ms, 8th note = 263ms
+    const stepIntervalMs = 263;
+
+    if (this.filter) {
+      this.filter.frequency.rampTo(2800, 1.5);
+    }
+    if (this.padSynth) {
+      this.padSynth.volume.rampTo(-11, 1.0);
+    }
+    if (this.bassSynth) {
+      this.bassSynth.volume.rampTo(-9, 1.0);
+    }
+    if (this.leadSynth) {
+      this.leadSynth.volume.rampTo(-14, 1.0);
+    }
+
+    const stepTick = () => {
+      if (!this.isOverturePlaying || this.isMuted) return;
+
+      const barIndex = Math.floor((step % 32) / 8);
+      const isDownbeat = (step % 8) === 0;
+      const currentBar = progression[barIndex];
       const now = Tone.now();
 
-      if (this.filter) {
-        this.filter.frequency.rampTo(mov.filterFreq, 3.0);
-      }
-      this.padSynth.volume.rampTo(mov.padVol, 2.0);
-      this.padSynth.triggerAttackRelease(mov.pad, '1m', now);
-
-      if (this.bassSynth && mov.bass) {
-        this.bassSynth.triggerAttackRelease(mov.bass, '1m', now);
+      // Pad on downbeat of each bar
+      if (isDownbeat && this.padSynth) {
+        this.padSynth.triggerAttackRelease(currentBar.chord, '1m', now, 0.75);
       }
 
-      if (this.leadSynth && mov.melody.length > 0) {
-        mov.melody.forEach((note, i) => {
-          this.leadSynth?.triggerAttackRelease(note, '2n', now + 1.5 + i * 2.2);
-        });
+      // Driving rolling bass on each 8th note
+      if (this.bassSynth) {
+        const bassNote = currentBar.bassNotes[step % 4];
+        this.bassSynth.triggerAttackRelease(bassNote, '8n', now, (step % 2 === 0) ? 0.85 : 0.65);
       }
 
-      movementIndex++;
-      this.overtureTimerId = window.setTimeout(playMovement, mov.durationMs);
+      // Propulsive arpeggiation / lead
+      if (this.leadSynth) {
+        const arpPatterns = arpeggioMap[barIndex];
+        const note = arpPatterns[step % arpPatterns.length];
+        this.leadSynth.triggerAttackRelease(note, '16n', now + 0.05, 0.50);
+
+        // Soaring lead phrase on later repetitions
+        if (step >= 16 && (step % 4 === 0)) {
+          const leadPhrase = leadMotifs[barIndex];
+          const leadNote = leadPhrase[(step / 4) % leadPhrase.length];
+          this.leadSynth.triggerAttackRelease(leadNote, '4n', now + 0.12, 0.70);
+        }
+      }
+
+      step++;
     };
 
-    playMovement();
+    stepTick();
+    this.overtureTimerId = window.setInterval(stepTick, stepIntervalMs);
   }
 
   public playTitleMusic(): void {
@@ -280,7 +344,7 @@ export class AudioDirector {
   public stopTitleOverture(): void {
     this.isOverturePlaying = false;
     if (this.overtureTimerId !== null) {
-      clearTimeout(this.overtureTimerId);
+      clearInterval(this.overtureTimerId);
       this.overtureTimerId = null;
     }
   }
@@ -288,7 +352,8 @@ export class AudioDirector {
   public setContext(context: MusicPhaseContext): void {
     this.currentContext = context;
 
-    if (context !== 'title') {
+    // Keep title overture running smoothly across title screen, cinematic, and briefing
+    if (context !== 'title' && context !== 'cinematic' && context !== 'briefing') {
       if (this.isOverturePlaying) {
         this.stopTitleOverture();
       }
@@ -301,13 +366,15 @@ export class AudioDirector {
 
     switch (context) {
       case 'title':
+      case 'cinematic':
+      case 'briefing':
       case 'cruise':
         this.filter.frequency.rampTo(2400, 0.6);
         if (this.padSynth) this.padSynth.volume.rampTo(-12, 0.5);
         if (this.bassSynth) this.bassSynth.volume.rampTo(-10, 0.5);
         break;
       case 'approach':
-        this.filter.frequency.rampTo(1600, 0.6);
+        this.filter.frequency.rampTo(1800, 0.6);
         if (this.leadSynth) this.leadSynth.volume.rampTo(-18, 0.5);
         break;
       case 'orbit':
@@ -333,15 +400,23 @@ export class AudioDirector {
     if (this.loopSequenceId !== null) return;
     if (this.isMuted || !this.padSynth) return;
 
-    // Generative peaceful cosmic chord progression
-    const chords = [
-      ['Eb3', 'G3', 'Bb3', 'D4'],
-      ['C3', 'Eb3', 'G3', 'Bb3'],
-      ['Ab2', 'Eb3', 'Ab3', 'C4'],
-      ['Bb2', 'F3', 'Bb3', 'D4'],
-    ];
+    // Procedurally generated chords from system or planet genome if available
+    const chords = (this.currentSystemChords && this.currentSystemChords.length > 0)
+      ? this.currentSystemChords
+      : [
+          ['Eb3', 'G3', 'Bb3', 'D4'],
+          ['C3', 'Eb3', 'G3', 'Bb3'],
+          ['Ab2', 'Eb3', 'Ab3', 'C4'],
+          ['Bb2', 'F3', 'Bb3', 'D4'],
+        ];
 
-    const leadNotes = ['Eb4', 'G4', 'Bb4', 'D5', 'C5', 'F5'];
+    const bassNotes = (this.currentSystemBass && this.currentSystemBass.length > 0)
+      ? this.currentSystemBass
+      : ['Eb1', 'C1', 'Ab0', 'Bb0'];
+
+    const scaleNotes = (this.currentSystemScaleNotes && this.currentSystemScaleNotes.length > 0)
+      ? this.currentSystemScaleNotes
+      : ['Eb4', 'G4', 'Bb4', 'D5', 'C5', 'F5'];
 
     const playStep = () => {
       if (this.isMuted || !this.padSynth || this.isOverturePlaying) return;
@@ -354,12 +429,13 @@ export class AudioDirector {
 
       // Trigger bass note
       if (this.bassSynth && this.stepIndex % 2 === 0) {
-        this.bassSynth.triggerAttackRelease(chord[0], '1n', time);
+        const bass = bassNotes[this.stepIndex % bassNotes.length];
+        this.bassSynth.triggerAttackRelease(bass, '1n', time);
       }
 
       // Trigger generative melodic lead arpeggio
       if (this.leadSynth && this.currentContext !== 'entry') {
-        const note = leadNotes[(this.stepIndex * 3) % leadNotes.length];
+        const note = scaleNotes[(this.stepIndex * 3) % scaleNotes.length];
         this.leadSynth.triggerAttackRelease(note, '8n', time + 0.4);
       }
 
@@ -371,11 +447,129 @@ export class AudioDirector {
     this.loopSequenceId = window.setInterval(playStep, 2400);
   }
 
+  /**
+   * Acceleration transient punch ("whump") when rapidly throttling up
+   */
+  public playAccelerationTransient(): void {
+    if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
+    const now = this.webAudioCtx.currentTime;
+
+    // Sub thump
+    const subOsc = this.webAudioCtx.createOscillator();
+    const subGain = this.webAudioCtx.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(85, now);
+    subOsc.frequency.exponentialRampToValueAtTime(36, now + 0.3);
+
+    subGain.gain.setValueAtTime(0.001, now);
+    subGain.gain.linearRampToValueAtTime(0.18, now + 0.04);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+
+    subOsc.connect(subGain);
+    subGain.connect(this.webAudioMasterGain);
+    subOsc.start(now);
+    subOsc.stop(now + 0.35);
+
+    // Mid air displacement whoosh
+    const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 0.3);
+    const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    const noise = this.webAudioCtx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = this.webAudioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(260, now);
+    filter.Q.setValueAtTime(2.0, now);
+    const gain = this.webAudioCtx.createGain();
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.12, now + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.webAudioMasterGain);
+    noise.start(now);
+  }
+
+  /**
+   * Cinematic engine ignition cue for Scene 4 of New Journey
+   */
+  public playCinematicEngineIgnition(): void {
+    if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
+    const now = this.webAudioCtx.currentTime;
+
+    // 1. Spool-up capacitor whine (800Hz -> 2200Hz)
+    const whineOsc = this.webAudioCtx.createOscillator();
+    const whineGain = this.webAudioCtx.createGain();
+    whineOsc.type = 'sine';
+    whineOsc.frequency.setValueAtTime(800, now);
+    whineOsc.frequency.exponentialRampToValueAtTime(2200, now + 0.8);
+
+    whineGain.gain.setValueAtTime(0.001, now);
+    whineGain.gain.linearRampToValueAtTime(0.08, now + 0.4);
+    whineGain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+
+    whineOsc.connect(whineGain);
+    whineGain.connect(this.webAudioMasterGain);
+    whineOsc.start(now);
+    whineOsc.stop(now + 0.95);
+
+    // 2. Heavy reactor combustion / ignition thud (at now + 0.75s)
+    const tIgnition = now + 0.75;
+    const thudOsc = this.webAudioCtx.createOscillator();
+    const thudGain = this.webAudioCtx.createGain();
+    thudOsc.type = 'sine';
+    thudOsc.frequency.setValueAtTime(110, tIgnition);
+    thudOsc.frequency.exponentialRampToValueAtTime(32, tIgnition + 0.7);
+
+    thudGain.gain.setValueAtTime(0.001, tIgnition);
+    thudGain.gain.linearRampToValueAtTime(0.32, tIgnition + 0.06);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, tIgnition + 0.8);
+
+    thudOsc.connect(thudGain);
+    thudGain.connect(this.webAudioMasterGain);
+    thudOsc.start(tIgnition);
+    thudOsc.stop(tIgnition + 0.85);
+
+    // 3. Ignition exhaust blast noise
+    const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 1.0);
+    const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    const noise = this.webAudioCtx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = this.webAudioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1200, tIgnition);
+    filter.frequency.exponentialRampToValueAtTime(180, tIgnition + 0.9);
+    const gain = this.webAudioCtx.createGain();
+    gain.gain.setValueAtTime(0.001, tIgnition);
+    gain.gain.linearRampToValueAtTime(0.25, tIgnition + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, tIgnition + 0.95);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.webAudioMasterGain);
+    noise.start(tIgnition);
+  }
+
   public updateThrottle(throttle: number): void {
     if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
 
     const t = Math.max(0, Math.min(1, throttle));
     const now = this.webAudioCtx.currentTime;
+
+    // Detect sudden acceleration punch
+    if (t - this.prevThrottle > 0.25 && now - this.lastTransientTime > 0.45) {
+      this.playAccelerationTransient();
+      this.lastTransientTime = now;
+    }
+    this.prevThrottle = t;
 
     // 1. Aerodynamic Bypass Airflow: filter smoothly sweeps from 220Hz up to 520Hz
     if (this.jetAirflowFilter && this.jetAirflowGain) {
@@ -396,6 +590,13 @@ export class AudioDirector {
       this.jetSpoolOsc.frequency.setTargetAtTime(540 + t * 600, now, 0.12);
       // Very quiet turbine whine: idle 0.0018 -> full throttle 0.0068
       this.jetSpoolGain.gain.setTargetAtTime(0.0018 + t * 0.0050, now, 0.12);
+    }
+
+    // 4. Physical Sub / Hull Body Displacement (38–75 Hz physical mass)
+    if (this.jetSubOsc && this.jetSubGain) {
+      this.jetSubOsc.frequency.setTargetAtTime(42 + t * 30, now, 0.10);
+      // Sub gain scaling: idle 0.012 -> full throttle 0.036
+      this.jetSubGain.gain.setTargetAtTime(0.012 + t * 0.024, now, 0.10);
     }
   }
 
@@ -583,13 +784,15 @@ export class AudioDirector {
   }
 
   /**
-   * Continuous 5-second hyperspace slipstream sound
+   * Continuous 5-second hyperspace slipstream sound with stereo resonant sweep & gravitic drone
    */
   public startWarpSlipstream(): void {
     if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
     this.stopWarpSlipstream();
 
     const now = this.webAudioCtx.currentTime;
+
+    // 1. Hyperspace slipstream noise
     const bufferSize = this.webAudioCtx.sampleRate * 2;
     const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
     const output = noiseBuffer.getChannelData(0);
@@ -608,57 +811,107 @@ export class AudioDirector {
     const filter = this.webAudioCtx.createBiquadFilter();
     filter.type = 'bandpass';
     filter.frequency.setValueAtTime(450, now);
-    filter.Q.setValueAtTime(1.8, now);
+    filter.frequency.linearRampToValueAtTime(1100, now + 2.5);
+    filter.frequency.linearRampToValueAtTime(500, now + 5.0);
+    filter.Q.setValueAtTime(2.2, now);
 
     this.warpSlipstreamGain = this.webAudioCtx.createGain();
     this.warpSlipstreamGain.gain.setValueAtTime(0.001, now);
-    this.warpSlipstreamGain.gain.linearRampToValueAtTime(0.09, now + 0.4);
+    this.warpSlipstreamGain.gain.linearRampToValueAtTime(0.12, now + 0.4);
 
     this.warpSlipstreamNode.connect(filter);
     filter.connect(this.warpSlipstreamGain);
     this.warpSlipstreamGain.connect(this.webAudioMasterGain);
     this.warpSlipstreamNode.start(now);
+
+    // 2. Gravitic sub drone (deep interstellar hum)
+    this.warpDroneOsc = this.webAudioCtx.createOscillator();
+    this.warpDroneGain = this.webAudioCtx.createGain();
+    this.warpDroneOsc.type = 'triangle';
+    this.warpDroneOsc.frequency.setValueAtTime(58, now);
+    this.warpDroneOsc.frequency.linearRampToValueAtTime(72, now + 2.5);
+    this.warpDroneOsc.frequency.linearRampToValueAtTime(52, now + 5.0);
+
+    this.warpDroneGain.gain.setValueAtTime(0.001, now);
+    this.warpDroneGain.gain.linearRampToValueAtTime(0.15, now + 0.5);
+
+    this.warpDroneOsc.connect(this.warpDroneGain);
+    this.warpDroneGain.connect(this.webAudioMasterGain);
+    this.warpDroneOsc.start(now);
   }
 
   public stopWarpSlipstream(): void {
-    if (this.warpSlipstreamGain && this.webAudioCtx) {
+    if (this.webAudioCtx) {
       const now = this.webAudioCtx.currentTime;
-      this.warpSlipstreamGain.gain.linearRampToValueAtTime(0.0001, now + 0.3);
+      if (this.warpSlipstreamGain) {
+        this.warpSlipstreamGain.gain.linearRampToValueAtTime(0.0001, now + 0.3);
+      }
+      if (this.warpDroneGain) {
+        this.warpDroneGain.gain.linearRampToValueAtTime(0.0001, now + 0.3);
+      }
       const node = this.warpSlipstreamNode;
+      const drone = this.warpDroneOsc;
       setTimeout(() => {
         try {
           node?.stop();
           node?.disconnect();
+          drone?.stop();
+          drone?.disconnect();
         } catch {}
       }, 350);
     }
     this.warpSlipstreamNode = null;
     this.warpSlipstreamGain = null;
+    this.warpDroneOsc = null;
+    this.warpDroneGain = null;
   }
 
   /**
    * Deceleration sonic snap / drop-out boom upon system arrival
+   * Heavy 130 Hz -> 24 Hz sub deceleration thump + noise displacement boom + arrival chime
    */
   public playWarpExit(): void {
     if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
     const now = this.webAudioCtx.currentTime;
 
-    // Low-end deceleration thump
+    // 1. Heavy low-end deceleration thump (130Hz -> 24Hz)
     const osc = this.webAudioCtx.createOscillator();
     const gain = this.webAudioCtx.createGain();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(90, now);
-    osc.frequency.exponentialRampToValueAtTime(32, now + 0.5);
+    osc.frequency.setValueAtTime(130, now);
+    osc.frequency.exponentialRampToValueAtTime(24, now + 0.65);
 
-    gain.gain.setValueAtTime(0.30, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+    gain.gain.setValueAtTime(0.38, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.70);
 
     osc.connect(gain);
     gain.connect(this.webAudioMasterGain);
     osc.start(now);
-    osc.stop(now + 0.58);
+    osc.stop(now + 0.72);
 
-    // Arrival harmonic chime
+    // 2. Energetic displacement boom
+    const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 0.6);
+    const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    const noise = this.webAudioCtx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = this.webAudioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1600, now);
+    filter.frequency.exponentialRampToValueAtTime(90, now + 0.55);
+    const noiseGain = this.webAudioCtx.createGain();
+    noiseGain.gain.setValueAtTime(0.22, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.60);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.webAudioMasterGain);
+    noise.start(now);
+
+    // 3. Arrival harmonic chime
     this.playConnectChime();
   }
 
