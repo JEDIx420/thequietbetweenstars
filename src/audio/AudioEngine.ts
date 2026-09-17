@@ -49,6 +49,7 @@ export class AudioDirector {
   private jetSubOsc: OscillatorNode | null = null;
   private jetSubGain: GainNode | null = null;
   private prevThrottle = 0;
+  private appliedThrottle = -1;
   private lastTransientTime = 0;
 
   // Warp Hyperspace Audio Nodes
@@ -570,6 +571,10 @@ export class AudioDirector {
       this.lastTransientTime = now;
     }
     this.prevThrottle = t;
+
+    // Guard redundant AudioParam scheduling when throttle is unchanged
+    if (Math.abs(t - this.appliedThrottle) < 0.005) return;
+    this.appliedThrottle = t;
 
     // 1. Aerodynamic Bypass Airflow: filter smoothly sweeps from 220Hz up to 520Hz
     if (this.jetAirflowFilter && this.jetAirflowGain) {

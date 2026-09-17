@@ -37,11 +37,6 @@ export class FlightModel {
   // Visual bank angle on shipVisualRoot
   private visualBankAngle = 0;
 
-  // Fixed timestep physics accumulator
-  private timeAccumulator = 0;
-  private readonly fixedTimeStep = 1 / 60; // 60 Hz deterministic simulation
-  private readonly maxSubSteps = 5;
-
   // Arcade flight parameters
   private readonly maxCruiseSpeed = 160;
   private readonly baseAcceleration = 78;
@@ -123,19 +118,8 @@ export class FlightModel {
   }
 
   public update(input: NormalizedInputState, dt: number, camera: THREE.PerspectiveCamera): void {
-    const clampedDt = Math.min(dt, 0.1); // Cap browser lag spikes to 100ms
-    this.timeAccumulator += clampedDt;
-
-    let simSteps = 0;
-    while (this.timeAccumulator >= this.fixedTimeStep && simSteps < this.maxSubSteps) {
-      this.stepSimulation(input, this.fixedTimeStep);
-      this.timeAccumulator -= this.fixedTimeStep;
-      simSteps++;
-    }
-
-    if (simSteps >= this.maxSubSteps) {
-      this.timeAccumulator = 0;
-    }
+    const clampedDt = Math.max(0.001, Math.min(dt, 0.05));
+    this.stepSimulation(input, clampedDt);
 
     // Apply strict transform ownership
     // 1. Physics root receives position and orientation quaternion
@@ -151,7 +135,7 @@ export class FlightModel {
     // 3. Angular discontinuity detection
     const angleDeltaRad = 2 * Math.acos(Math.min(1.0, Math.abs(this.quaternion.dot(this.prevQuat))));
     const angleDeltaDeg = (angleDeltaRad * 180) / Math.PI;
-    const hasDiscontinuity = angleDeltaDeg > 45.0 && simSteps > 0;
+    const hasDiscontinuity = angleDeltaDeg > 45.0;
     this.prevQuat.copy(this.quaternion);
 
     // 4. Update Cinematic Chase Camera
@@ -166,7 +150,7 @@ export class FlightModel {
     this.telemetry.yawRate = this.yawVelocity;
     this.telemetry.pitchRate = this.pitchVelocity;
     this.telemetry.rollRate = this.rollVelocity;
-    this.telemetry.simSteps = simSteps;
+    this.telemetry.simSteps = 1;
     this.telemetry.dt = clampedDt;
     this.telemetry.cameraUpDotWorldUp = camera.up.dot(new THREE.Vector3(0, 1, 0));
     this.telemetry.hasDiscontinuity = hasDiscontinuity;
@@ -292,11 +276,12 @@ export class FlightModel {
       this.currentCameraUp.copy(desiredUp);
       this.isCameraInitialized = true;
     } else {
-      const posLerp = 1 - Math.pow(0.003, dt);
-      const lookLerp = 1 - Math.pow(0.0015, dt);
+      // High-precision frame-rate independent critical damping follow
+      const posLerp = 1 - Math.exp(-14.0 * dt);
+      const lookLerp = 1 - Math.exp(-18.0 * dt);
       this.cameraTargetPos.lerp(desiredCamPos, posLerp);
       this.cameraLookTarget.lerp(desiredLookTarget, lookLerp);
-      this.currentCameraUp.lerp(desiredUp, dt * 5.0).normalize();
+      this.currentCameraUp.lerp(desiredUp, Math.min(1, dt * 8.0)).normalize();
     }
 
     camera.position.copy(this.cameraTargetPos);
@@ -305,7 +290,7 @@ export class FlightModel {
 
     // Dynamic FOV easing (63° cruise to 72° boost)
     const targetFov = 63 + speedRatio * 9;
-    this.currentFov += (targetFov - this.currentFov) * Math.min(1, dt * 3.5);
+    this.currentFov += (targetFov - this.currentFov) * Math.min(1, dt * 4.0);
     camera.fov = this.currentFov;
     camera.updateProjectionMatrix();
   }

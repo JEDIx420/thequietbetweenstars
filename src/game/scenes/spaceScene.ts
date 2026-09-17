@@ -28,6 +28,7 @@ export class SpaceScene {
   private dustPositions: Float32Array;
   private dustCount = 800;
   private dustBoxSize = 300;
+  private lastDustShipPos = new THREE.Vector3(999999, 999999, 999999);
 
   // Solar illumination & corona
   public sunGroup: THREE.Group;
@@ -601,28 +602,31 @@ export class SpaceScene {
       this.activeCourierPod.update(dt);
     }
 
-    // 5. Cosmic Dust Particle Recycling around Ship
-    const halfBox = this.dustBoxSize / 2;
-    const attr = this.dustPoints.geometry.attributes.position;
-    for (let i = 0; i < this.dustCount; i++) {
-      let x = this.dustPositions[i * 3];
-      let y = this.dustPositions[i * 3 + 1];
-      let z = this.dustPositions[i * 3 + 2];
+    // 5. Cosmic Dust Particle Recycling around Ship (only when displaced > 0.5 units)
+    if (this.lastDustShipPos.distanceToSquared(shipPos) > 0.5) {
+      this.lastDustShipPos.copy(shipPos);
+      const halfBox = this.dustBoxSize / 2;
+      const attr = this.dustPoints.geometry.attributes.position;
+      for (let i = 0; i < this.dustCount; i++) {
+        let x = this.dustPositions[i * 3];
+        let y = this.dustPositions[i * 3 + 1];
+        let z = this.dustPositions[i * 3 + 2];
 
-      if (x - shipPos.x > halfBox) x -= this.dustBoxSize;
-      else if (x - shipPos.x < -halfBox) x += this.dustBoxSize;
+        if (x - shipPos.x > halfBox) x -= this.dustBoxSize;
+        else if (x - shipPos.x < -halfBox) x += this.dustBoxSize;
 
-      if (y - shipPos.y > halfBox) y -= this.dustBoxSize;
-      else if (y - shipPos.y < -halfBox) y += this.dustBoxSize;
+        if (y - shipPos.y > halfBox) y -= this.dustBoxSize;
+        else if (y - shipPos.y < -halfBox) y += this.dustBoxSize;
 
-      if (z - shipPos.z > halfBox) z -= this.dustBoxSize;
-      else if (z - shipPos.z < -halfBox) z += this.dustBoxSize;
+        if (z - shipPos.z > halfBox) z -= this.dustBoxSize;
+        else if (z - shipPos.z < -halfBox) z += this.dustBoxSize;
 
-      this.dustPositions[i * 3] = x;
-      this.dustPositions[i * 3 + 1] = y;
-      this.dustPositions[i * 3 + 2] = z;
+        this.dustPositions[i * 3] = x;
+        this.dustPositions[i * 3 + 1] = y;
+        this.dustPositions[i * 3 + 2] = z;
+      }
+      attr.needsUpdate = true;
     }
-    attr.needsUpdate = true;
 
     // 6. Scan Holographic Pulse Expansion
     if (this.isScanning) {

@@ -122,6 +122,7 @@ export class DesktopApp {
   private inSpaceWarpCountdownTarget: StarSystemDescriptor | null = null;
   private inSpaceWarpCountdownValue = 0;
   private inSpaceWarpCountdownEl: HTMLElement | null = null;
+  private lastCourierPodState: string | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -297,7 +298,7 @@ export class DesktopApp {
       return;
     }
 
-    const dt = Math.min((time - this.lastTime) * 0.001, 0.06);
+    const dt = Math.max(0.001, Math.min((time - this.lastTime) * 0.001, 0.05));
     this.lastTime = time;
 
     const input = this.inputManager.getNormalizedInput();
@@ -446,11 +447,13 @@ export class DesktopApp {
       const throttle = this.flightModel.getThrottle();
       this.spaceScene.update(dt, shipPos, this.renderer.camera.position, throttle, input.axes.x, input.axes.y);
 
-      // Relativistic camera FOV expansion during warp drive
-      const targetFov = 65 + this.spaceScene.warpFactor * 26;
-      if (Math.abs(this.renderer.camera.fov - targetFov) > 0.05) {
-        this.renderer.camera.fov = THREE.MathUtils.lerp(this.renderer.camera.fov, targetFov, dt * 5.0);
-        this.renderer.camera.updateProjectionMatrix();
+      // Relativistic camera FOV expansion strictly during warp drive
+      if (this.spaceScene.warpFactor > 0.01) {
+        const targetFov = 65 + this.spaceScene.warpFactor * 26;
+        if (Math.abs(this.renderer.camera.fov - targetFov) > 0.05) {
+          this.renderer.camera.fov = THREE.MathUtils.lerp(this.renderer.camera.fov, targetFov, dt * 5.0);
+          this.renderer.camera.updateProjectionMatrix();
+        }
       }
 
       if (this.uiState === 'playing') {
@@ -528,8 +531,12 @@ export class DesktopApp {
 
       // Update Local Nav Radar
       if (this.navRadar && this.uiState === 'playing') {
-        const podPos = this.spaceScene.activeCourierPod ? this.spaceScene.activeCourierPod.position : undefined;
-        this.navRadar.setPlanets(this.spaceScene.activePlanetList, this.spaceScene.currentSystem?.anomalies || [], podPos);
+        const podId = this.spaceScene.activeCourierPod ? this.spaceScene.activeCourierPod.order.orderId : null;
+        if (podId !== this.lastCourierPodState) {
+          this.lastCourierPodState = podId;
+          const podPos = this.spaceScene.activeCourierPod ? this.spaceScene.activeCourierPod.position : undefined;
+          this.navRadar.setPlanets(this.spaceScene.activePlanetList, this.spaceScene.currentSystem?.anomalies || [], podPos);
+        }
         this.navRadar.update(shipPos, this.flightModel.quaternion, this.spaceScene.sunPos);
       }
 
