@@ -39,6 +39,8 @@ export class AudioDirector {
   private jetRumbleGain: GainNode | null = null;
   private jetSpoolOsc: OscillatorNode | null = null;
   private jetSpoolGain: GainNode | null = null;
+  private warpSlipstreamNode: AudioBufferSourceNode | null = null;
+  private warpSlipstreamGain: GainNode | null = null;
   private loopSequenceId: number | null = null;
   private stepIndex = 0;
   private isOverturePlaying = false;
@@ -485,6 +487,179 @@ export class AudioDirector {
       osc.start(t);
       osc.stop(t + 0.45);
     });
+  }
+
+  /**
+   * High-tech holographic warp countdown tick (5 to 1)
+   */
+  public playWarpCountdownTick(count: number): void {
+    if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
+    const now = this.webAudioCtx.currentTime;
+
+    // Pitch rises from 440Hz at 5, up to 980Hz at 1
+    const baseFreq = 440 + (5 - count) * 135;
+
+    const osc = this.webAudioCtx.createOscillator();
+    const gain = this.webAudioCtx.createGain();
+    const filter = this.webAudioCtx.createBiquadFilter();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(baseFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, now + 0.12);
+
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(baseFreq * 1.2, now);
+    filter.Q.setValueAtTime(3.5, now);
+
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.18, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.webAudioMasterGain);
+    osc.start(now);
+    osc.stop(now + 0.30);
+
+    // Deep sub charge pulse
+    const subOsc = this.webAudioCtx.createOscillator();
+    const subGain = this.webAudioCtx.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(60 + (5 - count) * 15, now);
+    subGain.gain.setValueAtTime(0.20, now);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    subOsc.connect(subGain);
+    subGain.connect(this.webAudioMasterGain);
+    subOsc.start(now);
+    subOsc.stop(now + 0.26);
+  }
+
+  /**
+   * Massive warp drive entry: gravitic implosion + energetic hyperspace flash
+   */
+  public playWarpEntry(): void {
+    if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
+    const now = this.webAudioCtx.currentTime;
+
+    // 1. Gravitic Implosion (descending sub-bass pitch drop)
+    const subOsc = this.webAudioCtx.createOscillator();
+    const subGain = this.webAudioCtx.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(160, now);
+    subOsc.frequency.exponentialRampToValueAtTime(28, now + 0.6);
+
+    subGain.gain.setValueAtTime(0.01, now);
+    subGain.gain.linearRampToValueAtTime(0.35, now + 0.08);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+
+    subOsc.connect(subGain);
+    subGain.connect(this.webAudioMasterGain);
+    subOsc.start(now);
+    subOsc.stop(now + 0.95);
+
+    // 2. High-energy displacement boom
+    const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 0.8);
+    const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = Math.random() * 2 - 1;
+    }
+    const noiseNode = this.webAudioCtx.createBufferSource();
+    noiseNode.buffer = noiseBuffer;
+
+    const noiseFilter = this.webAudioCtx.createBiquadFilter();
+    noiseFilter.type = 'lowpass';
+    noiseFilter.frequency.setValueAtTime(1400, now);
+    noiseFilter.frequency.exponentialRampToValueAtTime(120, now + 0.7);
+
+    const noiseGain = this.webAudioCtx.createGain();
+    noiseGain.gain.setValueAtTime(0.28, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
+
+    noiseNode.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(this.webAudioMasterGain);
+    noiseNode.start(now);
+  }
+
+  /**
+   * Continuous 5-second hyperspace slipstream sound
+   */
+  public startWarpSlipstream(): void {
+    if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
+    this.stopWarpSlipstream();
+
+    const now = this.webAudioCtx.currentTime;
+    const bufferSize = this.webAudioCtx.sampleRate * 2;
+    const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    let b0 = 0, b1 = 0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99 * b0 + white * 0.1;
+      b1 = 0.95 * b1 + white * 0.2;
+      output[i] = (b0 + b1) * 0.15;
+    }
+
+    this.warpSlipstreamNode = this.webAudioCtx.createBufferSource();
+    this.warpSlipstreamNode.buffer = noiseBuffer;
+    this.warpSlipstreamNode.loop = true;
+
+    const filter = this.webAudioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(450, now);
+    filter.Q.setValueAtTime(1.8, now);
+
+    this.warpSlipstreamGain = this.webAudioCtx.createGain();
+    this.warpSlipstreamGain.gain.setValueAtTime(0.001, now);
+    this.warpSlipstreamGain.gain.linearRampToValueAtTime(0.09, now + 0.4);
+
+    this.warpSlipstreamNode.connect(filter);
+    filter.connect(this.warpSlipstreamGain);
+    this.warpSlipstreamGain.connect(this.webAudioMasterGain);
+    this.warpSlipstreamNode.start(now);
+  }
+
+  public stopWarpSlipstream(): void {
+    if (this.warpSlipstreamGain && this.webAudioCtx) {
+      const now = this.webAudioCtx.currentTime;
+      this.warpSlipstreamGain.gain.linearRampToValueAtTime(0.0001, now + 0.3);
+      const node = this.warpSlipstreamNode;
+      setTimeout(() => {
+        try {
+          node?.stop();
+          node?.disconnect();
+        } catch {}
+      }, 350);
+    }
+    this.warpSlipstreamNode = null;
+    this.warpSlipstreamGain = null;
+  }
+
+  /**
+   * Deceleration sonic snap / drop-out boom upon system arrival
+   */
+  public playWarpExit(): void {
+    if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
+    const now = this.webAudioCtx.currentTime;
+
+    // Low-end deceleration thump
+    const osc = this.webAudioCtx.createOscillator();
+    const gain = this.webAudioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(90, now);
+    osc.frequency.exponentialRampToValueAtTime(32, now + 0.5);
+
+    gain.gain.setValueAtTime(0.30, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+    osc.connect(gain);
+    gain.connect(this.webAudioMasterGain);
+    osc.start(now);
+    osc.stop(now + 0.58);
+
+    // Arrival harmonic chime
+    this.playConnectChime();
   }
 
   public toggleMute(): boolean {

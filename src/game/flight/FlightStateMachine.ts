@@ -37,11 +37,11 @@ export class FlightStateMachine {
       case FlightPhase.SYSTEM_CRUISE:
         return target === FlightPhase.DEEP_SPACE || target === FlightPhase.PLANET_APPROACH || target === FlightPhase.STELLAR_CRUISE;
       case FlightPhase.STELLAR_CRUISE:
-        return target === FlightPhase.SYSTEM_CRUISE || target === FlightPhase.DEEP_SPACE;
+        return target === FlightPhase.SYSTEM_CRUISE || target === FlightPhase.DEEP_SPACE || target === FlightPhase.PLANET_APPROACH;
       case FlightPhase.PLANET_APPROACH:
-        return target === FlightPhase.SYSTEM_CRUISE || target === FlightPhase.ORBIT;
+        return target === FlightPhase.SYSTEM_CRUISE || target === FlightPhase.ORBIT || target === FlightPhase.STELLAR_CRUISE;
       case FlightPhase.ORBIT:
-        return target === FlightPhase.SYSTEM_CRUISE || target === FlightPhase.ENTRY;
+        return target === FlightPhase.SYSTEM_CRUISE || target === FlightPhase.ENTRY || target === FlightPhase.STELLAR_CRUISE;
       case FlightPhase.ENTRY:
         return target === FlightPhase.SURFACE_FLIGHT || target === FlightPhase.ORBIT;
       case FlightPhase.SURFACE_FLIGHT:

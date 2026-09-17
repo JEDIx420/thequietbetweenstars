@@ -66,8 +66,8 @@ export class DeepCruiseController {
     const dz = targetSystem.sectorZ - currentWorldPos.sector.z;
     const sectorDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-    // Duration: 7 to 14 seconds depending on sector distance
-    const duration = Math.min(14, Math.max(7, 6 + sectorDist * 1.5));
+    // Duration: strictly 5.0 seconds as specified by user
+    const duration = 5.0;
 
     this.state.isActive = true;
     this.state.targetSystem = targetSystem;
@@ -90,6 +90,8 @@ export class DeepCruiseController {
 
     this.stateMachine.transitionTo(FlightPhase.STELLAR_CRUISE);
     audio.setContext('deep_cruise');
+    audio.playWarpEntry();
+    audio.startWarpSlipstream();
     return true;
   }
 
@@ -163,6 +165,8 @@ export class DeepCruiseController {
     this.state.targetSystem = null;
     this.state.targetSector = null;
     this.stateMachine.transitionTo(FlightPhase.SYSTEM_CRUISE);
+    audio.stopWarpSlipstream();
+    audio.playWarpExit();
     audio.setContext('cruise');
   }
 }

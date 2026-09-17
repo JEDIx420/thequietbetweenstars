@@ -438,6 +438,13 @@ export class DesktopApp {
       const throttle = this.flightModel.getThrottle();
       this.spaceScene.update(dt, shipPos, this.renderer.camera.position, throttle, input.axes.x, input.axes.y);
 
+      // Relativistic camera FOV expansion during warp drive
+      const targetFov = 65 + this.spaceScene.warpFactor * 26;
+      if (Math.abs(this.renderer.camera.fov - targetFov) > 0.05) {
+        this.renderer.camera.fov = THREE.MathUtils.lerp(this.renderer.camera.fov, targetFov, dt * 5.0);
+        this.renderer.camera.updateProjectionMatrix();
+      }
+
       if (this.uiState === 'playing') {
         audio.updateThrottle(throttle);
       }
@@ -453,8 +460,10 @@ export class DesktopApp {
       // Check for pending courier deliveries and courier pod docking in space
       this.updateCourierDelivery(shipPos);
 
-      // Check Approach Controller for planets
-      const targetPlanet = this.approachController.update(shipPos, this.spaceScene.activePlanetList);
+      // Check Approach Controller for planets (strictly disabled while in deep cruise)
+      const targetPlanet = (!this.deepCruiseController.state.isActive && phase !== FlightPhase.STELLAR_CRUISE)
+        ? this.approachController.update(shipPos, this.spaceScene.activePlanetList)
+        : null;
       if (targetPlanet) {
         if (phase !== FlightPhase.PLANET_APPROACH) {
           this.stateMachine.transitionTo(FlightPhase.PLANET_APPROACH);
@@ -502,7 +511,7 @@ export class DesktopApp {
       }
 
       // Update Interstellar Deep Cruise
-      if (phase === FlightPhase.STELLAR_CRUISE && this.deepCruiseController.state.isActive) {
+      if (this.deepCruiseController.state.isActive) {
         this.deepCruiseController.update(dt, this.worldPosition);
         const p = Math.round(this.deepCruiseController.state.cruiseProgress * 100);
         const targetName = this.deepCruiseController.state.targetSystem?.name || 'DESTINATION';
@@ -595,7 +604,8 @@ export class DesktopApp {
     if (this.inputManager.consumeAction('autopilot')) {
       audio.playBlip();
       // If course is set to another star system in star chart, engage Deep Cruise!
-      if (this.holographicNavModal.activeCourseSystem && this.stateMachine.getPhase() === FlightPhase.SYSTEM_CRUISE) {
+      const phase = this.stateMachine.getPhase();
+      if (this.holographicNavModal.activeCourseSystem && phase !== FlightPhase.SURFACE_FLIGHT && phase !== FlightPhase.STELLAR_CRUISE) {
         this.engageInterstellarCruise(this.holographicNavModal.activeCourseSystem);
       } else {
         const active = this.autopilotController.toggle();

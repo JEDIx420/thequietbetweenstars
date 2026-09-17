@@ -63,6 +63,10 @@ export class SpaceScene {
   // Warp hyperspace effects
   public warpFactor = 0;
   public warpHeading?: THREE.Vector3;
+  public warpTunnelGroup = new THREE.Group();
+  private warpStreakLines: Array<{ line: THREE.Line; baseRadius: number; baseAngle: number; zOffset: number; speed: number }> = [];
+  private warpStreakMat: THREE.LineBasicMaterial;
+  private warpShroudMesh: THREE.Mesh;
 
   // Active Loaded Star System
   public currentSystem: StarSystemDescriptor | null = null;
@@ -88,6 +92,52 @@ export class SpaceScene {
     // 1. Camera-Centered Infinite Star & Nebula Background
     this.infiniteBackground = new InfiniteBackground();
     this.backgroundRoot.add(this.infiniteBackground.group);
+
+    // Relativistic Hyperspace Warp Tunnel (activated during warp cruise)
+    this.warpStreakMat = new THREE.LineBasicMaterial({
+      color: 0x93c5fd,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    const streakCount = 64;
+    for (let i = 0; i < streakCount; i++) {
+      const r = 12 + Math.random() * 55;
+      const angle = Math.random() * Math.PI * 2;
+      const length = 50 + Math.random() * 140;
+      const geom = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, -length),
+      ]);
+      const line = new THREE.Line(geom, this.warpStreakMat);
+      this.warpTunnelGroup.add(line);
+      this.warpStreakLines.push({
+        line,
+        baseRadius: r,
+        baseAngle: angle,
+        zOffset: (Math.random() - 0.5) * 800,
+        speed: 900 + Math.random() * 1400,
+      });
+    }
+
+    const shroudGeo = new THREE.CylinderGeometry(30, 30, 800, 16, 1, true);
+    shroudGeo.rotateX(Math.PI / 2);
+    const shroudMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0,
+      side: THREE.BackSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      wireframe: true,
+    });
+    this.warpShroudMesh = new THREE.Mesh(shroudGeo, shroudMat);
+    this.warpTunnelGroup.add(this.warpShroudMesh);
+
+    this.warpTunnelGroup.visible = false;
+    this.backgroundRoot.add(this.warpTunnelGroup);
 
     // 2. Ambient and Key Directional Lighting
     const ambient = new THREE.AmbientLight(0x1a2236, 1.4);
@@ -590,6 +640,38 @@ export class SpaceScene {
       } else {
         mat.opacity = (1 - progress) * 0.75;
       }
+    }
+
+    // 7. Relativistic Warp Hyperspace Tunnel
+    if (this.warpFactor > 0.05) {
+      this.warpTunnelGroup.visible = true;
+      this.warpTunnelGroup.position.copy(cameraPos);
+      if (this.warpHeading && this.warpHeading.lengthSq() > 0.001) {
+        const forward = new THREE.Vector3(0, 0, -1);
+        const headingNorm = this.warpHeading.clone().normalize();
+        this.warpTunnelGroup.quaternion.setFromUnitVectors(forward, headingNorm);
+      }
+
+      const op = Math.min(1.0, this.warpFactor * 1.25);
+      this.warpStreakMat.opacity = op * 0.9;
+      (this.warpShroudMesh.material as THREE.MeshBasicMaterial).opacity = op * 0.16;
+
+      const tunnelLength = 800;
+      const halfLen = tunnelLength / 2;
+      for (let i = 0; i < this.warpStreakLines.length; i++) {
+        const s = this.warpStreakLines[i];
+        s.zOffset += dt * s.speed * (0.6 + this.warpFactor * 1.8);
+        if (s.zOffset > halfLen) {
+          s.zOffset -= tunnelLength;
+          s.baseAngle += 0.25;
+        }
+        const x = Math.cos(s.baseAngle) * s.baseRadius;
+        const y = Math.sin(s.baseAngle) * s.baseRadius;
+        s.line.position.set(x, y, s.zOffset);
+      }
+      this.warpShroudMesh.rotation.z += dt * 2.2;
+    } else {
+      this.warpTunnelGroup.visible = false;
     }
   }
 }
