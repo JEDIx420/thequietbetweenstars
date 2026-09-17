@@ -868,24 +868,7 @@ export class SpaceScene {
     this.scanWave.visible = true;
   }
 
-  public update(
-    dt: number,
-    shipPos: THREE.Vector3,
-    cameraPos: THREE.Vector3,
-    throttle: number,
-    _steeringYaw = 0,
-    _steeringPitch = 0
-  ): void {
-    this.clock += dt;
-
-    // 1. Update Infinite Starfield & Nebula to follow camera (with warp hyperspace stretch & shooting stars)
-    this.infiniteBackground.update(cameraPos, this.clock, this.warpFactor, this.warpHeading, dt);
-
-    // 2. Survey Craft internal animations (strictly never alters physics transform)
-    const flightMode = this.warpFactor > 0.1 ? 'warp' : 'space';
-    this.surveyCraft.updateVisuals(dt, throttle, flightMode);
-
-    // 3. Solar Corona Multi-harmonic Pulsations & Flare Rotation
+  private updateSolarCorona(dt: number): void {
     const pulse1 = Math.sin(this.clock * 0.7) * 0.035;
     const pulse2 = Math.cos(this.clock * 1.3) * 0.02;
     const innerScale = this.currentStarRadius * 2.8 * (1.0 + pulse1);
@@ -899,8 +882,9 @@ export class SpaceScene {
       this.sunSurfaceTexture.offset.x += dt * 0.004;
     }
     this.sunLight.intensity = 3.2 + Math.sin(this.clock * 2.1) * 0.25;
+  }
 
-    // 4. Planetary & Lunar Orbital Rotations
+  private updatePlanetRotations(dt: number): void {
     if (this.aureliaGroup.visible) {
       this.planetAureliaMesh.rotation.y += dt * 0.018;
       if (this.cloudAureliaMesh) this.cloudAureliaMesh.rotation.y += dt * 0.026;
@@ -909,28 +893,120 @@ export class SpaceScene {
       this.moonZephyrMesh.rotation.y += dt * 0.012;
     }
 
-    // Dynamic Planets rotation
     for (const p of this.planetMeshes) {
       p.mesh.rotation.y += dt * 0.015;
       if (p.cloud) p.cloud.rotation.y += dt * 0.024;
       if (p.atmo) p.atmo.rotation.y += dt * 0.020;
       if (p.ring) p.ring.rotation.z += dt * 0.002;
     }
+  }
+
+  private updateScanWave(dt: number): void {
+    if (this.isScanning) {
+      this.scanRadius += dt * 160;
+      this.scanWave.scale.set(this.scanRadius, this.scanRadius, this.scanRadius);
+
+      const maxScanRadius = 220;
+      const progress = this.scanRadius / maxScanRadius;
+      const mat = this.scanWave.material as THREE.MeshBasicMaterial;
+
+      if (progress >= 1) {
+        this.isScanning = false;
+        this.scanWave.visible = false;
+        mat.opacity = 0;
+      } else {
+        mat.opacity = (1 - progress) * 0.75;
+      }
+    }
+  }
+
+  public updateOrbit(
+    dt: number,
+    shipPos: THREE.Vector3,
+    cameraPos: THREE.Vector3,
+    simTick = false
+  ): void {
+    this.clock += dt;
+
+    // 1. Background visuals
+    this.infiniteBackground.update(cameraPos, this.clock, 0, undefined, dt);
+
+    // 2. Survey Craft visuals (idle in orbit)
+    this.surveyCraft.updateVisuals(dt, 0, 'space');
+
+    // 3. Solar Corona & flare animations
+    this.updateSolarCorona(dt);
+
+    // 4. Planetary & Lunar Orbital Rotations
+    this.updatePlanetRotations(dt);
+
+    // 5. Traffic simulation: throttled to simTick cadence, meshes stay visible
+    if (this.trafficDirector && simTick) {
+      this.lastCommsHail = this.trafficDirector.update(dt, shipPos);
+    }
+
+    // Suspend: encounterManager updates, dust recycling, activeCourierPod follow, warp tunnel
+    if (this.warpTunnelGroup.visible) {
+      this.warpTunnelGroup.visible = false;
+    }
+
+    // 6. Scan pulse if active
+    this.updateScanWave(dt);
+  }
+
+  public updateTransition(
+    dt: number,
+    _shipPos: THREE.Vector3,
+    cameraPos: THREE.Vector3
+  ): void {
+    this.clock += dt;
+    this.infiniteBackground.update(cameraPos, this.clock, 0, undefined, dt);
+    this.surveyCraft.updateVisuals(dt, 0.4, 'space');
+    this.updateSolarCorona(dt);
+    this.updatePlanetRotations(dt);
+    if (this.warpTunnelGroup.visible) {
+      this.warpTunnelGroup.visible = false;
+    }
+  }
+
+  public updateSpaceFlight(
+    dt: number,
+    shipPos: THREE.Vector3,
+    cameraPos: THREE.Vector3,
+    throttle: number,
+    _steeringYaw = 0,
+    _steeringPitch = 0,
+    simTick = true
+  ): void {
+    this.clock += dt;
+
+    // 1. Update Infinite Starfield & Nebula to follow camera
+    this.infiniteBackground.update(cameraPos, this.clock, this.warpFactor, this.warpHeading, dt);
+
+    // 2. Survey Craft internal animations
+    const flightMode = this.warpFactor > 0.1 ? 'warp' : 'space';
+    this.surveyCraft.updateVisuals(dt, throttle, flightMode);
+
+    // 3. Solar Corona Multi-harmonic Pulsations & Flare Rotation
+    this.updateSolarCorona(dt);
+
+    // 4. Planetary & Lunar Orbital Rotations
+    this.updatePlanetRotations(dt);
 
     // Active Delivery Pod update
     if (this.activeCourierPod) {
       this.activeCourierPod.update(dt, shipPos);
     }
 
-    // Space Traffic & Cosmic Encounters
-    if (this.trafficDirector) {
+    // Space Traffic & Cosmic Encounters (gated on simTick)
+    if (this.trafficDirector && simTick) {
       this.lastCommsHail = this.trafficDirector.update(dt, shipPos);
     }
-    if (this.encounterManager) {
+    if (this.encounterManager && simTick) {
       this.encounterManager.update(dt);
     }
 
-    // 5. Cosmic Dust Particle Recycling around Ship (only when displaced > 0.5 units)
+    // 5. Cosmic Dust Particle Recycling around Ship
     if (this.lastDustShipPos.distanceToSquared(shipPos) > 0.5) {
       this.lastDustShipPos.copy(shipPos);
       const halfBox = this.dustBoxSize / 2;
@@ -957,22 +1033,7 @@ export class SpaceScene {
     }
 
     // 6. Scan Holographic Pulse Expansion
-    if (this.isScanning) {
-      this.scanRadius += dt * 160;
-      this.scanWave.scale.set(this.scanRadius, this.scanRadius, this.scanRadius);
-
-      const maxScanRadius = 220;
-      const progress = this.scanRadius / maxScanRadius;
-      const mat = this.scanWave.material as THREE.MeshBasicMaterial;
-
-      if (progress >= 1) {
-        this.isScanning = false;
-        this.scanWave.visible = false;
-        mat.opacity = 0;
-      } else {
-        mat.opacity = (1 - progress) * 0.75;
-      }
-    }
+    this.updateScanWave(dt);
 
     // 7. Relativistic Warp Hyperspace Tunnel
     if (this.warpFactor > 0.05) {
@@ -1013,6 +1074,25 @@ export class SpaceScene {
       this.warpShroudMesh.rotation.z += dt * 2.2;
     } else {
       this.warpTunnelGroup.visible = false;
+    }
+  }
+
+  public update(
+    dt: number,
+    shipPos: THREE.Vector3,
+    cameraPos: THREE.Vector3,
+    throttle: number,
+    steeringYaw = 0,
+    steeringPitch = 0,
+    mode: 'flight' | 'orbit' | 'transition' = 'flight',
+    simTick = true
+  ): void {
+    if (mode === 'orbit') {
+      this.updateOrbit(dt, shipPos, cameraPos, simTick);
+    } else if (mode === 'transition') {
+      this.updateTransition(dt, shipPos, cameraPos);
+    } else {
+      this.updateSpaceFlight(dt, shipPos, cameraPos, throttle, steeringYaw, steeringPitch, simTick);
     }
   }
 

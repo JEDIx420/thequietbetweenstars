@@ -34,8 +34,11 @@ import { ExpeditionBriefing } from './ExpeditionBriefing';
 import { ShipEmoteDirector, type EmoteType } from '../game/scenes/ShipEmoteDirector';
 import type { NPCIdentity } from '../game/ecology/SentientSpeciesProfile';
 import type { StarSystemDescriptor } from '../game/systems/PlanetDescriptor';
-import { RuntimeScheduler } from '../game/performance/RuntimeScheduler';
+import { RuntimeScheduler, type SchedulerTick } from '../game/performance/RuntimeScheduler';
 import { RenderQualityController } from '../game/performance/RenderQualityController';
+import { PerformanceMonitor } from '../game/performance/PerformanceMonitor';
+import { FrameBudgetQueue } from '../game/performance/FrameBudgetQueue';
+import type { NormalizedInputState } from '../game/input/InputSource';
 
 const scratchShipForward = new THREE.Vector3();
 
@@ -123,6 +126,28 @@ export class DesktopApp {
   private inSpaceWarpCountdownEl: HTMLElement | null = null;
   private lastCourierPodState: string | null = null;
 
+  // Cached HUD DOM elements for zero querySelector hot-loop
+  private hudSpeedEl: HTMLElement | null = null;
+  private hudThrottleEl: HTMLElement | null = null;
+  private hudCreditsEl: HTMLElement | null = null;
+  private hudProximityEl: HTMLElement | null = null;
+  private hudControlsHintEl: HTMLElement | null = null;
+  private lastDisplayedSpeed: number | string = -1;
+  private lastDisplayedThrottle = '';
+  private lastDisplayedCredits = -1;
+  private lastContextPrompt = '';
+  private static readonly SURFACE_SUN_RADAR_POS = new THREE.Vector3(400, 600, 300);
+
+  // Staged Entry & Ascent Transition Timers
+  private entryElapsed = 0;
+  private readonly entryDuration = 2.2;
+  private ascentElapsed = 0;
+  private readonly ascentDuration = 1.8;
+
+  // Bound window listeners for clean disposal
+  private boundCheckOrientation: (() => void) | null = null;
+  private boundVisibilityHandler: (() => void) | null = null;
+
   constructor(container: HTMLElement) {
     this.container = container;
 
@@ -163,6 +188,7 @@ export class DesktopApp {
 
   private initGameEngine(): void {
     this.renderer = new GameRenderer(this.canvasContainer);
+    PerformanceMonitor.getInstance().setRenderer(this.renderer.renderer);
     this.renderQualityController = new RenderQualityController(this.renderer);
     this.spaceScene = new SpaceScene();
     this.shipEmoteDirector = new ShipEmoteDirector();
@@ -282,6 +308,13 @@ export class DesktopApp {
   private gameLoop(time: number): void {
     if (!this.isRunning) return;
 
+    // Check pause reasons (orientation blocker or page visibility hidden)
+    if (this.scheduler.hasPauseReason('orientation') || this.scheduler.hasPauseReason('hidden')) {
+      this.lastTime = time;
+      requestAnimationFrame((t) => this.gameLoop(t));
+      return;
+    }
+
     if (this.isTitleRevealActive) {
       this.lastTime = time;
       requestAnimationFrame((t) => this.gameLoop(t));
@@ -290,6 +323,8 @@ export class DesktopApp {
 
     const dt = Math.max(0.001, Math.min((time - this.lastTime) * 0.001, 0.05));
     this.lastTime = time;
+
+    PerformanceMonitor.getInstance().beginFrame(time);
 
     // Single WebGL Renderer & Simulation Pause for Holographic Nav Modal
     if (this.holographicNavModal && this.holographicNavModal.getIsOpen()) {
@@ -304,13 +339,44 @@ export class DesktopApp {
       requestAnimationFrame((t) => this.gameLoop(t));
       return;
     } else {
-      this.scheduler.removePauseReason('modal');
+      if (this.scheduler.hasPauseReason('modal')) {
+        this.scheduler.removePauseReason('modal');
+        this.scheduler.resetTiming();
+        this.renderQualityController.resetHistory();
+        this.lastTime = performance.now();
+      }
     }
 
     // Advance runtime scheduler and adaptive render quality controller
     this.scheduler.setPhase(this.stateMachine.getPhase());
-    this.scheduler.advance(dt);
+    const tick = this.scheduler.advance(dt);
     this.renderQualityController.update(dt);
+
+    if (tick.didTelemetryTick) {
+      if (this.surfaceScene) {
+        PerformanceMonitor.getInstance().setCounters({
+          terrainChunks: this.surfaceScene.activeTerrainChunkCount,
+          floraChunks: this.surfaceScene.activeFloraChunkCount,
+          propChunks: this.surfaceScene.activePropChunkCount,
+          faunaCount: this.surfaceScene.faunaPopulationManager.activeCount,
+          pickupCount: this.surfaceScene.creditPickupManager.activeCount,
+          trafficCount: 0,
+          realLights: 0,
+          adaptiveTier: this.renderQualityController.getCurrentTier(),
+        });
+      } else {
+        PerformanceMonitor.getInstance().setCounters({
+          terrainChunks: 0,
+          floraChunks: 0,
+          propChunks: 0,
+          faunaCount: 0,
+          pickupCount: 0,
+          trafficCount: this.spaceScene.trafficDirector?.activeCount || 0,
+          realLights: 0,
+          adaptiveTier: this.renderQualityController.getCurrentTier(),
+        });
+      }
+    }
 
     const input = this.inputManager.getNormalizedInput();
     const phase = this.stateMachine.getPhase();
@@ -329,315 +395,415 @@ export class DesktopApp {
       // Cinematic Intro Camera Directing
       this.newJourneyCinematic.update(dt, this.renderer.camera);
       const shipPos = this.flightModel.position;
-      this.spaceScene.update(dt, shipPos, this.renderer.camera.position, 0.2, 0, 0);
+      this.spaceScene.updateSpaceFlight(dt, shipPos, this.renderer.camera.position, 0.2, 0, 0, tick.didSimTick);
       this.renderer.render(this.spaceScene.scene);
       requestAnimationFrame((t) => this.gameLoop(t));
       return;
     }
 
+    // Isolated Domain Execution by Phase
     if (phase === FlightPhase.SURFACE_FLIGHT && this.surfaceScene) {
-      // 1. Surface Simulation Domain
-      const res = this.surfaceScene.update(input, dt, this.renderer.camera);
-      const throttle = input.throttle;
-      audio.updateThrottle(throttle);
-
-      // Telemetry HUD updates
-      const spdEl = this.uiContainer.querySelector('#telemetry-speed');
-      const thrEl = this.uiContainer.querySelector('#telemetry-throttle');
-      const crEl = this.uiContainer.querySelector('#telemetry-credits');
-      if (spdEl) spdEl.textContent = `${res.speedMps}`;
-      if (thrEl) thrEl.textContent = `${Math.round(throttle * 100)}% (ALT ${res.altitudeAGL}m)`;
-      if (crEl) crEl.textContent = `${this.credits}`;
-
-      // Handle Fly-Through Credit Pickup Events
-      if (res.collectedCredits && res.collectedCredits.length > 0) {
-        for (const pickup of res.collectedCredits) {
-          this.credits += pickup.amount;
-          this.collectedCreditIds.add(pickup.id);
-          audio.playBlip();
-          this.showHudNotice(`+${pickup.amount} SC // SURVEY DATA MOTE DIGITIZED`);
-        }
-        if (crEl) crEl.textContent = `${this.credits}`;
-        this.saveCurrentJourney();
-      }
-
-      // Update Local Nav Radar with surface targets (Data motes & Sentient encounter beacons)
-      if (this.navRadar && this.uiState === 'playing') {
-        const encounterSites = this.surfaceScene.faunaPopulationManager.encounterSites.map(s => ({
-          position: s.position,
-          name: s.name,
-        }));
-        this.navRadar.setSurfaceTargets(res.nearestCreditPickups, encounterSites);
-        this.navRadar.update(
-          this.surfaceScene.shipPosition,
-          this.surfaceScene.shipPhysicsRoot.quaternion,
-          new THREE.Vector3(400, 600, 300),
-          1200
-        );
-      }
-
-      // Handle F3 Debug Telemetry Overlay Updates
-      if (this.debugTelemetryVisible) {
-        this.updateDebugTelemetryOverlay(this.surfaceScene.debugTelemetry);
-      }
-
-      // Handle companion altitude adjustments
-      if (this.inputManager.consumeAction('altitude_up')) {
-        this.surfaceScene.adjustAltitude(12.0);
-      }
-      if (this.inputManager.consumeAction('altitude_down')) {
-        this.surfaceScene.adjustAltitude(-12.0);
-      }
-
-      if (res.nearbyResource) {
-        this.updateContextPrompt(`SURVEY SAMPLE DETECTED: ${res.nearbyResource.name} // PRESS SPACE TO COLLECT`);
-      } else if (res.activeScanTarget) {
-        if (res.activeScanTarget.isSentient) {
-          this.updateContextPrompt(`SENTIENT CONTACT: ${res.activeScanTarget.name.toUpperCase()} // SPACE — COMMUNICATE`);
-        } else {
-          this.updateContextPrompt(`PROXIMITY: ${res.activeScanTarget.name} // SPACE TO SCAN`);
-        }
-      } else {
-        const atmo = this.surfaceScene.currentAtmosphereState;
-        const atmoInfo = atmo ? ` · ${atmo.localTimeFormatted} [${atmo.phase}] · WX: ${atmo.weather.replace('_', ' ')}` : '';
-        this.updateContextPrompt(`SURFACE EXPLORATION${atmoInfo} // Q/E: ALTITUDE · F3: TELEMETRY · ESC: ORBIT`);
-      }
-
-      // Contextual action: Collect sample or initiate conversation or scan
-      if (this.inputManager.consumeAction('scan') || this.inputManager.consumeAction('talk') || this.inputManager.consumeAction('interact')) {
-        if (res.nearbyResource) {
-          this.collectSurveySample(res.nearbyResource);
-        } else if (res.activeScanTarget?.isSentient && res.activeScanTarget.npcData) {
-          this.startGiantConversation(res.activeScanTarget.npcData);
-        } else {
-          audio.playScanEffect();
-          this.tutorialDirector.onPlayerScan();
-
-          if (res.activeScanTarget) {
-            this.showHudNotice(`SCANNED: ${res.activeScanTarget.name} — LOG UPDATED`);
-            this.recordSurfaceDiscovery(res.activeScanTarget.name, res.activeScanTarget.info);
-            this.tutorialDirector.onPlayerDiscovery();
-          } else {
-            this.showHudNotice('SURFACE RADAR: MINERAL STRATA CONFIRMED');
-          }
-        }
-      }
-
-      if (this.inputManager.consumeAction('confirm') || this.inputManager.consumeAction('cancel') || this.inputManager.consumeAction('autopilot')) {
-        this.returnToOrbitFromSurface();
-      }
-
-      this.renderer.render(this.surfaceScene.scene);
+      this.updateSurfaceFlight(dt, tick, input);
     } else if (phase === FlightPhase.ORBIT) {
-      // 2. Orbital Inspection Domain
-      this.orbitController.update(dt, this.spaceScene.shipGroup, this.renderer.camera);
-      const shipPos = this.spaceScene.shipGroup.position;
-      this.spaceScene.update(dt, shipPos, this.renderer.camera.position, 0);
-
-      // Orbital UI interactions: A/D or arrows change site, Enter/Space enters
-      if (this.inputManager.consumeAction('confirm')) {
-        this.initiateSurfaceEntry();
-      }
-      if (this.inputManager.consumeAction('cancel')) {
-        this.leaveOrbitToSpace();
-      }
-
-      this.renderer.render(this.spaceScene.scene);
+      this.updateOrbitInspection(dt, tick, input);
+    } else if (phase === FlightPhase.ENTRY) {
+      this.updateEntryTransition(dt, tick);
+    } else if (phase === FlightPhase.ASCENT) {
+      this.updateAscentTransition(dt, tick);
     } else {
-      // 3. Space Flight & Approach Domain
-      this.flightModel.update(input, dt, this.renderer.camera);
-
-      const shipPos = this.flightModel.position;
-      const throttle = this.flightModel.getThrottle();
-      this.spaceScene.update(dt, shipPos, this.renderer.camera.position, throttle, input.axes.x, input.axes.y);
-
-      // Relativistic camera FOV expansion strictly during warp drive
-      if (this.spaceScene.warpFactor > 0.01) {
-        const targetFov = 65 + this.spaceScene.warpFactor * 26;
-        if (Math.abs(this.renderer.camera.fov - targetFov) > 0.05) {
-          this.renderer.camera.fov = THREE.MathUtils.lerp(this.renderer.camera.fov, targetFov, dt * 5.0);
-          this.renderer.camera.updateProjectionMatrix();
-        }
-      }
-
-      if (this.uiState === 'playing') {
-        audio.updateThrottle(throttle);
-      }
-
-      // Telemetry in space
-      const spdEl = this.uiContainer.querySelector('#telemetry-speed');
-      const thrEl = this.uiContainer.querySelector('#telemetry-throttle');
-      const crEl = this.uiContainer.querySelector('#telemetry-credits');
-      if (spdEl) spdEl.textContent = `${Math.round(this.flightModel.getSpeed())}`;
-      if (thrEl) thrEl.textContent = `${Math.round(throttle * 100)}%`;
-      if (crEl) crEl.textContent = `${this.credits}`;
-
-      // Check for pending courier deliveries and courier pod docking in space
-      this.updateCourierDelivery(shipPos, dt);
-
-      // Check for ambient traffic comms chatter
-      if (this.spaceScene.lastCommsHail) {
-        const hail = this.spaceScene.lastCommsHail;
-        this.spaceScene.lastCommsHail = null;
-        this.showHudNotice(hail);
-        audio.playConnectChime();
-      }
-
-      const scanReach = this.installedModules.has('mod_scanner_deep_ecology') ? 280 : 140;
-
-      // Forward vector for heading-weighted approach prioritization using module scratch vector
-      const shipForward = scratchShipForward.set(0, 0, -1).applyQuaternion(this.flightModel.quaternion);
-
-      // Check Approach Controller for planets (strictly disabled while in deep cruise)
-      const targetPlanet = (!this.deepCruiseController.state.isActive && phase !== FlightPhase.STELLAR_CRUISE)
-        ? this.approachController.update(shipPos, this.spaceScene.activePlanetList, shipForward)
-        : null;
-      if (targetPlanet) {
-        if (phase !== FlightPhase.PLANET_APPROACH) {
-          this.stateMachine.transitionTo(FlightPhase.PLANET_APPROACH);
-        }
-        this.updateApproachHUD(targetPlanet);
-
-        // Contextual SPACE action: Inspect Planet when in orbital reach
-        if (targetPlanet.canInspect && (this.inputManager.consumeAction('scan') || this.inputManager.consumeAction('confirm'))) {
-          this.engageOrbit(targetPlanet);
-        } else if (
-          targetPlanet.distance <= targetPlanet.planet.radius * 1.25 &&
-          phase !== FlightPhase.ENTRY &&
-          phase !== FlightPhase.SURFACE_FLIGHT
-        ) {
-          // Automatic atmospheric capture: flying directly into the upper atmosphere safely enters orbit
-          this.showHudNotice(`ATMOSPHERIC PENETRATION DETECTED // ORBITAL INSERTION SYNCHRONIZED`);
-          this.engageOrbit(targetPlanet);
-        }
-      } else {
-        if (phase === FlightPhase.PLANET_APPROACH) {
-          this.stateMachine.transitionTo(FlightPhase.SYSTEM_CRUISE);
-        }
-        this.clearApproachHUD();
-
-        // Check for nearby cosmic space encounters
-        const nearbyEncounter = this.spaceScene.encounterManager?.getNearbyEncounter(shipPos, scanReach);
-        if (nearbyEncounter && !nearbyEncounter.isScanned) {
-          const encDist = Math.round(nearbyEncounter.position.distanceTo(shipPos));
-          this.updateContextPrompt(`PROXIMITY: ${nearbyEncounter.name} [${encDist}m] // SPACE TO SCAN & HARVEST`);
-        }
-
-        // Normal Scanner pulse in free space
-        if (this.inputManager.consumeAction('scan')) {
-          this.spaceScene.triggerScan(shipPos);
-          audio.playScanEffect();
-          this.tutorialDirector.onPlayerScan();
-
-          // Check if scanning a nearby cosmic encounter
-          const enc = this.spaceScene.encounterManager?.getNearbyEncounter(shipPos, scanReach);
-          if (enc && !enc.isScanned) {
-            enc.isScanned = true;
-            this.credits += enc.rewardCredits;
-            if (enc.rewardSampleCategory) {
-              this.sampleInventory[enc.rewardSampleCategory] = (this.sampleInventory[enc.rewardSampleCategory] || 0) + 1;
-            }
-            audio.playConnectChime();
-            const sampleNotice = enc.rewardSampleCategory ? ` · +1 ${enc.rewardSampleCategory} SAMPLE` : '';
-            this.showHudNotice(`DISCOVERY: ${enc.name} // +${enc.rewardCredits} CREDITS${sampleNotice}`);
-            saveManager.recordDiscovery({
-              id: enc.id,
-              type: 'anomaly',
-              name: enc.name,
-              systemName: this.spaceScene.currentSystem?.name || 'Deep Space',
-              sector: { ...this.worldPosition.sector },
-              timestamp: Date.now(),
-              details: enc.logSnippet,
-              category: 'ANOMALIES',
-            });
-            this.saveCurrentJourney();
-          } else {
-            this.showHudNotice('SCAN INITIATED — ACOUSTIC RESONANCE EMITTED');
-          }
-
-          // Check if space anomalies or rare resonance trigger
-          if (this.discoveredSpecies.size + this.visitedSystems.size >= 2 && !this.narrativeDirector.resonanceFlags.has('heard_first_resonance')) {
-            this.narrativeDirector.resonanceFlags.add('heard_first_resonance');
-            this.narrativeDirector.trigger('resonance_first_hint', {}, this.getNarrativeContext(), { priority: 'high' });
-            saveManager.recordDiscovery({
-              id: 'resonance-1420-harmonic',
-              type: 'anomaly',
-              name: 'Resonance Harmonic (1420 kHz)',
-              systemName: this.spaceScene.currentSystem?.name || 'Local Star',
-              sector: { ...this.worldPosition.sector },
-              timestamp: Date.now(),
-              details: 'Unclassified prime harmonic interval detected across sub-space carrier wave.',
-              category: 'ANOMALIES',
-            });
-          }
-        }
-      }
-
-      // Update Autopilot orientation alignment
-      if (this.autopilotController.isActive) {
-        this.autopilotController.update(dt, shipPos);
-      }
-
-      // Update Interstellar Deep Cruise
-      if (this.deepCruiseController.state.isActive) {
-        this.deepCruiseController.update(dt, this.worldPosition);
-        const p = Math.round(this.deepCruiseController.state.cruiseProgress * 100);
-        const targetName = this.deepCruiseController.state.targetSystem?.name || 'DESTINATION';
-        this.updateContextPrompt(`INTERSTELLAR CRUISE // TRANSIT TO ${targetName.toUpperCase()} [${p}%]`);
-      }
-
-      // Update Local Nav Radar
-      if (this.navRadar && this.uiState === 'playing') {
-        const podId = this.spaceScene.activeCourierPod ? this.spaceScene.activeCourierPod.order.orderId : null;
-        if (podId !== this.lastCourierPodState) {
-          this.lastCourierPodState = podId;
-          const podPos = this.spaceScene.activeCourierPod ? this.spaceScene.activeCourierPod.position : undefined;
-          this.navRadar.setPlanets(this.spaceScene.activePlanetList, this.spaceScene.currentSystem?.anomalies || [], podPos);
-        }
-        this.navRadar.update(shipPos, this.flightModel.quaternion, this.spaceScene.sunPos);
-      }
-
-      // Floating-Origin Rebasing check (keeps coordinates within 2500 units)
-      const rebased = this.floatingOrigin.checkAndRebase(
-        shipPos,
-        this.worldPosition,
-        []
-      );
-      if (rebased) {
-        this.sectorManager.update(this.worldPosition);
-        this.debugOverlay.setRebaseCount(this.floatingOrigin.rebaseCount);
-        this.debugOverlay.setWorldPos(
-          `Sector [${this.worldPosition.sector.x},${this.worldPosition.sector.y},${this.worldPosition.sector.z}]`
-        );
-      }
-
-      // Periodic autosave (every 30 seconds)
-      const nowMs = performance.now();
-      if (nowMs - this.lastAutosaveTime > 30000 && this.uiState === 'playing') {
-        this.lastAutosaveTime = nowMs;
-        this.saveCurrentJourney();
-      }
-
-      // Celestial collision feedback
-      if (this.flightModel.lastCollision.hasCollided) {
-        const now = performance.now();
-        if (now - this.lastDeflectionSoundTime > 400) {
-          this.lastDeflectionSoundTime = now;
-          audio.playCollisionDeflection(this.flightModel.lastCollision.isDanger);
-          const bodyName = this.flightModel.lastCollision.collidedBody?.name || 'CELESTIAL BODY';
-          this.showHudNotice(`EXCLUSION SHELL ENGAGED — DEFLECTION ALONG ${bodyName}`);
-        }
-      }
-
-      // Handle F3 Debug Telemetry Overlay in Space
-      if (this.debugTelemetryVisible) {
-        this.updateDebugTelemetryOverlay(null);
-      }
-
-      this.renderer.render(this.spaceScene.scene);
+      this.updateNormalSpaceFlight(dt, tick, input);
     }
 
-    // Modal & Control Actions
+    this.handleModalAndSystemKeys();
+
+    this.debugOverlay.updateFrame();
+    this.debugOverlay.updateInputState(input, this.flightModel.getSpeed());
+
+    requestAnimationFrame((t) => this.gameLoop(t));
+  }
+
+  private updateSurfaceFlight(dt: number, tick: SchedulerTick, input: NormalizedInputState): void {
+    if (!this.surfaceScene) return;
+
+    const monitor = PerformanceMonitor.getInstance();
+    monitor.startTiming('sim');
+    const res = this.surfaceScene.update(input, dt, this.renderer.camera, tick);
+    monitor.stopTiming('sim');
+
+    const throttle = input.throttle;
+    audio.updateThrottle(throttle);
+
+    // Telemetry HUD updates with dirty checking
+    if (tick.didTelemetryTick) {
+      this.updateHudTelemetry(res.speedMps, `${Math.round(throttle * 100)}% (ALT ${res.altitudeAGL}m)`, this.credits);
+    }
+
+    // Handle Fly-Through Credit Pickup Events
+    if (res.collectedCredits && res.collectedCredits.length > 0) {
+      for (const pickup of res.collectedCredits) {
+        this.credits += pickup.amount;
+        this.collectedCreditIds.add(pickup.id);
+        audio.playBlip();
+        this.showHudNotice(`+${pickup.amount} SC // SURVEY DATA MOTE DIGITIZED`);
+      }
+      this.updateHudTelemetry(res.speedMps, `${Math.round(throttle * 100)}% (ALT ${res.altitudeAGL}m)`, this.credits);
+      this.saveCurrentJourney();
+    }
+
+    // Update Local Nav Radar with surface targets (throttled to telemetry cadence)
+    if (this.navRadar && this.uiState === 'playing' && tick.didTelemetryTick) {
+      const encounterSites = this.surfaceScene.faunaPopulationManager.encounterSites.map((s) => ({
+        position: s.position,
+        name: s.name,
+      }));
+      this.navRadar.setSurfaceTargets(res.nearestCreditPickups, encounterSites);
+      this.navRadar.update(
+        this.surfaceScene.shipPosition,
+        this.surfaceScene.shipPhysicsRoot.quaternion,
+        DesktopApp.SURFACE_SUN_RADAR_POS,
+        1200
+      );
+    }
+
+    // Handle F3 Debug Telemetry Overlay Updates
+    if (this.debugTelemetryVisible) {
+      this.updateDebugTelemetryOverlay(this.surfaceScene.debugTelemetry);
+    }
+
+    // Handle companion altitude adjustments
+    if (this.inputManager.consumeAction('altitude_up')) {
+      this.surfaceScene.adjustAltitude(12.0);
+    }
+    if (this.inputManager.consumeAction('altitude_down')) {
+      this.surfaceScene.adjustAltitude(-12.0);
+    }
+
+    if (res.nearbyResource) {
+      this.updateContextPrompt(`SURVEY SAMPLE DETECTED: ${res.nearbyResource.name} // PRESS SPACE TO COLLECT`);
+    } else if (res.activeScanTarget) {
+      if (res.activeScanTarget.isSentient) {
+        this.updateContextPrompt(`SENTIENT CONTACT: ${res.activeScanTarget.name.toUpperCase()} // SPACE — COMMUNICATE`);
+      } else {
+        this.updateContextPrompt(`PROXIMITY: ${res.activeScanTarget.name} // SPACE TO SCAN`);
+      }
+    } else {
+      const atmo = this.surfaceScene.currentAtmosphereState;
+      const atmoInfo = atmo ? ` · ${atmo.localTimeFormatted} [${atmo.phase}] · WX: ${atmo.weather.replace('_', ' ')}` : '';
+      this.updateContextPrompt(`SURFACE EXPLORATION${atmoInfo} // Q/E: ALTITUDE · F3: TELEMETRY · ESC: ORBIT`);
+    }
+
+    // Contextual action: Collect sample or initiate conversation or scan
+    if (this.inputManager.consumeAction('scan') || this.inputManager.consumeAction('talk') || this.inputManager.consumeAction('interact')) {
+      if (res.nearbyResource) {
+        this.collectSurveySample(res.nearbyResource);
+      } else if (res.activeScanTarget?.isSentient && res.activeScanTarget.npcData) {
+        this.startGiantConversation(res.activeScanTarget.npcData);
+      } else {
+        audio.playScanEffect();
+        this.tutorialDirector.onPlayerScan();
+
+        if (res.activeScanTarget) {
+          this.showHudNotice(`SCANNED: ${res.activeScanTarget.name} — LOG UPDATED`);
+          this.recordSurfaceDiscovery(res.activeScanTarget.name, res.activeScanTarget.info);
+          this.tutorialDirector.onPlayerDiscovery();
+        } else {
+          this.showHudNotice('SURFACE RADAR: MINERAL STRATA CONFIRMED');
+        }
+      }
+    }
+
+    if (this.inputManager.consumeAction('confirm') || this.inputManager.consumeAction('cancel') || this.inputManager.consumeAction('autopilot')) {
+      this.returnToOrbitFromSurface();
+    }
+
+    monitor.startTiming('render');
+    this.renderer.render(this.surfaceScene.scene);
+    monitor.stopTiming('render');
+  }
+
+  private updateOrbitInspection(dt: number, tick: SchedulerTick, _input: NormalizedInputState): void {
+    const monitor = PerformanceMonitor.getInstance();
+    monitor.startTiming('sim');
+    this.orbitController.update(dt, this.spaceScene.shipGroup, this.renderer.camera);
+    const shipPos = this.spaceScene.shipGroup.position;
+    this.spaceScene.updateOrbit(dt, shipPos, this.renderer.camera.position, tick.didSimTick);
+    monitor.stopTiming('sim');
+
+    // Orbital UI interactions: A/D or arrows change site, Enter/Space enters
+    if (this.inputManager.consumeAction('confirm')) {
+      this.initiateSurfaceEntry();
+    }
+    if (this.inputManager.consumeAction('cancel')) {
+      this.leaveOrbitToSpace();
+    }
+
+    monitor.startTiming('render');
+    this.renderer.render(this.spaceScene.scene);
+    monitor.stopTiming('render');
+  }
+
+  private updateEntryTransition(dt: number, _tick: SchedulerTick): void {
+    this.entryElapsed += dt;
+    // Process staged surface chunk generation within frame budget (3.5 ms max)
+    FrameBudgetQueue.getInstance().process(3.5);
+
+    // Keep camera descending smoothly into upper atmosphere
+    const shipPos = this.spaceScene.shipGroup.position;
+    this.orbitController.update(dt, this.spaceScene.shipGroup, this.renderer.camera);
+    this.spaceScene.updateTransition(dt, shipPos, this.renderer.camera.position);
+
+    const monitor = PerformanceMonitor.getInstance();
+    monitor.startTiming('render');
+    this.renderer.render(this.spaceScene.scene);
+    monitor.stopTiming('render');
+
+    // Complete entry transition
+    if (this.entryElapsed >= this.entryDuration) {
+      if (this.surfaceScene) {
+        this.surfaceScene.finishPreparation();
+      }
+      this.stateMachine.transitionTo(FlightPhase.SURFACE_FLIGHT);
+      if (this.orbitController.planet) {
+        audio.setPlanetGenome(this.orbitController.planet.seed, this.orbitController.planet);
+      }
+      this.renderSurfaceHUD();
+      this.updateControlContext(FlightPhase.SURFACE_FLIGHT);
+      this.showHudNotice(`ATMOSPHERIC PENETRATION COMPLETE // COMMENCING HOVER RECONNAISSANCE`);
+    }
+  }
+
+  private updateAscentTransition(dt: number, tick: SchedulerTick): void {
+    this.ascentElapsed += dt;
+
+    const monitor = PerformanceMonitor.getInstance();
+    // In ascent, ship climbs through upper atmosphere back to orbit
+    if (this.surfaceScene) {
+      monitor.startTiming('sim');
+      this.surfaceScene.adjustAltitude(18.0 * dt * 60);
+      this.surfaceScene.update({ axes: { x: 0, y: 0 }, roll: 0, throttle: 1 }, dt, this.renderer.camera, tick);
+      monitor.stopTiming('sim');
+
+      monitor.startTiming('render');
+      this.renderer.render(this.surfaceScene.scene);
+      monitor.stopTiming('render');
+    } else {
+      monitor.startTiming('render');
+      this.renderer.render(this.spaceScene.scene);
+      monitor.stopTiming('render');
+    }
+
+    if (this.ascentElapsed >= this.ascentDuration) {
+      if (this.surfaceScene) {
+        this.surfaceScene.dispose();
+        this.surfaceScene = null;
+      }
+      this.stateMachine.transitionTo(FlightPhase.ORBIT);
+      audio.setSystemGenome(this.spaceScene.currentSystem?.seed || 42000);
+      this.renderOrbitInspectionHUD();
+      this.updateControlContext(FlightPhase.ORBIT);
+      this.showHudNotice('ORBITAL ALTITUDE RESTORED');
+    }
+  }
+
+  private updateNormalSpaceFlight(dt: number, tick: SchedulerTick, input: NormalizedInputState): void {
+    const monitor = PerformanceMonitor.getInstance();
+    monitor.startTiming('sim');
+    this.flightModel.update(input, dt, this.renderer.camera);
+
+    const shipPos = this.flightModel.position;
+    const throttle = this.flightModel.getThrottle();
+    this.spaceScene.updateSpaceFlight(dt, shipPos, this.renderer.camera.position, throttle, input.axes.x, input.axes.y, tick.didSimTick);
+    monitor.stopTiming('sim');
+
+    // Relativistic camera FOV expansion strictly during warp drive
+    if (this.spaceScene.warpFactor > 0.01) {
+      const targetFov = 65 + this.spaceScene.warpFactor * 26;
+      if (Math.abs(this.renderer.camera.fov - targetFov) > 0.05) {
+        this.renderer.camera.fov = THREE.MathUtils.lerp(this.renderer.camera.fov, targetFov, dt * 5.0);
+        this.renderer.camera.updateProjectionMatrix();
+      }
+    }
+
+    if (this.uiState === 'playing') {
+      audio.updateThrottle(throttle);
+    }
+
+    // Telemetry in space
+    if (tick.didTelemetryTick) {
+      this.updateHudTelemetry(Math.round(this.flightModel.getSpeed()), `${Math.round(throttle * 100)}%`, this.credits);
+    }
+
+    // Check for pending courier deliveries and courier pod docking in space
+    if (tick.didSimTick) {
+      this.updateCourierDelivery(shipPos, dt);
+    }
+
+    // Check for ambient traffic comms chatter
+    if (this.spaceScene.lastCommsHail) {
+      const hail = this.spaceScene.lastCommsHail;
+      this.spaceScene.lastCommsHail = null;
+      this.showHudNotice(hail);
+      audio.playConnectChime();
+    }
+
+    const scanReach = this.installedModules.has('mod_scanner_deep_ecology') ? 280 : 140;
+
+    // Forward vector for heading-weighted approach prioritization using module scratch vector
+    const shipForward = scratchShipForward.set(0, 0, -1).applyQuaternion(this.flightModel.quaternion);
+
+    const phase = this.stateMachine.getPhase();
+    // Check Approach Controller for planets (strictly disabled while in deep cruise)
+    const targetPlanet = (!this.deepCruiseController.state.isActive && phase !== FlightPhase.STELLAR_CRUISE)
+      ? this.approachController.update(shipPos, this.spaceScene.activePlanetList, shipForward)
+      : null;
+    if (targetPlanet) {
+      if (phase !== FlightPhase.PLANET_APPROACH) {
+        this.stateMachine.transitionTo(FlightPhase.PLANET_APPROACH);
+      }
+      this.updateApproachHUD(targetPlanet);
+
+      // Contextual SPACE action: Inspect Planet when in orbital reach
+      if (targetPlanet.canInspect && (this.inputManager.consumeAction('scan') || this.inputManager.consumeAction('confirm'))) {
+        this.engageOrbit(targetPlanet);
+      } else if (
+        targetPlanet.distance <= targetPlanet.planet.radius * 1.25 &&
+        phase !== FlightPhase.ENTRY &&
+        phase !== FlightPhase.SURFACE_FLIGHT
+      ) {
+        // Automatic atmospheric capture: flying directly into the upper atmosphere safely enters orbit
+        this.showHudNotice(`ATMOSPHERIC PENETRATION DETECTED // ORBITAL INSERTION SYNCHRONIZED`);
+        this.engageOrbit(targetPlanet);
+      }
+    } else {
+      if (phase === FlightPhase.PLANET_APPROACH) {
+        this.stateMachine.transitionTo(FlightPhase.SYSTEM_CRUISE);
+      }
+      this.clearApproachHUD();
+
+      // Check for nearby cosmic space encounters
+      const nearbyEncounter = this.spaceScene.encounterManager?.getNearbyEncounter(shipPos, scanReach);
+      if (nearbyEncounter && !nearbyEncounter.isScanned) {
+        const encDist = Math.round(nearbyEncounter.position.distanceTo(shipPos));
+        this.updateContextPrompt(`PROXIMITY: ${nearbyEncounter.name} [${encDist}m] // SPACE TO SCAN & HARVEST`);
+      }
+
+      // Normal Scanner pulse in free space
+      if (this.inputManager.consumeAction('scan')) {
+        this.spaceScene.triggerScan(shipPos);
+        audio.playScanEffect();
+        this.tutorialDirector.onPlayerScan();
+
+        // Check if scanning a nearby cosmic encounter
+        const enc = this.spaceScene.encounterManager?.getNearbyEncounter(shipPos, scanReach);
+        if (enc && !enc.isScanned) {
+          enc.isScanned = true;
+          this.credits += enc.rewardCredits;
+          if (enc.rewardSampleCategory) {
+            this.sampleInventory[enc.rewardSampleCategory] = (this.sampleInventory[enc.rewardSampleCategory] || 0) + 1;
+          }
+          audio.playConnectChime();
+          const sampleNotice = enc.rewardSampleCategory ? ` · +1 ${enc.rewardSampleCategory} SAMPLE` : '';
+          this.showHudNotice(`DISCOVERY: ${enc.name} // +${enc.rewardCredits} CREDITS${sampleNotice}`);
+          saveManager.recordDiscovery({
+            id: enc.id,
+            type: 'anomaly',
+            name: enc.name,
+            systemName: this.spaceScene.currentSystem?.name || 'Deep Space',
+            sector: { ...this.worldPosition.sector },
+            timestamp: Date.now(),
+            details: enc.logSnippet,
+            category: 'ANOMALIES',
+          });
+          this.saveCurrentJourney();
+        } else {
+          this.showHudNotice('SCAN INITIATED — ACOUSTIC RESONANCE EMITTED');
+        }
+
+        // Check if space anomalies or rare resonance trigger
+        if (this.discoveredSpecies.size + this.visitedSystems.size >= 2 && !this.narrativeDirector.resonanceFlags.has('heard_first_resonance')) {
+          this.narrativeDirector.resonanceFlags.add('heard_first_resonance');
+          this.narrativeDirector.trigger('resonance_first_hint', {}, this.getNarrativeContext(), { priority: 'high' });
+          saveManager.recordDiscovery({
+            id: 'resonance-1420-harmonic',
+            type: 'anomaly',
+            name: 'Resonance Harmonic (1420 kHz)',
+            systemName: this.spaceScene.currentSystem?.name || 'Local Star',
+            sector: { ...this.worldPosition.sector },
+            timestamp: Date.now(),
+            details: 'Unclassified prime harmonic interval detected across sub-space carrier wave.',
+            category: 'ANOMALIES',
+          });
+        }
+      }
+    }
+
+    // Update Autopilot orientation alignment
+    if (this.autopilotController.isActive) {
+      this.autopilotController.update(dt, shipPos);
+    }
+
+    // Update Interstellar Deep Cruise
+    if (this.deepCruiseController.state.isActive) {
+      this.deepCruiseController.update(dt, this.worldPosition);
+      const p = Math.round(this.deepCruiseController.state.cruiseProgress * 100);
+      const targetName = this.deepCruiseController.state.targetSystem?.name || 'DESTINATION';
+      this.updateContextPrompt(`INTERSTELLAR CRUISE // TRANSIT TO ${targetName.toUpperCase()} [${p}%]`);
+    }
+
+    // Update Local Nav Radar
+    if (this.navRadar && this.uiState === 'playing') {
+      const podId = this.spaceScene.activeCourierPod ? this.spaceScene.activeCourierPod.order.orderId : null;
+      if (podId !== this.lastCourierPodState) {
+        this.lastCourierPodState = podId;
+        const podPos = this.spaceScene.activeCourierPod ? this.spaceScene.activeCourierPod.position : undefined;
+        this.navRadar.setPlanets(this.spaceScene.activePlanetList, this.spaceScene.currentSystem?.anomalies || [], podPos);
+      }
+      this.navRadar.update(shipPos, this.flightModel.quaternion, this.spaceScene.sunPos);
+    }
+
+    // Floating-Origin Rebasing check (keeps coordinates within 2500 units)
+    const rebased = this.floatingOrigin.checkAndRebase(
+      shipPos,
+      this.worldPosition,
+      []
+    );
+    if (rebased) {
+      this.sectorManager.update(this.worldPosition);
+      this.debugOverlay.setRebaseCount(this.floatingOrigin.rebaseCount);
+      this.debugOverlay.setWorldPos(
+        `Sector [${this.worldPosition.sector.x},${this.worldPosition.sector.y},${this.worldPosition.sector.z}]`
+      );
+    }
+
+    // Periodic autosave (every 30 seconds)
+    const nowMs = performance.now();
+    if (nowMs - this.lastAutosaveTime > 30000 && this.uiState === 'playing') {
+      this.lastAutosaveTime = nowMs;
+      this.saveCurrentJourney();
+    }
+
+    // Celestial collision feedback
+    if (this.flightModel.lastCollision.hasCollided) {
+      const now = performance.now();
+      if (now - this.lastDeflectionSoundTime > 400) {
+        this.lastDeflectionSoundTime = now;
+        audio.playCollisionDeflection(this.flightModel.lastCollision.isDanger);
+        const bodyName = this.flightModel.lastCollision.collidedBody?.name || 'CELESTIAL BODY';
+        this.showHudNotice(`EXCLUSION SHELL ENGAGED — DEFLECTION ALONG ${bodyName}`);
+      }
+    }
+
+    // Handle F3 Debug Telemetry Overlay in Space
+    if (this.debugTelemetryVisible) {
+      this.updateDebugTelemetryOverlay(null);
+    }
+
+    monitor.startTiming('render');
+    this.renderer.render(this.spaceScene.scene);
+    monitor.stopTiming('render');
+  }
+
+  private handleModalAndSystemKeys(): void {
     if (this.inputManager.consumeAction('map')) {
       audio.playBlip();
       this.holographicNavModal.toggle();
@@ -691,11 +857,6 @@ export class DesktopApp {
         }
       }
     }
-
-    this.debugOverlay.updateFrame();
-    this.debugOverlay.updateInputState(input, this.flightModel.getSpeed());
-
-    requestAnimationFrame((t) => this.gameLoop(t));
   }
 
   private engageOrbit(target: TargetPlanetInfo): void {
@@ -720,41 +881,30 @@ export class DesktopApp {
 
     const selectedSite = this.activeOrbitSites[this.selectedSiteIndex];
     this.stateMachine.transitionTo(FlightPhase.ENTRY);
+    this.entryElapsed = 0;
     this.showHudNotice(`ATMOSPHERIC ENTRY INITIATED // VECTOR: ${selectedSite.name}`);
 
-    // Cinematic entry ease: 2.2 seconds before transitioning to SurfaceScene
-    setTimeout(() => {
-      this.surfaceScene = new SurfaceScene(
-        this.orbitController.planet!,
-        selectedSite,
-        Array.from(this.collectedCreditIds)
-      );
-      this.stateMachine.transitionTo(FlightPhase.SURFACE_FLIGHT);
-      audio.setPlanetGenome(this.orbitController.planet!.seed, this.orbitController.planet);
-      this.renderSurfaceHUD();
-      this.updateControlContext(FlightPhase.SURFACE_FLIGHT);
-      this.showHudNotice(`ATMOSPHERIC PENETRATION COMPLETE // COMMENCING HOVER RECONNAISSANCE`);
-    }, 2200);
+    // Pre-instantiate SurfaceScene with deferred chunk initialization
+    // Progressive background worker generation will populate chunks over the 2.2s entry ease
+    if (this.surfaceScene) {
+      this.surfaceScene.dispose();
+      this.surfaceScene = null;
+    }
+    this.surfaceScene = new SurfaceScene(
+      this.orbitController.planet,
+      selectedSite,
+      Array.from(this.collectedCreditIds),
+      { deferHeavyInitialization: true }
+    );
   }
 
   private returnToOrbitFromSurface(): void {
     this.stateMachine.transitionTo(FlightPhase.ASCENT);
+    this.ascentElapsed = 0;
     this.showHudNotice('SUB-ORBITAL ASCENT THRUSTERS ENGAGED');
     if (this.debugTelemetryEl) {
       this.debugTelemetryEl.style.display = 'none';
     }
-
-    setTimeout(() => {
-      if (this.surfaceScene) {
-        this.surfaceScene.dispose();
-        this.surfaceScene = null;
-      }
-      this.stateMachine.transitionTo(FlightPhase.ORBIT);
-      audio.setSystemGenome(this.spaceScene.currentSystem?.seed || 42000);
-      this.renderOrbitInspectionHUD();
-      this.updateControlContext(FlightPhase.ORBIT);
-      this.showHudNotice('ORBITAL ALTITUDE RESTORED');
-    }, 1800);
   }
 
   private leaveOrbitToSpace(): void {
@@ -766,8 +916,49 @@ export class DesktopApp {
     this.showHudNotice('ORBIT DISENGAGED // CRUISE FLIGHT RESTORED');
   }
 
+  private cacheHudElements(): void {
+    this.hudSpeedEl = this.uiContainer.querySelector('#telemetry-speed');
+    this.hudThrottleEl = this.uiContainer.querySelector('#telemetry-throttle');
+    this.hudCreditsEl = this.uiContainer.querySelector('#telemetry-credits');
+    this.hudProximityEl = this.uiContainer.querySelector('#proximity-indicator');
+    this.hudControlsHintEl = this.uiContainer.querySelector('#hud-controls-hint');
+    this.lastDisplayedSpeed = -1;
+    this.lastDisplayedThrottle = '';
+    this.lastDisplayedCredits = -1;
+    this.lastContextPrompt = '';
+  }
+
+  private updateHudTelemetry(speed: number | string, throttle: string, credits: number): void {
+    if (!this.hudSpeedEl) {
+      this.hudSpeedEl = this.uiContainer.querySelector('#telemetry-speed');
+    }
+    if (this.hudSpeedEl && this.lastDisplayedSpeed !== speed) {
+      this.lastDisplayedSpeed = speed;
+      this.hudSpeedEl.textContent = String(speed);
+    }
+
+    if (!this.hudThrottleEl) {
+      this.hudThrottleEl = this.uiContainer.querySelector('#telemetry-throttle');
+    }
+    if (this.hudThrottleEl && this.lastDisplayedThrottle !== throttle) {
+      this.hudThrottleEl.textContent = throttle;
+      this.lastDisplayedThrottle = throttle;
+    }
+
+    if (!this.hudCreditsEl) {
+      this.hudCreditsEl = this.uiContainer.querySelector('#telemetry-credits');
+    }
+    if (this.hudCreditsEl && this.lastDisplayedCredits !== credits) {
+      this.hudCreditsEl.textContent = String(credits);
+      this.lastDisplayedCredits = credits;
+    }
+  }
+
   private updateApproachHUD(target: TargetPlanetInfo): void {
-    const el = this.uiContainer.querySelector('#proximity-indicator') as HTMLElement;
+    if (!this.hudProximityEl) {
+      this.hudProximityEl = this.uiContainer.querySelector('#proximity-indicator');
+    }
+    const el = this.hudProximityEl;
     if (!el) return;
 
     el.style.display = 'flex';
@@ -789,14 +980,22 @@ export class DesktopApp {
   }
 
   private clearApproachHUD(): void {
-    const el = this.uiContainer.querySelector('#proximity-indicator') as HTMLElement;
-    if (el) el.style.display = 'none';
+    if (!this.hudProximityEl) {
+      this.hudProximityEl = this.uiContainer.querySelector('#proximity-indicator');
+    }
+    if (this.hudProximityEl) this.hudProximityEl.style.display = 'none';
     this.touchControls?.setOrbitAvailable(false);
   }
 
   private updateContextPrompt(text: string): void {
-    const el = this.uiContainer.querySelector('#hud-controls-hint') as HTMLElement;
-    if (el) el.textContent = text;
+    if (this.lastContextPrompt === text) return;
+    this.lastContextPrompt = text;
+    if (!this.hudControlsHintEl) {
+      this.hudControlsHintEl = this.uiContainer.querySelector('#hud-controls-hint');
+    }
+    if (this.hudControlsHintEl) {
+      this.hudControlsHintEl.textContent = text;
+    }
   }
 
   private initTouchControls(): void {
@@ -807,7 +1006,7 @@ export class DesktopApp {
   }
 
   private setupOrientationHandler(): void {
-    const checkOrientation = () => {
+    this.boundCheckOrientation = () => {
       const blocker = document.getElementById('portrait-orientation-blocker');
       if (!blocker) return;
       const isPortrait = window.innerHeight > window.innerWidth;
@@ -816,22 +1015,33 @@ export class DesktopApp {
         this.scheduler.addPauseReason('orientation');
       } else if (!isPortrait) {
         blocker.style.display = 'none';
-        this.scheduler.removePauseReason('orientation');
+        if (this.scheduler.hasPauseReason('orientation')) {
+          this.scheduler.removePauseReason('orientation');
+          this.scheduler.resetTiming();
+          this.renderQualityController.resetHistory();
+          this.lastTime = performance.now();
+        }
       }
     };
-    window.addEventListener('resize', checkOrientation);
-    window.addEventListener('orientationchange', checkOrientation);
-    checkOrientation();
+    window.addEventListener('resize', this.boundCheckOrientation);
+    window.addEventListener('orientationchange', this.boundCheckOrientation);
+    this.boundCheckOrientation();
   }
 
   private setupVisibilityListener(): void {
-    document.addEventListener('visibilitychange', () => {
+    this.boundVisibilityHandler = () => {
       if (document.hidden) {
         this.scheduler.addPauseReason('hidden');
       } else {
-        this.scheduler.removePauseReason('hidden');
+        if (this.scheduler.hasPauseReason('hidden')) {
+          this.scheduler.removePauseReason('hidden');
+          this.scheduler.resetTiming();
+          this.renderQualityController.resetHistory();
+          this.lastTime = performance.now();
+        }
       }
-    });
+    };
+    document.addEventListener('visibilitychange', this.boundVisibilityHandler);
   }
 
   private updateControlContext(phase: FlightPhase): void {
@@ -1838,6 +2048,7 @@ export class DesktopApp {
 
     document.addEventListener('fullscreenchange', updateFsIcon);
     document.addEventListener('webkitfullscreenchange', updateFsIcon);
+    this.cacheHudElements();
   }
 
   private renderOrbitInspectionHUD(): void {
@@ -1967,6 +2178,7 @@ export class DesktopApp {
     this.uiContainer.querySelector('#btn-leave-orbit')?.addEventListener('click', () => {
       this.leaveOrbitToSpace();
     });
+    this.cacheHudElements();
   }
 
   private renderSurfaceHUD(): void {
@@ -2142,6 +2354,7 @@ export class DesktopApp {
 
     document.addEventListener('fullscreenchange', updateSurfaceFsIcon);
     document.addEventListener('webkitfullscreenchange', updateSurfaceFsIcon);
+    this.cacheHudElements();
   }
 
   public showHudNotice(text: string, durationMs = 3200): void {
@@ -2519,5 +2732,18 @@ export class DesktopApp {
     if (this.inSpaceWarpCountdownEl) this.inSpaceWarpCountdownEl.remove();
     if (this.touchControls) this.touchControls.dispose();
     if (this.debugTelemetryEl) this.debugTelemetryEl.remove();
+    if (this.surfaceScene) {
+      this.surfaceScene.dispose();
+      this.surfaceScene = null;
+    }
+    if (this.boundCheckOrientation) {
+      window.removeEventListener('resize', this.boundCheckOrientation);
+      window.removeEventListener('orientationchange', this.boundCheckOrientation);
+      this.boundCheckOrientation = null;
+    }
+    if (this.boundVisibilityHandler) {
+      document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
+      this.boundVisibilityHandler = null;
+    }
   }
 }

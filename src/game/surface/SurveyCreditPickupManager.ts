@@ -22,8 +22,16 @@ export class SurveyCreditPickupManager {
 
   private cellSize = 120;
   private activationRadius = 2; // Active cells radius
-  private activeCells: Map<string, CreditPickup[]> = new Map();
   private collectedIds: Set<string>;
+  private activeCells: Map<string, CreditPickup[]> = new Map();
+
+  public get activeCount(): number {
+    let count = 0;
+    for (const pickups of this.activeCells.values()) {
+      count += pickups.length;
+    }
+    return count;
+  }
 
   // Reusable geometries & materials for peak performance
   private sharedRingGeo = new THREE.TorusGeometry(0.8, 0.05, 6, 24);

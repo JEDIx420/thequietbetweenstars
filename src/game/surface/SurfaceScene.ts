@@ -17,6 +17,12 @@ import { ResourceNodeManager, type SampleNode } from './ResourceNodeManager';
 import { SurveyCreditPickupManager } from './SurveyCreditPickupManager';
 import { HeightfieldCache } from './HeightfieldCache';
 import { SpatialHash } from '../performance/SpatialHash';
+import { FrameBudgetQueue } from '../performance/FrameBudgetQueue';
+import { SurfaceGeneratorService } from './SurfaceGeneratorService';
+
+export interface SurfaceSceneOptions {
+  deferHeavyInitialization?: boolean;
+}
 
 export class SurfaceScene {
   public scene: THREE.Scene;
@@ -118,7 +124,43 @@ export class SurfaceScene {
   // Coherent noise engine
   private noise: SimplexNoise2D;
 
-  constructor(planet: PlanetDescriptor, site: LandingSite, initialCollectedCreditIds: string[] = []) {
+  // Scratch vectors for zero allocation hot-loop
+  private scratchForward = new THREE.Vector3();
+  private scratchTargetVel = new THREE.Vector3();
+  private scratchP1 = new THREE.Vector3();
+  private scratchP2 = new THREE.Vector3();
+  private scratchP3 = new THREE.Vector3();
+  private scratchP4 = new THREE.Vector3();
+  private scratchCamOffset = new THREE.Vector3();
+  private scratchTargetCamPos = new THREE.Vector3();
+  private scratchTargetCamLook = new THREE.Vector3();
+  private scratchRight = new THREE.Vector3();
+  private scratchDesiredUp = new THREE.Vector3();
+  private scratchLookOffset = new THREE.Vector3(0, 0.6, 0);
+  private boundGetHeight = (x: number, z: number): number => this.getTerrainHeight(x, z);
+
+  // Cached scan / telemetry results for sim cadence gating
+  private cachedScanTarget: { name: string; info: string; isSentient?: boolean; npcData?: NPCIdentity } | null = null;
+  private cachedNearbyResource: SampleNode | null = null;
+  private cachedCollectedCredits: Array<{ id: string; amount: number; tier: string }> = [];
+  private cachedNearestPickups: Array<{ position: THREE.Vector3; amount: number }> = [];
+
+  public get activeTerrainChunkCount(): number {
+    return this.activeChunks.size;
+  }
+  public get activeFloraChunkCount(): number {
+    return this.activeFloraChunks.size;
+  }
+  public get activePropChunkCount(): number {
+    return this.activePropChunks.size;
+  }
+
+  constructor(
+    planet: PlanetDescriptor,
+    site: LandingSite,
+    initialCollectedCreditIds: string[] = [],
+    options?: SurfaceSceneOptions
+  ) {
     this.planet = planet;
     this.site = site;
     const profile = planet.profile;
@@ -223,7 +265,15 @@ export class SurfaceScene {
     this.scene.add(this.shipPhysicsRoot);
 
     // Initial terrain generation
-    this.updateTerrain(this.shipPosition);
+    if (options?.deferHeavyInitialization) {
+      const cx = Math.floor(this.shipPosition.x / this.chunkSize);
+      const cz = Math.floor(this.shipPosition.z / this.chunkSize);
+      this.lastChunkX = cx;
+      this.lastChunkZ = cz;
+      this.stageInitialChunks(cx, cz);
+    } else {
+      this.updateTerrain(this.shipPosition);
+    }
   }
 
   public static readonly WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -240,7 +290,8 @@ export class SurfaceScene {
   public update(
     input: NormalizedInputState,
     dt: number,
-    camera: THREE.PerspectiveCamera
+    camera: THREE.PerspectiveCamera,
+    schedulerTick?: { didSimTick: boolean; didAmbientTick: boolean; didTelemetryTick: boolean }
   ): {
     activeScanTarget: { name: string; info: string; isSentient?: boolean; npcData?: NPCIdentity } | null;
     nearbyResource: SampleNode | null;
@@ -272,11 +323,11 @@ export class SurfaceScene {
     this.shipVisualRoot.rotateZ(this.shipRoll);
 
     // Forward propulsion in horizontal XZ plane
-    const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(SurfaceScene.WORLD_UP, this.shipYaw);
+    this.scratchForward.set(0, 0, -1).applyAxisAngle(SurfaceScene.WORLD_UP, this.shipYaw);
     const speed = input.throttle * 65;
-    const targetVel = forward.clone().multiplyScalar(speed);
+    this.scratchTargetVel.copy(this.scratchForward).multiplyScalar(speed);
 
-    this.shipVelocity.lerp(targetVel, clampedDt * 3.5);
+    this.shipVelocity.lerp(this.scratchTargetVel, clampedDt * 3.5);
     const currentSpeed = this.shipVelocity.length();
     this.shipPosition.x += this.shipVelocity.x * clampedDt;
     this.shipPosition.z += this.shipVelocity.z * clampedDt;
@@ -290,15 +341,15 @@ export class SurfaceScene {
     const d3 = corridorLength * 0.70;
     const d4 = corridorLength;
 
-    const p1 = this.shipPosition.clone().addScaledVector(forward, d1);
-    const p2 = this.shipPosition.clone().addScaledVector(forward, d2);
-    const p3 = this.shipPosition.clone().addScaledVector(forward, d3);
-    const p4 = this.shipPosition.clone().addScaledVector(forward, d4);
+    this.scratchP1.copy(this.shipPosition).addScaledVector(this.scratchForward, d1);
+    this.scratchP2.copy(this.shipPosition).addScaledVector(this.scratchForward, d2);
+    this.scratchP3.copy(this.shipPosition).addScaledVector(this.scratchForward, d3);
+    this.scratchP4.copy(this.shipPosition).addScaledVector(this.scratchForward, d4);
 
-    const h1 = this.getTerrainHeight(p1.x, p1.z);
-    const h2 = this.getTerrainHeight(p2.x, p2.z);
-    const h3 = this.getTerrainHeight(p3.x, p3.z);
-    const h4 = this.getTerrainHeight(p4.x, p4.z);
+    const h1 = this.getTerrainHeight(this.scratchP1.x, this.scratchP1.z);
+    const h2 = this.getTerrainHeight(this.scratchP2.x, this.scratchP2.z);
+    const h3 = this.getTerrainHeight(this.scratchP3.x, this.scratchP3.z);
+    const h4 = this.getTerrainHeight(this.scratchP4.x, this.scratchP4.z);
 
     // Dynamic slope analysis: calculate highest slope angle ahead
     const maxSlopeHeight = Math.max(h1, h2, h3, h4);
@@ -407,43 +458,34 @@ export class SurfaceScene {
     const maxCameraBankRad = 0.10;
     const targetCameraBank = THREE.MathUtils.clamp(this.shipRoll * 0.25, -maxCameraBankRad, maxCameraBankRad);
 
-    const camOffset = new THREE.Vector3(0, 1.8, 8.2).applyAxisAngle(SurfaceScene.WORLD_UP, this.shipYaw);
-    const targetCamPos = this.shipPosition.clone().add(camOffset);
-    const targetCamLook = this.shipPosition.clone()
-      .addScaledVector(forward, 14.0)
-      .add(new THREE.Vector3(0, 0.6, 0));
+    this.scratchCamOffset.set(0, 1.8, 8.2).applyAxisAngle(SurfaceScene.WORLD_UP, this.shipYaw);
+    this.scratchTargetCamPos.copy(this.shipPosition).add(this.scratchCamOffset);
+    this.scratchTargetCamLook.copy(this.shipPosition)
+      .addScaledVector(this.scratchForward, 14.0)
+      .add(this.scratchLookOffset);
 
     if (!this.isCamInitialized) {
-      this.smoothedCamPos.copy(targetCamPos);
-      this.smoothedCamLook.copy(targetCamLook);
+      this.smoothedCamPos.copy(this.scratchTargetCamPos);
+      this.smoothedCamLook.copy(this.scratchTargetCamLook);
       this.isCamInitialized = true;
     } else {
-      this.smoothedCamPos.lerp(targetCamPos, clampedDt * 5.0);
-      this.smoothedCamLook.lerp(targetCamLook, clampedDt * 6.5);
+      this.smoothedCamPos.lerp(this.scratchTargetCamPos, clampedDt * 5.0);
+      this.smoothedCamLook.lerp(this.scratchTargetCamLook, clampedDt * 6.5);
     }
 
-    const right = new THREE.Vector3().crossVectors(forward, SurfaceScene.WORLD_UP).normalize();
-    const desiredUp = SurfaceScene.WORLD_UP.clone()
-      .addScaledVector(right, -Math.sin(targetCameraBank))
+    this.scratchRight.crossVectors(this.scratchForward, SurfaceScene.WORLD_UP).normalize();
+    this.scratchDesiredUp.copy(SurfaceScene.WORLD_UP)
+      .addScaledVector(this.scratchRight, -Math.sin(targetCameraBank))
       .normalize();
 
     const upAlignment = camera.up.dot(SurfaceScene.WORLD_UP);
     const recoveryRate = upAlignment < 0.2 ? 9.0 : 4.5;
-    camera.up.lerp(desiredUp, clampedDt * recoveryRate).normalize();
+    camera.up.lerp(this.scratchDesiredUp, clampedDt * recoveryRate).normalize();
 
     camera.position.copy(this.smoothedCamPos);
     camera.lookAt(this.smoothedCamLook);
 
     this.proceduralSky.update(camera.position);
-    if (this.scene.fog instanceof THREE.FogExp2) {
-      this.currentAtmosphereState = this.atmosphereDirector.update(
-        clampedDt,
-        this.sunLight,
-        this.hemiLight,
-        this.scene.fog,
-        this.proceduralSky
-      );
-    }
     if (this.distantHorizonRing) {
       this.distantHorizonRing.position.set(camera.position.x, 0, camera.position.z);
     }
@@ -452,22 +494,74 @@ export class SurfaceScene {
       this.particlePoints.position.copy(this.shipPosition);
     }
 
-    // 7. Update Survey Credit Pickups (Fly-Through Auto-Collect & Magnetism)
-    const collectedCredits = this.creditPickupManager.update(
-      this.shipPosition,
-      clampedDt,
-      (x, z) => this.getTerrainHeight(x, z)
-    );
-    const nearestCreditPickups = this.creditPickupManager.getNearestPickups(this.shipPosition, 4);
+    const shouldSim = !schedulerTick || schedulerTick.didSimTick;
+    const shouldAmbient = !schedulerTick || schedulerTick.didAmbientTick;
+    const shouldTelemetry = !schedulerTick || schedulerTick.didTelemetryTick;
 
-    // 8. Update streamed living ecology & Giant encounters
-    const getHeightFn = (x: number, z: number) => this.getTerrainHeight(x, z);
-    this.faunaPopulationManager.update(this.shipPosition, input.throttle, clampedDt, getHeightFn);
+    if (shouldAmbient && this.scene.fog instanceof THREE.FogExp2) {
+      this.currentAtmosphereState = this.atmosphereDirector.update(
+        clampedDt,
+        this.sunLight,
+        this.hemiLight,
+        this.scene.fog,
+        this.proceduralSky
+      );
+    }
 
-    // 9. Terrain and liquid streaming updates
-    this.updateTerrain(this.shipPosition);
+    if (shouldSim) {
+      // 7. Update Survey Credit Pickups (Fly-Through Auto-Collect & Magnetism)
+      this.cachedCollectedCredits = this.creditPickupManager.update(
+        this.shipPosition,
+        clampedDt,
+        this.boundGetHeight
+      );
+      this.cachedNearestPickups = this.creditPickupManager.getNearestPickups(this.shipPosition, 4);
 
-    // 10. Check for nearby scannable landmark, fauna, sentient giant, or survey sample
+      // 8. Update streamed living ecology & Giant encounters
+      this.faunaPopulationManager.update(
+        this.shipPosition,
+        input.throttle,
+        clampedDt,
+        this.boundGetHeight
+      );
+
+      // 9. Terrain and liquid streaming updates
+      this.updateTerrain(this.shipPosition);
+
+      // 10. Check for nearby scannable landmark, fauna, sentient giant, or survey sample
+      this.updateScanTargets();
+    } else {
+      this.cachedCollectedCredits = [];
+    }
+
+    const altitudeAGL = Math.max(0, Math.round(this.shipPosition.y - currentGround));
+    const speedMps = Math.round(this.shipVelocity.length());
+
+    // Record Telemetry at telemetry cadence
+    if (shouldTelemetry) {
+      this.debugTelemetry.shipPos.copy(this.shipPosition);
+      this.debugTelemetry.groundHeight = currentGround;
+      this.debugTelemetry.anticipatedGround = anticipatedGround;
+      this.debugTelemetry.actualAGL = this.shipPosition.y - currentGround;
+      this.debugTelemetry.desiredAGL = this.desiredAltitudeAGL;
+      this.debugTelemetry.verticalVelocity = this.verticalVelocity;
+      this.debugTelemetry.verticalAcceleration = this.verticalAcceleration;
+      this.debugTelemetry.speedMps = speedMps;
+      this.debugTelemetry.terrainAssistActive = this.terrainAssistActive;
+      this.debugTelemetry.dt = clampedDt;
+    }
+
+    return {
+      activeScanTarget: this.cachedScanTarget,
+      nearbyResource: this.cachedNearbyResource,
+      altitudeAGL,
+      speedMps,
+      collectedCredits: this.cachedCollectedCredits,
+      nearestCreditPickups: this.cachedNearestPickups,
+    };
+  }
+
+  private updateScanTargets(): void {
     let scanTarget: { name: string; info: string; isSentient?: boolean; npcData?: NPCIdentity } | null = null;
     let minDist = 65;
 
@@ -519,29 +613,8 @@ export class SurfaceScene {
       }
     }
 
-    const altitudeAGL = Math.max(0, Math.round(this.shipPosition.y - currentGround));
-    const speedMps = Math.round(this.shipVelocity.length());
-
-    // Record Telemetry
-    this.debugTelemetry.shipPos.copy(this.shipPosition);
-    this.debugTelemetry.groundHeight = currentGround;
-    this.debugTelemetry.anticipatedGround = anticipatedGround;
-    this.debugTelemetry.actualAGL = this.shipPosition.y - currentGround;
-    this.debugTelemetry.desiredAGL = this.desiredAltitudeAGL;
-    this.debugTelemetry.verticalVelocity = this.verticalVelocity;
-    this.debugTelemetry.verticalAcceleration = this.verticalAcceleration;
-    this.debugTelemetry.speedMps = speedMps;
-    this.debugTelemetry.terrainAssistActive = this.terrainAssistActive;
-    this.debugTelemetry.dt = clampedDt;
-
-    return {
-      activeScanTarget: scanTarget,
-      nearbyResource,
-      altitudeAGL,
-      speedMps,
-      collectedCredits,
-      nearestCreditPickups,
-    };
+    this.cachedScanTarget = scanTarget;
+    this.cachedNearbyResource = nearbyResource;
   }
 
   public getTerrainHeight(x: number, z: number): number {
@@ -680,34 +753,7 @@ export class SurfaceScene {
         if (!this.activeChunks.has(key)) {
           const chunkX = cx + dx;
           const chunkZ = cz + dz;
-          const mesh = this.createTerrainChunk(chunkX, chunkZ);
-          this.terrainGroup.add(mesh);
-          this.activeChunks.set(key, mesh);
-
-          // Liquid plane chunk if applicable
-          if (this.planet.profile.terrain.hasLiquid) {
-            const liquidMesh = this.createLiquidChunk(chunkX, chunkZ);
-            this.liquidGroup.add(liquidMesh);
-            this.activeLiquidChunks.set(key, liquidMesh);
-          }
-
-          // Spawn procedural flora
-          const floraMeshes = FloraGenerator.createFloraInstances(
-            this.site.region,
-            chunkX,
-            chunkZ,
-            this.chunkSize,
-            (x, z) => this.getTerrainHeight(x, z)
-          );
-          if (floraMeshes.length > 0) {
-            for (const fMesh of floraMeshes) {
-              this.floraGroup.add(fMesh);
-            }
-            this.activeFloraChunks.set(key, floraMeshes);
-          }
-
-          // Spawn procedural landmark props
-          this.spawnChunkProps(chunkX, chunkZ);
+          this.buildChunk(chunkX, chunkZ, key);
         }
       }
     }
@@ -760,6 +806,106 @@ export class SurfaceScene {
           const removedMeshes = new Set(propData.meshes);
           this.scannableProps = this.scannableProps.filter((p) => !removedMeshes.has(p.mesh));
           this.activePropChunks.delete(key);
+        }
+      }
+    }
+  }
+
+  private buildChunk(chunkX: number, chunkZ: number, key: string): void {
+    if (this.activeChunks.has(key)) return;
+
+    const mesh = this.createTerrainChunk(chunkX, chunkZ);
+    this.terrainGroup.add(mesh);
+    this.activeChunks.set(key, mesh);
+
+    // Liquid plane chunk if applicable
+    if (this.planet.profile.terrain.hasLiquid) {
+      const liquidMesh = this.createLiquidChunk(chunkX, chunkZ);
+      this.liquidGroup.add(liquidMesh);
+      this.activeLiquidChunks.set(key, liquidMesh);
+    }
+
+    // Spawn procedural flora
+    const floraMeshes = FloraGenerator.createFloraInstances(
+      this.site.region,
+      chunkX,
+      chunkZ,
+      this.chunkSize,
+      this.boundGetHeight
+    );
+    if (floraMeshes.length > 0) {
+      for (const fMesh of floraMeshes) {
+        this.floraGroup.add(fMesh);
+      }
+      this.activeFloraChunks.set(key, floraMeshes);
+    }
+
+    // Spawn procedural landmark props
+    this.spawnChunkProps(chunkX, chunkZ);
+  }
+
+  private stageInitialChunks(cx: number, cz: number): void {
+    const radius = 1;
+    const queue = FrameBudgetQueue.getInstance();
+    const service = SurfaceGeneratorService.getInstance();
+
+    // 1. Worker pre-generation requests for 9 chunks
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        const chunkX = cx + dx;
+        const chunkZ = cz + dz;
+        service.requestChunkHeights({
+          id: `${chunkX}:${chunkZ}`,
+          cx: chunkX,
+          cz: chunkZ,
+          chunkSize: this.chunkSize,
+          segments: this.chunkSegments,
+          regionSeed: this.site.region.regionSeed || this.planet.seed,
+          morphology: this.site.region.terrainMorphologyOverride,
+          heightScale: this.site.region.heightScale,
+          roughness: this.site.region.roughness,
+          domainWarp: this.planet.profile.terrain.domainWarp,
+          duneStrength: this.site.region.duneStrength,
+          canyonStrength: this.site.region.canyonStrength,
+          ridgeStrength: this.site.region.ridgeStrength,
+        }).then((res) => {
+          this.heightfieldCache.insertChunk(res.cx, res.cz, res.heights, res.minY, res.maxY);
+        }).catch(() => {});
+      }
+    }
+
+    // 2. Enqueue staged chunk construction into FrameBudgetQueue
+    // Center chunk (highest priority 10)
+    queue.enqueue(`surface-chunk-${cx}-${cz}`, () => {
+      this.buildChunk(cx, cz, `${cx},${cz}`);
+    }, 10);
+
+    // Surrounding chunks (priority 5)
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        if (dx === 0 && dz === 0) continue;
+        const chunkX = cx + dx;
+        const chunkZ = cz + dz;
+        const key = `${chunkX},${chunkZ}`;
+        queue.enqueue(`surface-chunk-${chunkX}-${chunkZ}`, () => {
+          this.buildChunk(chunkX, chunkZ, key);
+        }, 5);
+      }
+    }
+  }
+
+  public finishPreparation(): void {
+    const radius = 1;
+    const cx = this.lastChunkX ?? Math.floor(this.shipPosition.x / this.chunkSize);
+    const cz = this.lastChunkZ ?? Math.floor(this.shipPosition.z / this.chunkSize);
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        const chunkX = cx + dx;
+        const chunkZ = cz + dz;
+        const key = `${chunkX},${chunkZ}`;
+        FrameBudgetQueue.getInstance().cancel(`surface-chunk-${chunkX}-${chunkZ}`);
+        if (!this.activeChunks.has(key)) {
+          this.buildChunk(chunkX, chunkZ, key);
         }
       }
     }
@@ -975,6 +1121,8 @@ export class SurfaceScene {
   }
 
   public dispose(): void {
+    FrameBudgetQueue.getInstance().clear();
+    this.heightfieldCache.clear();
     this.proceduralSky.dispose();
     this.faunaPopulationManager.dispose();
     this.resourceManager.dispose();

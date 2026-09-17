@@ -38,18 +38,44 @@ export class HolographicNavModal {
   public selectedSystem: StarSystemDescriptor | null = null;
   public activeCourseSystem: StarSystemDescriptor | null = null;
 
-  // Reusable geometries & materials for star nodes
-  private sharedStarGeo = new THREE.SphereGeometry(2.4, 12, 12);
-  private sharedRingGeo = new THREE.RingGeometry(3.6, 4.0, 24);
-  private sharedHitboxGeo = new THREE.SphereGeometry(6.0, 8, 8);
+  // Shared persistent geometries & materials
+  private sharedStarGeo = new THREE.SphereGeometry(2.2, 16, 16);
+  private sharedRingGeo = new THREE.RingGeometry(4.0, 4.6, 32);
+  private sharedOriginGeo = new THREE.SphereGeometry(2.0, 16, 16);
+  private sharedOriginRingGeo: THREE.RingGeometry;
+  private sharedHitboxGeo = new THREE.SphereGeometry(7.0, 8, 8);
   private sharedHitboxMat = new THREE.MeshBasicMaterial({ visible: false });
   private sharedStemMat = new THREE.LineBasicMaterial({
     color: 0x0284c7,
     transparent: true,
     opacity: 0.35,
+    depthWrite: false,
   });
   private batchedStemGeo: THREE.BufferGeometry | null = null;
   private nodeMaterials: THREE.Material[] = [];
+  private systemMaterials: THREE.Material[] = [];
+  private systemGeometries: THREE.BufferGeometry[] = [];
+
+  // Interaction & Raycasting state
+  private raycaster = new THREE.Raycaster();
+  private mouse = new THREE.Vector2();
+  private animId: number | null = null;
+  private isDisposed = false;
+
+  // Window event listeners
+  private handleWindowResize = (): void => {
+    if (this.isVisible) this.resize();
+  };
+  private handleWindowKeydown = (e: KeyboardEvent): void => {
+    if (!this.isVisible) return;
+    if (e.key === 'Escape') {
+      if (this.countdownInterval !== null) {
+        this.abortCountdown();
+      } else {
+        this.close();
+      }
+    }
+  };
 
   // 3D Scene Groups
   private gridGroup = new THREE.Group();
@@ -75,11 +101,6 @@ export class HolographicNavModal {
   private isDragging = false;
   private prevMouseX = 0;
   private prevMouseY = 0;
-
-  private raycaster = new THREE.Raycaster();
-  private mouse = new THREE.Vector2();
-  private animId: number | null = null;
-  private isDisposed = false;
 
   // Countdown timer state
   private countdownInterval: number | null = null;
@@ -330,6 +351,9 @@ export class HolographicNavModal {
     this.destinationsListEl = this.container.querySelector('#holo-destinations-list') as HTMLElement;
     this.countdownOverlayEl = this.container.querySelector('#holo-warp-countdown') as HTMLElement;
 
+    this.sharedOriginRingGeo = new THREE.RingGeometry(3.6, 4.2, 32);
+    this.sharedOriginRingGeo.rotateX(Math.PI / 2);
+
     // Three.js holographic scene setup
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.FogExp2(0x020306, 0.0018);
@@ -549,22 +573,19 @@ export class HolographicNavModal {
     }
     this.starNodes = [];
 
-    // 1. Build Player Origin Beacon at (0, 0, 0)
-    const originGeo = new THREE.SphereGeometry(2.0, 16, 16);
+    // 1. Build Player Origin Beacon at (0, 0, 0) (using shared persistent geometries)
     const originMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
-    const originMesh = new THREE.Mesh(originGeo, originMat);
+    const originMesh = new THREE.Mesh(this.sharedOriginGeo, originMat);
     this.originGroup.add(originMesh);
     this.nodeMaterials.push(originMat);
 
-    const originRingGeo = new THREE.RingGeometry(3.6, 4.2, 32);
-    originRingGeo.rotateX(Math.PI / 2);
     const originRingMat = new THREE.MeshBasicMaterial({
       color: 0x34d399,
       transparent: true,
       opacity: 0.6,
       side: THREE.DoubleSide,
     });
-    const originRing = new THREE.Mesh(originRingGeo, originRingMat);
+    const originRing = new THREE.Mesh(this.sharedOriginRingGeo, originRingMat);
     this.originGroup.add(originRing);
     this.nodeMaterials.push(originRingMat);
 
@@ -776,13 +797,23 @@ export class HolographicNavModal {
     while (this.systemOrbitGroup.children.length > 0) {
       this.systemOrbitGroup.remove(this.systemOrbitGroup.children[0]);
     }
+    for (const geo of this.systemGeometries) {
+      geo.dispose();
+    }
+    this.systemGeometries = [];
+    for (const mat of this.systemMaterials) {
+      mat.dispose();
+    }
+    this.systemMaterials = [];
 
     const sys = this.selectedSystem;
     if (!sys) return;
 
     // Central Star
     const starGeo = new THREE.SphereGeometry(4.2, 20, 20);
+    this.systemGeometries.push(starGeo);
     const starMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(sys.star.lightColor) });
+    this.systemMaterials.push(starMat);
     const star = new THREE.Mesh(starGeo, starMat);
     this.systemOrbitGroup.add(star);
 
@@ -794,20 +825,24 @@ export class HolographicNavModal {
       // Orbit ring
       const ringGeo = new THREE.RingGeometry(r - 0.12, r + 0.12, 48);
       ringGeo.rotateX(Math.PI / 2);
+      this.systemGeometries.push(ringGeo);
       const ringMat = new THREE.MeshBasicMaterial({
         color: 0x38bdf8,
         transparent: true,
         opacity: 0.25,
         side: THREE.DoubleSide,
       });
+      this.systemMaterials.push(ringMat);
       const ring = new THREE.Mesh(ringGeo, ringMat);
       this.systemOrbitGroup.add(ring);
 
       // Planet body
       const planetGeo = new THREE.SphereGeometry(1.4, 12, 12);
+      this.systemGeometries.push(planetGeo);
       const planetMat = new THREE.MeshBasicMaterial({
         color: new THREE.Color(p.palette.primary || 0x60a5fa),
       });
+      this.systemMaterials.push(planetMat);
       const planet = new THREE.Mesh(planetGeo, planetMat);
       const ang = (i / Math.max(1, sys.planets.length)) * Math.PI * 2 + 0.5;
       planet.position.set(Math.cos(ang) * r, 0, Math.sin(ang) * r);
@@ -844,9 +879,7 @@ export class HolographicNavModal {
     });
 
     // Window resize
-    window.addEventListener('resize', () => {
-      if (this.isVisible) this.resize();
-    });
+    window.addEventListener('resize', this.handleWindowResize);
 
     // Pointer drag for 3D Camera Orbit (Mouse & Touch)
     let pointerDragDist = 0;
@@ -940,16 +973,7 @@ export class HolographicNavModal {
     });
 
     // Keyboard Escape to abort countdown or close
-    window.addEventListener('keydown', (e) => {
-      if (!this.isVisible) return;
-      if (e.key === 'Escape') {
-        if (this.countdownInterval !== null) {
-          this.abortCountdown();
-        } else {
-          this.close();
-        }
-      }
-    });
+    window.addEventListener('keydown', this.handleWindowKeydown);
   }
 
   private updateCameraOrbit(): void {
@@ -1178,6 +1202,8 @@ export class HolographicNavModal {
 
     this.sharedStarGeo.dispose();
     this.sharedRingGeo.dispose();
+    this.sharedOriginGeo.dispose();
+    this.sharedOriginRingGeo.dispose();
     this.sharedHitboxGeo.dispose();
     this.sharedHitboxMat.dispose();
     this.sharedStemMat.dispose();
@@ -1189,6 +1215,18 @@ export class HolographicNavModal {
       mat.dispose();
     }
     this.nodeMaterials = [];
+
+    for (const geo of this.systemGeometries) {
+      geo.dispose();
+    }
+    this.systemGeometries = [];
+    for (const mat of this.systemMaterials) {
+      mat.dispose();
+    }
+    this.systemMaterials = [];
+
+    window.removeEventListener('resize', this.handleWindowResize);
+    window.removeEventListener('keydown', this.handleWindowKeydown);
 
     if (this.renderer) {
       this.renderer.dispose();

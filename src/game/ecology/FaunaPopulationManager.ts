@@ -281,6 +281,10 @@ export class FaunaPopulationManager {
     return this.activeCreaturesCache;
   }
 
+  public get activeCount(): number {
+    return this.getActiveCreatures().length;
+  }
+
   public getEncounterSites(): SentientEncounterSite[] {
     return this.encounterSites;
   }

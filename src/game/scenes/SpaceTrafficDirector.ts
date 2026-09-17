@@ -59,6 +59,10 @@ export class SpaceTrafficDirector {
     this.initVessels();
   }
 
+  public get activeCount(): number {
+    return this.vessels.length;
+  }
+
   private initLightPool(): void {
     for (let i = 0; i < 4; i++) {
       const light = new THREE.PointLight(0xfacc15, 0, 80);

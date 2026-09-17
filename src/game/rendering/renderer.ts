@@ -36,20 +36,21 @@ export class GameRenderer {
     this.setupListeners();
   }
 
+  private handleResize = (): void => {
+    const width = this.container.clientWidth;
+    const height = Math.max(1, this.container.clientHeight);
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(width, height);
+  };
+
+  private handleVisibilityChange = (): void => {
+    this.isPaused = document.hidden;
+  };
+
   private setupListeners(): void {
-    const handleResize = () => {
-      const width = this.container.clientWidth;
-      const height = Math.max(1, this.container.clientHeight);
-      this.camera.aspect = width / height;
-      this.camera.updateProjectionMatrix();
-      this.renderer.setSize(width, height);
-    };
-
-    window.addEventListener('resize', handleResize);
-
-    document.addEventListener('visibilitychange', () => {
-      this.isPaused = document.hidden;
-    });
+    window.addEventListener('resize', this.handleResize);
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
   }
 
   public render(scene: THREE.Scene, camera?: THREE.PerspectiveCamera): void {
@@ -67,6 +68,9 @@ export class GameRenderer {
   }
 
   public dispose(): void {
+    window.removeEventListener('resize', this.handleResize);
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
     }

@@ -13,6 +13,8 @@ import { CourierPod } from '../src/game/flight/CourierPod';
 import { SpaceTrafficDirector } from '../src/game/scenes/SpaceTrafficDirector';
 import { SpaceEncounterManager } from '../src/game/scenes/SpaceEncounterManager';
 import { SpaceScene } from '../src/game/scenes/spaceScene';
+import { FrameBudgetQueue } from '../src/game/performance/FrameBudgetQueue';
+import { SurfaceGeneratorService } from '../src/game/surface/SurfaceGeneratorService';
 
 // Mock DOM elements for headless Node environment
 if (typeof (globalThis as any).document === 'undefined') {
@@ -326,6 +328,169 @@ describe('Performance Engine & Lifecycle Regression Suite', () => {
     it('disposes SpaceScene without memory leaks or errors', () => {
       const scene = new SpaceScene();
       expect(() => scene.dispose()).not.toThrow();
+    });
+  });
+
+  describe('RuntimeScheduler Phase Domain Isolation', () => {
+    it('isolates ENTRY and ASCENT from normal space flight', () => {
+      const scheduler = new RuntimeScheduler();
+
+      scheduler.setPhase(FlightPhase.ENTRY);
+      expect(scheduler.shouldRunEntry()).toBe(true);
+      expect(scheduler.shouldRunSpaceFlight()).toBe(false);
+      expect(scheduler.shouldRunOrbit()).toBe(false);
+      expect(scheduler.shouldRunSurfaceFlight()).toBe(false);
+
+      scheduler.setPhase(FlightPhase.ASCENT);
+      expect(scheduler.shouldRunAscent()).toBe(true);
+      expect(scheduler.shouldRunSpaceFlight()).toBe(false);
+      expect(scheduler.shouldRunOrbit()).toBe(false);
+      expect(scheduler.shouldRunSurfaceFlight()).toBe(false);
+
+      scheduler.setPhase(FlightPhase.SYSTEM_CRUISE);
+      expect(scheduler.shouldRunSpaceFlight()).toBe(true);
+      expect(scheduler.shouldRunEntry()).toBe(false);
+      expect(scheduler.shouldRunAscent()).toBe(false);
+    });
+
+    it('pauses simulation on orientation and hidden pause reasons', () => {
+      const scheduler = new RuntimeScheduler();
+
+      scheduler.addPauseReason('orientation');
+      expect(scheduler.isPaused()).toBe(true);
+      const tick1 = scheduler.advance(0.05);
+      expect(tick1.dt).toBe(0);
+      expect(tick1.didSimTick).toBe(false);
+
+      scheduler.removePauseReason('orientation');
+      expect(scheduler.isPaused()).toBe(false);
+
+      scheduler.addPauseReason('hidden');
+      expect(scheduler.isPaused()).toBe(true);
+      const tick2 = scheduler.advance(0.05);
+      expect(tick2.dt).toBe(0);
+
+      scheduler.removePauseReason('hidden');
+      scheduler.resetTiming();
+      expect(scheduler.isPaused()).toBe(false);
+    });
+  });
+
+  describe('FrameBudgetQueue Staged Execution', () => {
+    it('executes prioritized tasks within time slice budget', () => {
+      const queue = FrameBudgetQueue.getInstance();
+      queue.clear();
+
+      const executed: number[] = [];
+      queue.enqueue('t1', () => { executed.push(1); }, 10);
+      queue.enqueue('t2', () => { executed.push(2); }, 20); // Higher priority
+      queue.enqueue('t3', () => { executed.push(3); }, 5);
+
+      expect(queue.pendingCount).toBe(3);
+
+      // Process with ample budget
+      queue.process(10.0);
+
+      expect(executed).toEqual([2, 1, 3]);
+      expect(queue.pendingCount).toBe(0);
+    });
+  });
+
+  describe('SurfaceGeneratorService Pure Procedural Worker & Cache Consumption', () => {
+    it('generates transferable chunk heights and caches them', async () => {
+      const service = SurfaceGeneratorService.getInstance();
+      const task = {
+        id: 'chunk_0_0',
+        cx: 0,
+        cz: 0,
+        chunkSize: 120,
+        segments: 32,
+        regionSeed: 424242,
+        morphology: 'dunes',
+        heightScale: 60,
+        roughness: 0.5,
+        domainWarp: 0.3,
+        duneStrength: 0.8,
+        canyonStrength: 0.0,
+        ridgeStrength: 0.2,
+      };
+
+      const result = await service.requestChunkHeights(task);
+      expect(result.heights).toBeInstanceOf(Float32Array);
+      expect(result.heights.length).toBe(33 * 33);
+      expect(result.minY).toBeLessThanOrEqual(result.maxY);
+
+      // Insert into HeightfieldCache
+      const cache = new HeightfieldCache((_x, _z) => 0, 120, 32, 10);
+      expect(cache.hasChunk(0, 0)).toBe(false);
+
+      cache.insertChunk(0, 0, result.heights, result.minY, result.maxY);
+      expect(cache.hasChunk(0, 0)).toBe(true);
+
+      const cached = cache.getChunkHeightfield(0, 0);
+      expect(cached.heights[0]).toBe(result.heights[0]);
+    });
+  });
+
+  describe('RenderQualityController Multi-Cycle Sustained Hysteresis', () => {
+    it('requires multiple sustained poor cycles before stepping down DPR', () => {
+      let currentDpr = 2.0;
+      const mockRenderer: any = {
+        getPixelRatio: () => currentDpr,
+        setPixelRatio: (val: number) => { currentDpr = val; },
+      };
+
+      const mockMonitor: any = {
+        getMetrics: () => ({
+          p95FrameTimeMs: 25.0, // Over 22ms threshold
+        }),
+      };
+
+      const controller = new RenderQualityController(mockRenderer, mockMonitor, {
+        minDpr: 1.0,
+        maxDpr: 2.0,
+        cooldownMs: 50,
+        stepDownThresholdMs: 22.0,
+        sustainedPoorCycles: 2,
+      });
+
+      // Cycle 1: should not adjust yet
+      controller.update(0.1);
+      expect(currentDpr).toBe(2.0);
+
+      // Cycle 2: meets sustained count of 2, steps down
+      controller.update(0.1);
+      expect(currentDpr).toBeLessThan(2.0);
+    });
+
+    it('resets history on resetHistory call without step-down', () => {
+      let currentDpr = 2.0;
+      const mockRenderer: any = {
+        getPixelRatio: () => currentDpr,
+        setPixelRatio: (val: number) => { currentDpr = val; },
+      };
+
+      const mockMonitor: any = {
+        getMetrics: () => ({
+          p95FrameTimeMs: 26.0,
+        }),
+      };
+
+      const controller = new RenderQualityController(mockRenderer, mockMonitor, {
+        minDpr: 1.0,
+        maxDpr: 2.0,
+        cooldownMs: 50,
+        sustainedPoorCycles: 2,
+      });
+
+      controller.update(0.1); // 1st poor frame
+      expect(currentDpr).toBe(2.0);
+
+      // Modal closed or tab resumed
+      controller.resetHistory();
+
+      controller.update(0.1); // 1st poor frame again after reset
+      expect(currentDpr).toBe(2.0);
     });
   });
 });

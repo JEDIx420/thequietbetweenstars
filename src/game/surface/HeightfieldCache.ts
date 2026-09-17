@@ -78,6 +78,43 @@ export class HeightfieldCache {
     return chunkData;
   }
 
+  public hasChunk(cx: number, cz: number): boolean {
+    return this.cache.has(this.getChunkKey(cx, cz));
+  }
+
+  public insertChunk(
+    cx: number,
+    cz: number,
+    heights: Float32Array,
+    minY?: number,
+    maxY?: number
+  ): ChunkHeightfield {
+    const key = this.getChunkKey(cx, cz);
+    let min = minY;
+    let max = maxY;
+    if (min === undefined || max === undefined) {
+      min = Infinity;
+      max = -Infinity;
+      for (let i = 0; i < heights.length; i++) {
+        const h = heights[i];
+        if (h < min) min = h;
+        if (h > max) max = h;
+      }
+    }
+
+    const chunkData: ChunkHeightfield = { cx, cz, minY: min, maxY: max, heights };
+
+    if (this.cache.size >= this.maxCachedChunks) {
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey) {
+        this.cache.delete(oldestKey);
+      }
+    }
+
+    this.cache.set(key, chunkData);
+    return chunkData;
+  }
+
   /**
    * Sample terrain height at arbitrary (x, z) world coordinates using bilinear interpolation
    * between the 4 nearest grid vertices of the cached chunk.

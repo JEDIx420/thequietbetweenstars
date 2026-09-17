@@ -2,6 +2,13 @@ import { FlightPhase } from '../flight/FlightStateMachine';
 
 export type PauseReason = 'modal' | 'orientation' | 'hidden' | 'title' | 'custom';
 
+export interface SchedulerTick {
+  dt: number;
+  didSimTick: boolean;
+  didAmbientTick: boolean;
+  didTelemetryTick: boolean;
+}
+
 export class RuntimeScheduler {
   private pauseReasons: Set<string> = new Set();
   private currentPhase: FlightPhase = FlightPhase.SYSTEM_CRUISE;
