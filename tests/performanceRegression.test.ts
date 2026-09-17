@@ -539,7 +539,7 @@ describe('Performance Engine & Lifecycle Regression Suite', () => {
       scene.dispose();
     });
 
-    it('finishPreparation() only builds center chunk synchronously if missing, leaving surrounding chunks in queue', () => {
+    it('finishPreparation() never causes synchronous generation or chunk construction when center preparation is incomplete', () => {
       FrameBudgetQueue.getInstance().clear();
       const { planet, site } = getTestPlanetAndSite();
       const scene = new SurfaceScene(planet, site, [], { deferHeavyInitialization: true });
@@ -547,12 +547,53 @@ describe('Performance Engine & Lifecycle Regression Suite', () => {
       expect(scene.activeTerrainChunkCount).toBe(0);
       expect(scene.isCenterReady()).toBe(false);
 
-      // Immediate touchdown call before background generator resolves
+      // Calling finishPreparation while center chunk preparation is incomplete
+      // must NEVER synchronously generate heightfields or build chunk meshes.
       scene.finishPreparation();
 
-      // Only center chunk is built synchronously
+      expect(scene.activeTerrainChunkCount).toBe(0);
+      expect(scene.isCenterReady()).toBe(false);
+
+      const cache = (scene as any).heightfieldCache as HeightfieldCache;
+      expect(cache.hasChunk(0, 0)).toBe(false);
+
+      scene.dispose();
+    });
+
+    it('retries chunk generation via progressive fallback when worker generation fails', async () => {
+      FrameBudgetQueue.getInstance().clear();
+      const { planet, site } = getTestPlanetAndSite();
+
+      // Temporarily simulate Worker service rejection
+      const service = SurfaceGeneratorService.getInstance();
+      const originalRequest = service.requestChunkHeights.bind(service);
+      let didRejectWorker = false;
+      service.requestChunkHeights = () => {
+        didRejectWorker = true;
+        return Promise.reject(new Error('Simulated Worker Failure'));
+      };
+
+      const scene = new SurfaceScene(planet, site, [], { deferHeavyInitialization: true });
+      const cache = (scene as any).heightfieldCache as HeightfieldCache;
+
+      // Restore service method
+      service.requestChunkHeights = originalRequest;
+      expect(didRejectWorker).toBe(true);
+
+      // Wait for progressive fallback generator to finish
+      await new Promise((r) => setTimeout(r, 120));
+
+      // Center chunk (0, 0) should now be inserted in cache via progressive fallback
+      expect(cache.hasChunk(0, 0)).toBe(true);
+
+      // FrameBudgetQueue should have the task queued
+      const queue = FrameBudgetQueue.getInstance();
+      expect(queue.pendingCount).toBeGreaterThan(0);
+
+      // Process the queue
+      queue.process(25.0);
       expect(scene.isCenterReady()).toBe(true);
-      expect(scene.activeTerrainChunkCount).toBe(1);
+      expect(scene.activeTerrainChunkCount).toBeGreaterThanOrEqual(1);
 
       scene.dispose();
     });

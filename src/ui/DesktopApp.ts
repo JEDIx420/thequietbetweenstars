@@ -559,7 +559,7 @@ export class DesktopApp {
 
     // Complete entry transition
     if (this.entryElapsed >= this.entryDuration) {
-      if (this.surfaceScene && !this.surfaceScene.isCenterReady() && this.entryElapsed < this.entryDuration + 2.5) {
+      if (this.surfaceScene && !this.surfaceScene.isCenterReady()) {
         return;
       }
       if (this.surfaceScene) {

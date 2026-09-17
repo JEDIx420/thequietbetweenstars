@@ -19,6 +19,10 @@ import { HeightfieldCache } from './HeightfieldCache';
 import { SpatialHash } from '../performance/SpatialHash';
 import { FrameBudgetQueue } from '../performance/FrameBudgetQueue';
 import { SurfaceGeneratorService } from './SurfaceGeneratorService';
+import {
+  generateChunkHeightsProgressive,
+  type SurfaceGenerationTaskRequest,
+} from '../workers/surfaceGeneration.worker';
 
 export interface SurfaceSceneOptions {
   deferHeavyInitialization?: boolean;
@@ -862,17 +866,23 @@ export class SurfaceScene {
     this.spawnChunkProps(chunkX, chunkZ);
   }
 
+  private enqueueChunkConstruction(chunkX: number, chunkZ: number, key: string, priority: number): void {
+    if (!this.activeChunks.has(key)) {
+      FrameBudgetQueue.getInstance().enqueue(`surface-chunk-${chunkX}-${chunkZ}`, () => {
+        if (!this.isDisposed && !this.activeChunks.has(key)) {
+          this.buildChunk(chunkX, chunkZ, key);
+        }
+      }, priority);
+    }
+  }
+
   private requestAndStageChunk(chunkX: number, chunkZ: number, priority: number): void {
     const key = `${chunkX},${chunkZ}`;
     if (this.activeChunks.has(key)) return;
 
     // If heightfield is already cached, enqueue construction immediately
     if (this.heightfieldCache.hasChunk(chunkX, chunkZ)) {
-      FrameBudgetQueue.getInstance().enqueue(`surface-chunk-${chunkX}-${chunkZ}`, () => {
-        if (!this.isDisposed && !this.activeChunks.has(key)) {
-          this.buildChunk(chunkX, chunkZ, key);
-        }
-      }, priority);
+      this.enqueueChunkConstruction(chunkX, chunkZ, key, priority);
       return;
     }
 
@@ -880,8 +890,7 @@ export class SurfaceScene {
     if (this.pendingWorkerChunks.has(key)) return;
     this.pendingWorkerChunks.add(key);
 
-    const service = SurfaceGeneratorService.getInstance();
-    service.requestChunkHeights({
+    const task: SurfaceGenerationTaskRequest = {
       id: `${chunkX}:${chunkZ}`,
       cx: chunkX,
       cz: chunkZ,
@@ -895,23 +904,33 @@ export class SurfaceScene {
       duneStrength: this.site.region.duneStrength,
       canyonStrength: this.site.region.canyonStrength,
       ridgeStrength: this.site.region.ridgeStrength,
-    }).then((res) => {
+    };
+
+    const service = SurfaceGeneratorService.getInstance();
+    service.requestChunkHeights(task).then((res) => {
       this.pendingWorkerChunks.delete(key);
       if (this.isDisposed) return;
 
       this.heightfieldCache.insertChunk(res.cx, res.cz, res.heights, res.minY, res.maxY);
-
-      // Enqueue staged chunk construction into FrameBudgetQueue only AFTER insertion
-      if (!this.activeChunks.has(key)) {
-        FrameBudgetQueue.getInstance().enqueue(`surface-chunk-${chunkX}-${chunkZ}`, () => {
-          if (!this.isDisposed && !this.activeChunks.has(key)) {
-            this.buildChunk(chunkX, chunkZ, key);
-          }
-        }, priority);
-      }
+      this.enqueueChunkConstruction(chunkX, chunkZ, key, priority);
     }).catch((err) => {
-      this.pendingWorkerChunks.delete(key);
-      console.warn(`[SurfaceScene] Failed to generate chunk (${chunkX}, ${chunkZ})`, err);
+      console.warn(`[SurfaceScene] Worker generation failed for chunk (${chunkX}, ${chunkZ}), retrying via progressive fallback`, err);
+      if (this.isDisposed) {
+        this.pendingWorkerChunks.delete(key);
+        return;
+      }
+
+      // Retry through progressive main-thread fallback rather than synchronous generation
+      generateChunkHeightsProgressive(task).then((res) => {
+        this.pendingWorkerChunks.delete(key);
+        if (this.isDisposed) return;
+
+        this.heightfieldCache.insertChunk(chunkX, chunkZ, res.heights, res.minY, res.maxY);
+        this.enqueueChunkConstruction(chunkX, chunkZ, key, priority);
+      }).catch((fallbackErr) => {
+        this.pendingWorkerChunks.delete(key);
+        console.error(`[SurfaceScene] Progressive fallback also failed for chunk (${chunkX}, ${chunkZ})`, fallbackErr);
+      });
     });
   }
 
@@ -931,16 +950,7 @@ export class SurfaceScene {
   }
 
   public finishPreparation(): void {
-    const cx = this.lastChunkX ?? Math.floor(this.shipPosition.x / this.chunkSize);
-    const cz = this.lastChunkZ ?? Math.floor(this.shipPosition.z / this.chunkSize);
-    const centerKey = `${cx},${cz}`;
-
-    // Ensure the center/playable chunk is ready
-    if (!this.activeChunks.has(centerKey)) {
-      FrameBudgetQueue.getInstance().cancel(`surface-chunk-${cx}-${cz}`);
-      this.buildChunk(cx, cz, centerKey);
-    }
-    // Surrounding chunks remain queued in FrameBudgetQueue and stream progressively during flight
+    // Only finalize already-prepared state. Under no circumstances do we synchronously build missing chunks.
   }
 
   /**
