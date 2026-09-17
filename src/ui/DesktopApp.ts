@@ -1532,8 +1532,11 @@ export class DesktopApp {
     this.signaling = null;
   }
 
-  private enterFlightMode(mode: 'companion' | 'keyboard'): void {
+  private async enterFlightMode(mode: 'companion' | 'keyboard'): Promise<void> {
     this.uiState = 'playing';
+    try {
+      await audio.start();
+    } catch {}
     audio.stopTitleOverture();
     audio.setContext('cruise');
     this.tutorialDirector.setInputMode(mode);
