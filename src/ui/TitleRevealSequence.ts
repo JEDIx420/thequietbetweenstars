@@ -29,8 +29,8 @@ export class TitleRevealSequence {
   private shootingStarsGroup: THREE.Group | null = null;
   private shootingStarMeshes: THREE.Line[] = [];
   private nebulaCloud: THREE.Points | null = null;
-  private glowPlanet: THREE.Mesh | null = null;
   private keyHandler: ((e: KeyboardEvent) => void) | null = null;
+  private resizeHandler: (() => void) | null = null;
   private startTime = performance.now();
 
   constructor(private container: HTMLElement) {}
@@ -318,10 +318,20 @@ export class TitleRevealSequence {
     this.camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 2500);
     this.camera.position.set(0, 0, 100);
 
+    this.resizeHandler = (): void => {
+      if (!this.canvas || !this.renderer || !this.camera) return;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      this.camera.aspect = w / h;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(w, h);
+    };
+    window.addEventListener('resize', this.resizeHandler);
+
     // 1. Chunk-Shifted Starfield Layers (Zero CPU vertex buffer uploads)
-    // 3 distinct layers distributed at Z: 0, -600, -1200
+    // 3 distinct layers distributed at Z: 0, -600, -1200 with expansive bounds for all screens/aspects
     const layerCount = 3;
-    const starsPerLayer = 700;
+    const starsPerLayer = 1200;
     this.starLayers = [];
 
     for (let l = 0; l < layerCount; l++) {
@@ -330,9 +340,10 @@ export class TitleRevealSequence {
       const starColors = new Float32Array(starsPerLayer * 3);
 
       for (let i = 0; i < starsPerLayer; i++) {
-        starPos[i * 3] = (Math.random() - 0.5) * 800;
-        starPos[i * 3 + 1] = (Math.random() - 0.5) * 600;
-        starPos[i * 3 + 2] = (Math.random() - 0.5) * 600;
+        // Broad distribution (3200 x 2200) ensuring zero cutoffs on ultrawide tablets & phones
+        starPos[i * 3] = (Math.random() - 0.5) * 3200;
+        starPos[i * 3 + 1] = (Math.random() - 0.5) * 2200;
+        starPos[i * 3 + 2] = (Math.random() - 0.5) * 700;
 
         const isCyan = Math.random() > 0.45;
         starColors[i * 3] = isCyan ? 0.22 : 1.0;
@@ -357,7 +368,7 @@ export class TitleRevealSequence {
     }
 
     // 2. High-Speed Shooting Stars Group (Transformed objects, zero buffer rebuilds)
-    const meteorCount = 10;
+    const meteorCount = 14;
     this.shootingStarsGroup = new THREE.Group();
     this.shootingStarMeshes = [];
 
@@ -380,14 +391,14 @@ export class TitleRevealSequence {
       const spd = 280 + Math.random() * 320;
       line.userData = {
         vel: new THREE.Vector3(spd * 0.7, spd * 0.4, -spd * 0.5),
-        boundaryX: 450,
+        boundaryX: 1200,
       };
 
-      // Random initial position
+      // Random initial position across full screen breadth
       line.position.set(
-        -300 + Math.random() * 600,
-        -200 + Math.random() * 400,
-        Math.random() * 300 - 150
+        -800 + Math.random() * 1600,
+        -500 + Math.random() * 1000,
+        Math.random() * 400 - 200
       );
 
       this.shootingStarMeshes.push(line);
@@ -395,16 +406,16 @@ export class TitleRevealSequence {
     }
     this.scene.add(this.shootingStarsGroup);
 
-    // 3. Ethereal Cosmic Nebula Cloud (Lightweight 180 points)
-    const nebCount = 180;
+    // 3. Ethereal Cosmic Nebula Cloud (Expansive viewport coverage)
+    const nebCount = 240;
     const nebGeo = new THREE.BufferGeometry();
     const nebPos = new Float32Array(nebCount * 3);
     const nebCol = new Float32Array(nebCount * 3);
 
     for (let i = 0; i < nebCount; i++) {
-      nebPos[i * 3] = (Math.random() - 0.5) * 600;
-      nebPos[i * 3 + 1] = (Math.random() - 0.5) * 450;
-      nebPos[i * 3 + 2] = (Math.random() - 0.5) * 350;
+      nebPos[i * 3] = (Math.random() - 0.5) * 2400;
+      nebPos[i * 3 + 1] = (Math.random() - 0.5) * 1600;
+      nebPos[i * 3 + 2] = (Math.random() - 0.5) * 500;
 
       const isViolet = i % 2 === 0;
       nebCol[i * 3] = isViolet ? 0.45 : 0.08;
@@ -415,7 +426,7 @@ export class TitleRevealSequence {
     nebGeo.setAttribute('position', new THREE.BufferAttribute(nebPos, 3));
     nebGeo.setAttribute('color', new THREE.BufferAttribute(nebCol, 3));
     const nebMat = new THREE.PointsMaterial({
-      size: 26.0,
+      size: 28.0,
       vertexColors: true,
       transparent: true,
       opacity: 0.22,
@@ -424,26 +435,6 @@ export class TitleRevealSequence {
     });
     this.nebulaCloud = new THREE.Points(nebGeo, nebMat);
     this.scene.add(this.nebulaCloud);
-
-    // 4. Distant Glowing Planet Silhouette with Atmospheric Rim
-    const planetGeo = new THREE.SphereGeometry(70, 24, 24);
-    const planetMat = new THREE.MeshBasicMaterial({ color: 0x050b18 });
-    this.glowPlanet = new THREE.Mesh(planetGeo, planetMat);
-    this.glowPlanet.position.set(150, -80, -220);
-    this.scene.add(this.glowPlanet);
-
-    // Atmospheric Rim
-    const atmoGeo = new THREE.RingGeometry(69, 76, 32);
-    const atmoMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.4,
-      blending: THREE.AdditiveBlending,
-    });
-    const atmoMesh = new THREE.Mesh(atmoGeo, atmoMat);
-    atmoMesh.position.set(150, -80, -219);
-    this.scene.add(atmoMesh);
 
     // Start 60fps render loop
     this.animate();
@@ -575,6 +566,11 @@ export class TitleRevealSequence {
     if (this.keyHandler) {
       window.removeEventListener('keydown', this.keyHandler);
       this.keyHandler = null;
+    }
+
+    if (this.resizeHandler) {
+      window.removeEventListener('resize', this.resizeHandler);
+      this.resizeHandler = null;
     }
 
     if (this.animFrameId !== null) {

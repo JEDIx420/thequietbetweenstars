@@ -50,10 +50,10 @@ export class FlightModel {
   private readonly horizonAssistStrength = 0.85; // Gentle upright restorative tendency
 
   // Cinematic Chase Camera Rig
-  private cameraTargetPos: THREE.Vector3 = new THREE.Vector3(0, 3.2, 10.5);
-  private cameraLookTarget: THREE.Vector3 = new THREE.Vector3(0, 0, -22);
+  private cameraTargetPos: THREE.Vector3 = new THREE.Vector3(0, 2.8, 12.5);
+  private cameraLookTarget: THREE.Vector3 = new THREE.Vector3(0, 0.6, -6.0);
   private currentCameraUp: THREE.Vector3 = new THREE.Vector3(0, 1, 0);
-  private currentFov = 64;
+  private currentFov = 60;
   private isCameraInitialized = false;
 
   // Telemetry & discontinuity tracking
@@ -269,20 +269,17 @@ export class FlightModel {
   ): void {
     FlightModel.scratchUp.set(0, 1, 0).applyQuaternion(this.quaternion);
 
-    const isMobile = typeof window !== 'undefined' &&
-      ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0) || window.innerWidth < 850);
-
     const speedRatio = Math.min(1, speed / this.maxCruiseSpeed);
-    const distanceBehind = isMobile ? 8.4 + speedRatio * 2.2 : 6.8 + speedRatio * 1.8;
-    const heightAbove = isMobile ? 1.75 + speedRatio * 0.4 : 1.25 + speedRatio * 0.4;
+    const distanceBehind = 12.5 + speedRatio * 2.5;
+    const heightAbove = 2.8 + speedRatio * 0.4;
 
     FlightModel.scratchDesiredCamPos
       .copy(this.position)
       .addScaledVector(forward, -distanceBehind)
       .addScaledVector(FlightModel.scratchUp, heightAbove);
 
-    const lookAheadDist = isMobile ? 5.5 + speedRatio * 3.5 : 12.0 + speedRatio * 6.0;
-    const lookHeight = isMobile ? 0.15 + speedRatio * 0.2 : 0.45 + speedRatio * 0.25;
+    const lookAheadDist = 6.0 + speedRatio * 3.0;
+    const lookHeight = 0.6 + speedRatio * 0.2;
     FlightModel.scratchDesiredLookTarget
       .copy(this.position)
       .addScaledVector(forward, lookAheadDist)
@@ -312,8 +309,8 @@ export class FlightModel {
     camera.up.copy(this.currentCameraUp);
     camera.lookAt(this.cameraLookTarget);
 
-    // Dynamic FOV easing (63° cruise to 72° boost) - only update projection matrix when delta > 0.05
-    const targetFov = 63 + speedRatio * 9;
+    // Dynamic FOV easing (60° cruise to 69° boost) - only update projection matrix when delta > 0.05
+    const targetFov = 60 + speedRatio * 9;
     this.currentFov += (targetFov - this.currentFov) * Math.min(1, dt * 4.0);
     if (Math.abs(camera.fov - this.currentFov) > 0.05) {
       camera.fov = this.currentFov;
