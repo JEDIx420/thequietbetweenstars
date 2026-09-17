@@ -15,6 +15,12 @@ import { SpaceEncounterManager } from '../src/game/scenes/SpaceEncounterManager'
 import { SpaceScene } from '../src/game/scenes/spaceScene';
 import { FrameBudgetQueue } from '../src/game/performance/FrameBudgetQueue';
 import { SurfaceGeneratorService } from '../src/game/surface/SurfaceGeneratorService';
+import { SurfaceScene } from '../src/game/surface/SurfaceScene';
+import { LandingSiteGenerator } from '../src/game/systems/LandingSiteGenerator';
+import {
+  generateChunkHeights,
+  generateChunkHeightsProgressive,
+} from '../src/game/workers/surfaceGeneration.worker';
 
 // Mock DOM elements for headless Node environment
 if (typeof (globalThis as any).document === 'undefined') {
@@ -429,6 +435,126 @@ describe('Performance Engine & Lifecycle Regression Suite', () => {
 
       const cached = cache.getChunkHeightfield(0, 0);
       expect(cached.heights[0]).toBe(result.heights[0]);
+    });
+
+    it('progressive fallback yields across event loop and produces bitwise-identical output to synchronous generation', async () => {
+      const task = {
+        id: 'chunk_test_parity',
+        cx: 1,
+        cz: -1,
+        chunkSize: 200,
+        segments: 32,
+        regionSeed: 987654,
+        morphology: 'canyons',
+        heightScale: 40,
+        roughness: 0.65,
+        domainWarp: 0.4,
+        duneStrength: 0.0,
+        canyonStrength: 0.75,
+        ridgeStrength: 0.3,
+      };
+
+      // 1. Synchronous worker-equivalent generator
+      const syncResult = generateChunkHeights(task);
+
+      // 2. Progressive main-thread fallback generator
+      let isSettledSync = false;
+      const progressivePromise = generateChunkHeightsProgressive(task, 6).then((res) => {
+        isSettledSync = true;
+        return res;
+      });
+
+      // Must yield across frames rather than completing synchronously
+      expect(isSettledSync).toBe(false);
+
+      const progressiveResult = await progressivePromise;
+
+      // Parity assertions
+      expect(progressiveResult.minY).toBe(syncResult.minY);
+      expect(progressiveResult.maxY).toBe(syncResult.maxY);
+      expect(progressiveResult.heights.length).toBe(syncResult.heights.length);
+
+      for (let i = 0; i < syncResult.heights.length; i++) {
+        expect(progressiveResult.heights[i]).toBe(syncResult.heights[i]);
+      }
+    });
+  });
+
+  describe('SurfaceScene Staged Generation Pipeline & Race Elimination', () => {
+    const getTestPlanetAndSite = () => {
+      const sys = StarSystemGenerator.generateSystem('QUIET-TEST-STAGE', 0, 0, 0);
+      const planet = sys.planets.find((p) => p.isLandable)!;
+      const sites = LandingSiteGenerator.generateSites(planet);
+      return { planet, site: sites[0] };
+    };
+
+    it('deferred SurfaceScene constructor does not synchronously generate center chunk', () => {
+      const { planet, site } = getTestPlanetAndSite();
+      const scene = new SurfaceScene(planet, site, [], { deferHeavyInitialization: true });
+
+      // HeightfieldCache must NOT contain chunk (0, 0) immediately upon construction
+      const cache = (scene as any).heightfieldCache as HeightfieldCache;
+      expect(cache.hasChunk(0, 0)).toBe(false);
+      expect(scene.activeTerrainChunkCount).toBe(0);
+      expect(scene.isCenterReady()).toBe(false);
+
+      scene.dispose();
+    });
+
+    it('ensures heightfield is inserted into cache before FrameBudgetQueue builds chunk', async () => {
+      FrameBudgetQueue.getInstance().clear();
+      const { planet, site } = getTestPlanetAndSite();
+      const scene = new SurfaceScene(planet, site, [], { deferHeavyInitialization: true });
+      const cache = (scene as any).heightfieldCache as HeightfieldCache;
+      const queue = FrameBudgetQueue.getInstance();
+
+      // Wait for progressive heightfield generator to finish inserting chunk (0, 0)
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(cache.hasChunk(0, 0)).toBe(true);
+      expect(queue.pendingCount).toBeGreaterThan(0);
+
+      // Process the queued chunk construction with ample budget
+      queue.process(25.0);
+
+      expect(scene.isCenterReady()).toBe(true);
+      expect(scene.activeTerrainChunkCount).toBeGreaterThanOrEqual(1);
+
+      scene.dispose();
+    });
+
+    it('prevents duplicate generation requests for in-flight chunks', () => {
+      FrameBudgetQueue.getInstance().clear();
+      const { planet, site } = getTestPlanetAndSite();
+      const scene = new SurfaceScene(planet, site, [], { deferHeavyInitialization: true });
+      const pending = (scene as any).pendingWorkerChunks as Set<string>;
+
+      const initialPendingCount = pending.size;
+      expect(initialPendingCount).toBeGreaterThan(0);
+
+      // Calling stageInitialChunks again while initial chunks are pending must not duplicate
+      (scene as any).stageInitialChunks(0, 0);
+      expect(pending.size).toBe(initialPendingCount);
+
+      scene.dispose();
+    });
+
+    it('finishPreparation() only builds center chunk synchronously if missing, leaving surrounding chunks in queue', () => {
+      FrameBudgetQueue.getInstance().clear();
+      const { planet, site } = getTestPlanetAndSite();
+      const scene = new SurfaceScene(planet, site, [], { deferHeavyInitialization: true });
+
+      expect(scene.activeTerrainChunkCount).toBe(0);
+      expect(scene.isCenterReady()).toBe(false);
+
+      // Immediate touchdown call before background generator resolves
+      scene.finishPreparation();
+
+      // Only center chunk is built synchronously
+      expect(scene.isCenterReady()).toBe(true);
+      expect(scene.activeTerrainChunkCount).toBe(1);
+
+      scene.dispose();
     });
   });
 

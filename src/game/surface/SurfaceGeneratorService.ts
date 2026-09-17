@@ -1,7 +1,7 @@
 import {
   type SurfaceGenerationTaskRequest,
   type SurfaceGenerationTaskResponse,
-  generateChunkHeights,
+  generateChunkHeightsProgressive,
 } from '../workers/surfaceGeneration.worker';
 
 export class SurfaceGeneratorService {
@@ -77,19 +77,16 @@ export class SurfaceGeneratorService {
     }
 
     // Progressive main-thread fallback
-    return new Promise<SurfaceGenerationTaskResponse>((resolve) => {
-      const { heights, minY, maxY } = generateChunkHeights(request);
-      resolve({
-        id: request.id,
-        cx: request.cx,
-        cz: request.cz,
-        chunkSize: request.chunkSize,
-        segments: request.segments,
-        minY,
-        maxY,
-        heights,
-      });
-    });
+    return generateChunkHeightsProgressive(request).then(({ heights, minY, maxY }) => ({
+      id: request.id,
+      cx: request.cx,
+      cz: request.cz,
+      chunkSize: request.chunkSize,
+      segments: request.segments,
+      minY,
+      maxY,
+      heights,
+    }));
   }
 
   public terminate(): void {

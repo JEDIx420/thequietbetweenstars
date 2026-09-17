@@ -101,6 +101,9 @@ export class SurfaceScene {
   private heightfieldCache: HeightfieldCache;
   private lastChunkX: number | null = null;
   private lastChunkZ: number | null = null;
+  private isDisposed = false;
+  private pendingWorkerChunks: Set<string> = new Set();
+  private centerChunkKey: string | null = null;
 
   // Ocean / liquid plane
   private liquidGroup = new THREE.Group();
@@ -153,6 +156,10 @@ export class SurfaceScene {
   }
   public get activePropChunkCount(): number {
     return this.activePropChunks.size;
+  }
+
+  public isCenterReady(): boolean {
+    return this.centerChunkKey !== null && this.activeChunks.has(this.centerChunkKey);
   }
 
   constructor(
@@ -233,7 +240,13 @@ export class SurfaceScene {
     this.scene.add(this.faunaPopulationManager.faunaGroup);
 
     // Resource Node Manager
-    this.resourceManager = new ResourceNodeManager(region, this.shipPosition, (x, z) => this.getTerrainHeight(x, z));
+    this.resourceManager = new ResourceNodeManager(
+      region,
+      this.shipPosition,
+      options?.deferHeavyInitialization
+        ? (x, z) => this.computeRawTerrainHeight(x, z)
+        : (x, z) => this.getTerrainHeight(x, z)
+    );
     this.scene.add(this.resourceManager.resourceGroup);
 
     // Survey Credit Pickup Manager
@@ -257,7 +270,9 @@ export class SurfaceScene {
     this.shipPhysicsRoot.add(this.shipVisualRoot);
 
     // Initialize position directly above ground
-    const initGround = this.getTerrainHeight(0, 0);
+    const initGround = options?.deferHeavyInitialization
+      ? this.computeRawTerrainHeight(0, 0)
+      : this.getTerrainHeight(0, 0);
     this.pilotDesiredWorldAltitude = initGround + this.desiredAltitudeAGL;
     this.filteredTerrainSafetyFloor = initGround + this.minAltitudeAGL;
     this.shipPosition.set(0, this.pilotDesiredWorldAltitude, 0);
@@ -550,6 +565,9 @@ export class SurfaceScene {
       this.debugTelemetry.terrainAssistActive = this.terrainAssistActive;
       this.debugTelemetry.dt = clampedDt;
     }
+
+    // Process queued terrain chunks progressively within frame budget (2.5ms max)
+    FrameBudgetQueue.getInstance().process(2.5);
 
     return {
       activeScanTarget: this.cachedScanTarget,
@@ -844,71 +862,85 @@ export class SurfaceScene {
     this.spawnChunkProps(chunkX, chunkZ);
   }
 
-  private stageInitialChunks(cx: number, cz: number): void {
-    const radius = 1;
-    const queue = FrameBudgetQueue.getInstance();
-    const service = SurfaceGeneratorService.getInstance();
+  private requestAndStageChunk(chunkX: number, chunkZ: number, priority: number): void {
+    const key = `${chunkX},${chunkZ}`;
+    if (this.activeChunks.has(key)) return;
 
-    // 1. Worker pre-generation requests for 9 chunks
-    for (let dx = -radius; dx <= radius; dx++) {
-      for (let dz = -radius; dz <= radius; dz++) {
-        const chunkX = cx + dx;
-        const chunkZ = cz + dz;
-        service.requestChunkHeights({
-          id: `${chunkX}:${chunkZ}`,
-          cx: chunkX,
-          cz: chunkZ,
-          chunkSize: this.chunkSize,
-          segments: this.chunkSegments,
-          regionSeed: this.site.region.regionSeed || this.planet.seed,
-          morphology: this.site.region.terrainMorphologyOverride,
-          heightScale: this.site.region.heightScale,
-          roughness: this.site.region.roughness,
-          domainWarp: this.planet.profile.terrain.domainWarp,
-          duneStrength: this.site.region.duneStrength,
-          canyonStrength: this.site.region.canyonStrength,
-          ridgeStrength: this.site.region.ridgeStrength,
-        }).then((res) => {
-          this.heightfieldCache.insertChunk(res.cx, res.cz, res.heights, res.minY, res.maxY);
-        }).catch(() => {});
-      }
+    // If heightfield is already cached, enqueue construction immediately
+    if (this.heightfieldCache.hasChunk(chunkX, chunkZ)) {
+      FrameBudgetQueue.getInstance().enqueue(`surface-chunk-${chunkX}-${chunkZ}`, () => {
+        if (!this.isDisposed && !this.activeChunks.has(key)) {
+          this.buildChunk(chunkX, chunkZ, key);
+        }
+      }, priority);
+      return;
     }
 
-    // 2. Enqueue staged chunk construction into FrameBudgetQueue
+    // Prevent duplicate worker requests
+    if (this.pendingWorkerChunks.has(key)) return;
+    this.pendingWorkerChunks.add(key);
+
+    const service = SurfaceGeneratorService.getInstance();
+    service.requestChunkHeights({
+      id: `${chunkX}:${chunkZ}`,
+      cx: chunkX,
+      cz: chunkZ,
+      chunkSize: this.chunkSize,
+      segments: this.chunkSegments,
+      regionSeed: this.site.region.regionSeed || this.planet.seed,
+      morphology: this.site.region.terrainMorphologyOverride,
+      heightScale: this.site.region.heightScale,
+      roughness: this.site.region.roughness,
+      domainWarp: this.planet.profile.terrain.domainWarp,
+      duneStrength: this.site.region.duneStrength,
+      canyonStrength: this.site.region.canyonStrength,
+      ridgeStrength: this.site.region.ridgeStrength,
+    }).then((res) => {
+      this.pendingWorkerChunks.delete(key);
+      if (this.isDisposed) return;
+
+      this.heightfieldCache.insertChunk(res.cx, res.cz, res.heights, res.minY, res.maxY);
+
+      // Enqueue staged chunk construction into FrameBudgetQueue only AFTER insertion
+      if (!this.activeChunks.has(key)) {
+        FrameBudgetQueue.getInstance().enqueue(`surface-chunk-${chunkX}-${chunkZ}`, () => {
+          if (!this.isDisposed && !this.activeChunks.has(key)) {
+            this.buildChunk(chunkX, chunkZ, key);
+          }
+        }, priority);
+      }
+    }).catch((err) => {
+      this.pendingWorkerChunks.delete(key);
+      console.warn(`[SurfaceScene] Failed to generate chunk (${chunkX}, ${chunkZ})`, err);
+    });
+  }
+
+  private stageInitialChunks(cx: number, cz: number): void {
+    this.centerChunkKey = `${cx},${cz}`;
     // Center chunk (highest priority 10)
-    queue.enqueue(`surface-chunk-${cx}-${cz}`, () => {
-      this.buildChunk(cx, cz, `${cx},${cz}`);
-    }, 10);
+    this.requestAndStageChunk(cx, cz, 10);
 
     // Surrounding chunks (priority 5)
+    const radius = 1;
     for (let dx = -radius; dx <= radius; dx++) {
       for (let dz = -radius; dz <= radius; dz++) {
         if (dx === 0 && dz === 0) continue;
-        const chunkX = cx + dx;
-        const chunkZ = cz + dz;
-        const key = `${chunkX},${chunkZ}`;
-        queue.enqueue(`surface-chunk-${chunkX}-${chunkZ}`, () => {
-          this.buildChunk(chunkX, chunkZ, key);
-        }, 5);
+        this.requestAndStageChunk(cx + dx, cz + dz, 5);
       }
     }
   }
 
   public finishPreparation(): void {
-    const radius = 1;
     const cx = this.lastChunkX ?? Math.floor(this.shipPosition.x / this.chunkSize);
     const cz = this.lastChunkZ ?? Math.floor(this.shipPosition.z / this.chunkSize);
-    for (let dx = -radius; dx <= radius; dx++) {
-      for (let dz = -radius; dz <= radius; dz++) {
-        const chunkX = cx + dx;
-        const chunkZ = cz + dz;
-        const key = `${chunkX},${chunkZ}`;
-        FrameBudgetQueue.getInstance().cancel(`surface-chunk-${chunkX}-${chunkZ}`);
-        if (!this.activeChunks.has(key)) {
-          this.buildChunk(chunkX, chunkZ, key);
-        }
-      }
+    const centerKey = `${cx},${cz}`;
+
+    // Ensure the center/playable chunk is ready
+    if (!this.activeChunks.has(centerKey)) {
+      FrameBudgetQueue.getInstance().cancel(`surface-chunk-${cx}-${cz}`);
+      this.buildChunk(cx, cz, centerKey);
     }
+    // Surrounding chunks remain queued in FrameBudgetQueue and stream progressively during flight
   }
 
   /**
@@ -1121,6 +1153,8 @@ export class SurfaceScene {
   }
 
   public dispose(): void {
+    this.isDisposed = true;
+    this.pendingWorkerChunks.clear();
     FrameBudgetQueue.getInstance().clear();
     this.heightfieldCache.clear();
     this.proceduralSky.dispose();
