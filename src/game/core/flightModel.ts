@@ -39,8 +39,10 @@ export class FlightModel {
 
   // Arcade flight parameters
   private readonly maxCruiseSpeed = 160;
+  public maxCruiseSpeedMultiplier = 1.0;
   private readonly baseAcceleration = 78;
   public accelerationMultiplier = 1.0;
+  public turnRateMultiplier = 1.0;
   private readonly linearDamping = 0.988;
   private readonly turnRateMax = 1.85; // rad/s
   private readonly angularDampingFactor = 12.0; // Exponential response rate
@@ -163,9 +165,10 @@ export class FlightModel {
     this.currentThrottle += (throttleTarget - this.currentThrottle) * Math.min(1, stepDt * throttleRampSpeed);
 
     // 2. Target Angular Rates from Input
-    const targetPitch = input.axes.y * this.turnRateMax;
-    const targetYaw = -input.axes.x * this.turnRateMax;
-    const targetRoll = (-input.roll) * this.turnRateMax;
+    const effectiveTurnMax = this.turnRateMax * this.turnRateMultiplier;
+    const targetPitch = input.axes.y * effectiveTurnMax;
+    const targetYaw = -input.axes.x * effectiveTurnMax;
+    const targetRoll = (-input.roll) * effectiveTurnMax;
 
     // Frame-rate independent exponential approach
     const angularBlend = 1 - Math.exp(-this.angularDampingFactor * stepDt);
@@ -234,9 +237,10 @@ export class FlightModel {
     }
 
     // Cap maximum cruise speed
+    const maxSpeed = this.maxCruiseSpeed * this.maxCruiseSpeedMultiplier;
     const speed = this.velocity.length();
-    if (speed > this.maxCruiseSpeed) {
-      this.velocity.setLength(this.maxCruiseSpeed);
+    if (speed > maxSpeed) {
+      this.velocity.setLength(maxSpeed);
     }
 
     // 6. Update Position & Resolve Physics Collisions

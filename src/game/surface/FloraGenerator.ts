@@ -82,6 +82,46 @@ export class FloraGenerator {
     const baseCol = new THREE.Color(region.localSurfacePalette.midland);
 
     switch (arch) {
+      case 'spore_tree':
+        return {
+          name: `${region.name} Spore Arbor`,
+          archetype: arch,
+          color: baseCol.clone().offsetHSL(0.05, 0.2, -0.05),
+          emissiveColor: new THREE.Color(region.localSurfacePalette.accent),
+          emissiveIntensity: 0.6,
+          height: rng.range(10.0, 18.0),
+          scaleVariation: 0.5,
+        };
+      case 'fans':
+        return {
+          name: `${region.name} Radial Fan Frond`,
+          archetype: arch,
+          color: baseCol.clone().offsetHSL(-0.1, 0.25, 0.1),
+          emissiveColor: new THREE.Color(region.localSurfacePalette.accent),
+          emissiveIntensity: 0.35,
+          height: rng.range(3.5, 6.5),
+          scaleVariation: 0.4,
+        };
+      case 'bulbous':
+        return {
+          name: `${region.name} Succulent Bulb Clustoid`,
+          archetype: arch,
+          color: baseCol.clone().offsetHSL(0.15, -0.1, 0.1),
+          emissiveColor: new THREE.Color(region.localSurfacePalette.accent),
+          emissiveIntensity: 0.45,
+          height: rng.range(2.8, 5.2),
+          scaleVariation: 0.45,
+        };
+      case 'grass':
+        return {
+          name: `${region.name} Lithic Sedge`,
+          archetype: arch,
+          color: baseCol.clone().offsetHSL(0.0, 0.15, 0.0),
+          emissiveColor: new THREE.Color(0x000000),
+          emissiveIntensity: 0.0,
+          height: rng.range(1.5, 3.2),
+          scaleVariation: 0.3,
+        };
       case 'mushrooms':
         return {
           name: `${region.name} Bioluminescent Cap`,
@@ -128,6 +168,55 @@ export class FloraGenerator {
 
   private static createPlantGeometry(archetype: VegetationArchetype, height: number): THREE.BufferGeometry {
     switch (archetype) {
+      case 'spore_tree': {
+        // Massive tall trunk + tiered umbrella spore canopies
+        const trunk = new THREE.CylinderGeometry(height * 0.06, height * 0.12, height * 0.8, 6);
+        trunk.translate(0, height * 0.4, 0);
+
+        const cap1 = new THREE.ConeGeometry(height * 0.35, height * 0.2, 7);
+        cap1.translate(0, height * 0.75, 0);
+
+        const cap2 = new THREE.ConeGeometry(height * 0.22, height * 0.15, 6);
+        cap2.translate(0, height * 0.9, 0);
+
+        return this.mergeGeometries([trunk, cap1, cap2]);
+      }
+      case 'fans': {
+        // Radial layered fronds
+        const stem = new THREE.CylinderGeometry(0.15, 0.25, height * 0.5, 4);
+        stem.translate(0, height * 0.25, 0);
+
+        const frond1 = new THREE.BoxGeometry(height * 0.7, 0.1, height * 0.25);
+        frond1.translate(0, height * 0.55, 0);
+
+        const frond2 = new THREE.BoxGeometry(height * 0.25, 0.1, height * 0.7);
+        frond2.translate(0, height * 0.65, 0);
+
+        return this.mergeGeometries([stem, frond1, frond2]);
+      }
+      case 'bulbous': {
+        // Clustered bulb nodes
+        const stalk = new THREE.CylinderGeometry(0.2, 0.35, height * 0.6, 5);
+        stalk.translate(0, height * 0.3, 0);
+
+        const bulbMain = new THREE.DodecahedronGeometry(height * 0.3, 0);
+        bulbMain.translate(0, height * 0.7, 0);
+
+        const bulbSide = new THREE.DodecahedronGeometry(height * 0.18, 0);
+        bulbSide.translate(height * 0.2, height * 0.55, 0);
+
+        return this.mergeGeometries([stalk, bulbMain, bulbSide]);
+      }
+      case 'grass': {
+        // Multi-blade sedge tuft
+        const blade1 = new THREE.ConeGeometry(height * 0.15, height, 3);
+        blade1.translate(-height * 0.1, height * 0.5, 0);
+
+        const blade2 = new THREE.ConeGeometry(height * 0.12, height * 0.85, 3);
+        blade2.translate(height * 0.1, height * 0.42, 0);
+
+        return this.mergeGeometries([blade1, blade2]);
+      }
       case 'mushrooms': {
         // Stem + Cap combo geometry
         const stem = new THREE.CylinderGeometry(0.3, 0.5, height * 0.7, 6);
@@ -137,7 +226,7 @@ export class FloraGenerator {
         return this.mergeGeometries([stem, cap]);
       }
       case 'stalks': {
-        // Tall segmented segmented cylinder
+        // Tall segmented cylinder
         const stalk = new THREE.CylinderGeometry(0.2, 0.4, height, 5);
         stalk.translate(0, height / 2, 0);
         return stalk;

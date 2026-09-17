@@ -5,6 +5,7 @@ import type { LandingSite } from '../systems/LandingSiteGenerator';
 import { SurveyCraft } from '../scenes/spaceCraft';
 import type { NormalizedInputState } from '../input/InputSource';
 import { ProceduralSky } from './ProceduralSky';
+import { PlanetaryAtmosphereDirector, type AtmosphereState } from './PlanetaryAtmosphereDirector';
 import { LandmarkGenerator } from './LandmarkGenerator';
 import { SimplexNoise2D } from './noise';
 import { ParticleTextureGenerator } from './particleTexture';
@@ -75,8 +76,12 @@ export class SurfaceScene {
     dt: 0,
   };
 
-  // Atmospheric sky and lighting
+  // Atmospheric sky, lighting & dynamic weather
+  public atmosphereDirector: PlanetaryAtmosphereDirector;
+  public currentAtmosphereState: AtmosphereState | null = null;
   private proceduralSky: ProceduralSky;
+  private sunLight: THREE.DirectionalLight;
+  private hemiLight: THREE.HemisphereLight;
   private particlePoints: THREE.Points | null = null;
   private distantHorizonRing: THREE.Mesh | null = null;
 
@@ -137,20 +142,22 @@ export class SurfaceScene {
     const fogDensity = profile.atmosphere.fogDensity * (region.fogModifier.densityMultiplier || 1.0);
     this.scene.fog = new THREE.FogExp2(new THREE.Color(fogColorHex), fogDensity);
 
-    // 3. Star Lighting
-    const hemiLight = new THREE.HemisphereLight(
+    // 3. Dynamic Star Lighting & Celestial Atmosphere Director
+    this.hemiLight = new THREE.HemisphereLight(
       new THREE.Color(profile.atmosphere.skyHorizon),
       new THREE.Color(region.localSurfacePalette.lowland),
       profile.atmosphere.hasAtmosphere ? 1.6 : 0.6
     );
-    this.scene.add(hemiLight);
+    this.scene.add(this.hemiLight);
 
-    const sunLight = new THREE.DirectionalLight(
+    this.sunLight = new THREE.DirectionalLight(
       profile.palette.sunLightColor,
       profile.atmosphere.hasAtmosphere ? 2.8 : 3.6
     );
-    sunLight.position.set(400, 600, 300);
-    this.scene.add(sunLight);
+    this.sunLight.position.set(400, 600, 300);
+    this.scene.add(this.sunLight);
+
+    this.atmosphereDirector = new PlanetaryAtmosphereDirector(profile, region);
 
     // 4. Environmental Atmosphere Particles
     const particleType = region.particleModifier.type || profile.atmosphere.particleType;
@@ -413,6 +420,15 @@ export class SurfaceScene {
     camera.lookAt(this.smoothedCamLook);
 
     this.proceduralSky.update(camera.position);
+    if (this.scene.fog instanceof THREE.FogExp2) {
+      this.currentAtmosphereState = this.atmosphereDirector.update(
+        clampedDt,
+        this.sunLight,
+        this.hemiLight,
+        this.scene.fog,
+        this.proceduralSky
+      );
+    }
     if (this.distantHorizonRing) {
       this.distantHorizonRing.position.set(camera.position.x, 0, camera.position.z);
     }

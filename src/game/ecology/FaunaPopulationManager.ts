@@ -321,43 +321,249 @@ export class FaunaPopulationManager {
       this.materialsCache.set(accentMatKey, accentMat);
     }
 
-    // Build anatomical geometry based on bodyPlan
-    if (species.category === 'AERIAL') {
-      const wingSpan = s * 3.5;
-      const wingGeo = new THREE.ConeGeometry(wingSpan * 0.4, wingSpan, 4);
-      wingGeo.rotateZ(Math.PI / 2);
-      const leftWing = new THREE.Mesh(wingGeo, mat);
-      leftWing.position.set(-wingSpan * 0.4, 0, 0);
-      group.add(leftWing);
+    // Glowing sensory/eye material
+    const glowMatKey = `${species.id}_glow`;
+    let glowMat = this.materialsCache.get(glowMatKey);
+    if (!glowMat) {
+      glowMat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(this.ecology.motif.accentColor || 0x38bdf8),
+      });
+      this.materialsCache.set(glowMatKey, glowMat);
+    }
 
-      const rightWing = new THREE.Mesh(wingGeo, mat);
-      rightWing.position.set(wingSpan * 0.4, 0, 0);
-      rightWing.rotation.y = Math.PI;
-      group.add(rightWing);
+    // Build rich anatomical procedural geometry based on species.bodyPlan & category
+    switch (species.bodyPlan) {
+      case 'balloon': {
+        // Enormous atmospheric aerostat / sky whale
+        const balloonGeo = new THREE.SphereGeometry(s * 2.2, 10, 8);
+        balloonGeo.scale(1.0, 0.75, 1.8);
+        const balloonMesh = new THREE.Mesh(balloonGeo, mat);
+        balloonMesh.position.y = s * 3.5;
+        group.add(balloonMesh);
 
-      const bodyGeo = new THREE.CylinderGeometry(s * 0.2, s * 0.35, s * 1.8, 5);
-      bodyGeo.rotateX(Math.PI / 2);
-      const body = new THREE.Mesh(bodyGeo, accentMat);
-      group.add(body);
-    } else {
-      const bodyGeo = new THREE.BoxGeometry(s * 1.2, s * 0.8, s * 2.0);
-      const body = new THREE.Mesh(bodyGeo, mat);
-      body.position.y = s * 0.6;
-      group.add(body);
+        // Ventral fins
+        const finGeo = new THREE.BoxGeometry(s * 4.5, s * 0.2, s * 1.5);
+        const fin = new THREE.Mesh(finGeo, accentMat);
+        fin.position.set(0, s * 3.0, 0);
+        group.add(fin);
 
-      const headGeo = new THREE.DodecahedronGeometry(s * 0.5, 0);
-      const head = new THREE.Mesh(headGeo, accentMat);
-      head.position.set(0, s * 0.9, s * 1.2);
-      group.add(head);
+        // Bioluminescent ventral nodes
+        for (let i = -2; i <= 2; i++) {
+          const node = new THREE.Mesh(new THREE.SphereGeometry(s * 0.25, 6, 6), glowMat);
+          node.position.set(0, s * 1.8, i * s * 0.9);
+          group.add(node);
+        }
+        break;
+      }
 
-      const legCount = Math.min(6, Math.max(3, this.ecology.motif.limbCount));
-      const legGeo = new THREE.CylinderGeometry(s * 0.12, s * 0.08, s * 0.9, 4);
-      for (let l = 0; l < legCount; l++) {
-        const side = l % 2 === 0 ? 1 : -1;
-        const leg = new THREE.Mesh(legGeo, mat);
-        const zOff = (Math.floor(l / 2) - (legCount / 4)) * (s * 0.8);
-        leg.position.set(side * s * 0.65, s * 0.4, zOff);
-        group.add(leg);
+      case 'glider':
+      case 'ray': {
+        // Broad aerodynamic gliding wings
+        const wingSpan = s * 4.2;
+        const wingGeo = new THREE.ConeGeometry(wingSpan * 0.35, wingSpan, 4);
+        wingGeo.rotateZ(Math.PI / 2);
+        const wing = new THREE.Mesh(wingGeo, mat);
+        wing.scale.set(1.0, 0.15, 0.8);
+        wing.position.y = s * 1.5;
+        group.add(wing);
+
+        // Dorsal ridge
+        const ridge = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.15, s * 0.3, s * 2.2, 5), accentMat);
+        ridge.rotateX(Math.PI / 2);
+        ridge.position.y = s * 1.6;
+        group.add(ridge);
+
+        // Trailing rudder filament
+        const tail = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.05, s * 0.1, s * 2.8, 3), glowMat);
+        tail.rotateX(Math.PI / 2);
+        tail.position.set(0, s * 1.5, s * 2.0);
+        group.add(tail);
+        break;
+      }
+
+      case 'jelly': {
+        // Floating luminescent bell
+        const bellGeo = new THREE.SphereGeometry(s * 1.6, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.65);
+        const bell = new THREE.Mesh(bellGeo, mat);
+        bell.rotation.x = Math.PI;
+        bell.position.y = s * 3.0;
+        group.add(bell);
+
+        const bellCore = new THREE.Mesh(new THREE.SphereGeometry(s * 0.6, 6, 6), glowMat);
+        bellCore.position.y = s * 2.6;
+        group.add(bellCore);
+
+        // Tentacles
+        const tentGeo = new THREE.CylinderGeometry(s * 0.04, s * 0.07, s * 2.6, 3);
+        for (let t = 0; t < 6; t++) {
+          const tAng = (t * Math.PI * 2) / 6;
+          const tent = new THREE.Mesh(tentGeo, accentMat);
+          tent.position.set(Math.cos(tAng) * s * 0.9, s * 1.3, Math.sin(tAng) * s * 0.9);
+          group.add(tent);
+        }
+        break;
+      }
+
+      case 'swarm': {
+        // Clustered swift flyers
+        for (let f = 0; f < 5; f++) {
+          const m = new THREE.Mesh(new THREE.ConeGeometry(s * 0.4, s * 1.2, 3), accentMat);
+          m.rotation.x = Math.PI / 2;
+          const fAng = (f * Math.PI * 2) / 5;
+          m.position.set(Math.cos(fAng) * s * 1.6, s * 2.5 + (f % 2) * s * 0.5, Math.sin(fAng) * s * 1.6);
+          group.add(m);
+        }
+        break;
+      }
+
+      case 'tripod': {
+        // Spherical shell with 3 tall stilt legs
+        const shell = new THREE.Mesh(new THREE.DodecahedronGeometry(s * 1.2, 0), mat);
+        shell.position.y = s * 3.2;
+        group.add(shell);
+
+        const crest = new THREE.Mesh(new THREE.ConeGeometry(s * 0.4, s * 1.5, 4), glowMat);
+        crest.position.set(0, s * 4.4, 0);
+        group.add(crest);
+
+        const legGeo = new THREE.CylinderGeometry(s * 0.1, s * 0.14, s * 3.2, 3);
+        for (let a = 0; a < 3; a++) {
+          const legAng = (a * Math.PI * 2) / 3;
+          const leg = new THREE.Mesh(legGeo, accentMat);
+          leg.position.set(Math.cos(legAng) * s * 1.1, s * 1.6, Math.sin(legAng) * s * 1.1);
+          leg.rotation.z = Math.cos(legAng) * 0.25;
+          leg.rotation.x = Math.sin(legAng) * 0.25;
+          group.add(leg);
+        }
+        break;
+      }
+
+      case 'colossus':
+      case 'shoreline_grazer': {
+        // Heavy monolithic titan
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(s * 2.4, s * 1.8, s * 4.0), mat);
+        torso.position.y = s * 3.5;
+        group.add(torso);
+
+        const dorsalCrest = new THREE.Mesh(new THREE.ConeGeometry(s * 0.8, s * 2.5, 4), accentMat);
+        dorsalCrest.position.set(0, s * 5.2, -s * 0.5);
+        group.add(dorsalCrest);
+
+        const legGeo = new THREE.CylinderGeometry(s * 0.35, s * 0.45, s * 3.2, 5);
+        for (const [lx, lz] of [
+          [-s * 1.1, -s * 1.4], [s * 1.1, -s * 1.4],
+          [-s * 1.1, s * 1.4], [s * 1.1, s * 1.4],
+        ]) {
+          const leg = new THREE.Mesh(legGeo, accentMat);
+          leg.position.set(lx, s * 1.6, lz);
+          group.add(leg);
+        }
+        break;
+      }
+
+      case 'segmented': {
+        // Multi-segmented serpent / myriapod
+        const segGeo = new THREE.SphereGeometry(s * 0.8, 6, 5);
+        for (let segIdx = 0; segIdx < 6; segIdx++) {
+          const segMesh = new THREE.Mesh(segGeo, segIdx % 2 === 0 ? mat : accentMat);
+          segMesh.position.set(0, s * 0.7, (segIdx - 2.5) * s * 1.2);
+          group.add(segMesh);
+        }
+        const eyeNode = new THREE.Mesh(new THREE.ConeGeometry(s * 0.3, s * 0.8, 4), glowMat);
+        eyeNode.position.set(0, s * 1.3, -s * 3.4);
+        eyeNode.rotation.x = -Math.PI / 3;
+        group.add(eyeNode);
+        break;
+      }
+
+      case 'six_legged': {
+        // Hexapod mantis / crystal scuttler
+        const thorax = new THREE.Mesh(new THREE.ConeGeometry(s * 1.1, s * 2.6, 6), mat);
+        thorax.rotateX(Math.PI / 2);
+        thorax.position.y = s * 1.1;
+        group.add(thorax);
+
+        const horn = new THREE.Mesh(new THREE.ConeGeometry(s * 0.25, s * 1.2, 4), glowMat);
+        horn.position.set(0, s * 1.6, -s * 1.3);
+        horn.rotation.x = -0.5;
+        group.add(horn);
+
+        const legGeo = new THREE.CylinderGeometry(s * 0.08, s * 0.12, s * 1.4, 3);
+        for (let l = 0; l < 6; l++) {
+          const side = l % 2 === 0 ? 1 : -1;
+          const zOff = (Math.floor(l / 2) - 1) * s * 0.9;
+          const leg = new THREE.Mesh(legGeo, accentMat);
+          leg.position.set(side * s * 1.0, s * 0.6, zOff);
+          leg.rotation.z = side * 0.35;
+          group.add(leg);
+        }
+        break;
+      }
+
+      case 'hopper': {
+        // Round pod body with coiled bipedal spring legs
+        const pod = new THREE.Mesh(new THREE.IcosahedronGeometry(s * 1.0, 0), mat);
+        pod.position.y = s * 1.5;
+        group.add(pod);
+
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(s * 0.25, 4, 4), glowMat);
+        eye.position.set(0, s * 1.8, -s * 0.8);
+        group.add(eye);
+
+        const legGeo = new THREE.CylinderGeometry(s * 0.12, s * 0.16, s * 1.6, 4);
+        for (const side of [-1, 1]) {
+          const leg = new THREE.Mesh(legGeo, accentMat);
+          leg.position.set(side * s * 0.7, s * 0.8, 0);
+          leg.rotation.x = 0.3;
+          group.add(leg);
+        }
+        break;
+      }
+
+      case 'quadruped':
+      default: {
+        if (species.category === 'AERIAL') {
+          // Swift aerial flyer
+          const wingSpan = s * 3.5;
+          const wingGeo = new THREE.ConeGeometry(wingSpan * 0.4, wingSpan, 4);
+          wingGeo.rotateZ(Math.PI / 2);
+          const leftWing = new THREE.Mesh(wingGeo, mat);
+          leftWing.position.set(-wingSpan * 0.4, s * 1.5, 0);
+          group.add(leftWing);
+
+          const rightWing = new THREE.Mesh(wingGeo, mat);
+          rightWing.position.set(wingSpan * 0.4, s * 1.5, 0);
+          rightWing.rotation.y = Math.PI;
+          group.add(rightWing);
+
+          const bodyGeo = new THREE.CylinderGeometry(s * 0.2, s * 0.35, s * 1.8, 5);
+          bodyGeo.rotateX(Math.PI / 2);
+          const body = new THREE.Mesh(bodyGeo, accentMat);
+          body.position.y = s * 1.5;
+          group.add(body);
+        } else {
+          // Quadruped / crawler
+          const bodyGeo = new THREE.BoxGeometry(s * 1.3, s * 0.9, s * 2.2);
+          const body = new THREE.Mesh(bodyGeo, mat);
+          body.position.y = s * 0.8;
+          group.add(body);
+
+          const headGeo = new THREE.DodecahedronGeometry(s * 0.55, 0);
+          const head = new THREE.Mesh(headGeo, accentMat);
+          head.position.set(0, s * 1.2, -s * 1.2);
+          group.add(head);
+
+          const legCount = Math.min(6, Math.max(4, this.ecology.motif.limbCount));
+          const legGeo = new THREE.CylinderGeometry(s * 0.12, s * 0.09, s * 1.0, 4);
+          for (let l = 0; l < legCount; l++) {
+            const side = l % 2 === 0 ? 1 : -1;
+            const leg = new THREE.Mesh(legGeo, accentMat);
+            const zOff = (Math.floor(l / 2) - (legCount / 4)) * (s * 0.9);
+            leg.position.set(side * s * 0.7, s * 0.5, zOff);
+            group.add(leg);
+          }
+        }
+        break;
       }
     }
 

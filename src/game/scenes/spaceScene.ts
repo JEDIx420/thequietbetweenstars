@@ -6,6 +6,8 @@ import { PlanetVisualGenerator } from '../planets/PlanetVisualGenerator';
 import { PlanetEnvironmentGenerator } from '../planets/PlanetEnvironmentProfile';
 import type { PlanetDescriptor, StarSystemDescriptor, StarDescriptor } from '../systems/PlanetDescriptor';
 import { CourierPod } from '../flight/CourierPod';
+import { SpaceTrafficDirector } from './SpaceTrafficDirector';
+import { SpaceEncounterManager } from './SpaceEncounterManager';
 
 export class SpaceScene {
   public scene: THREE.Scene;
@@ -22,6 +24,11 @@ export class SpaceScene {
 
   // Active Courier Pod in current system
   public activeCourierPod: CourierPod | null = null;
+
+  // Space Traffic & Cosmic Encounters
+  public trafficDirector: SpaceTrafficDirector | null = null;
+  public encounterManager: SpaceEncounterManager | null = null;
+  public lastCommsHail: string | null = null;
 
   // Local velocity motes
   private dustPoints: THREE.Points;
@@ -296,6 +303,26 @@ export class SpaceScene {
     ];
 
     this.physics = new CelestialPhysicsSystem(bodies);
+    this.initSystemTrafficAndEncounters(1337, [this.planetAureliaPos, this.moonZephyrPos]);
+  }
+
+  private initSystemTrafficAndEncounters(seed: number, planetPositions: THREE.Vector3[]): void {
+    if (this.trafficDirector) {
+      this.worldRoot.remove(this.trafficDirector.group);
+      this.trafficDirector.dispose();
+      this.trafficDirector = null;
+    }
+    if (this.encounterManager) {
+      this.worldRoot.remove(this.encounterManager.group);
+      this.encounterManager.dispose();
+      this.encounterManager = null;
+    }
+
+    this.trafficDirector = new SpaceTrafficDirector(seed, this.sunPos, planetPositions);
+    this.worldRoot.add(this.trafficDirector.group);
+
+    this.encounterManager = new SpaceEncounterManager(seed, this.sunPos, planetPositions);
+    this.worldRoot.add(this.encounterManager.group);
   }
 
   /**
@@ -368,20 +395,19 @@ export class SpaceScene {
         position: this.sunPos,
         physicalRadius: system.star.radius || 130,
         exclusionRadius: (system.star.radius || 130) * 1.25,
-        atmosphereRadius: (system.star.radius || 130) * 3.4,
-        dangerRadius: (system.star.radius || 130) * 1.8,
+        atmosphereRadius: (system.star.radius || 130) * 2.5,
       },
     ];
 
     for (const p of this.activePlanetList) {
       bodies.push({
-        id: p.descriptor.id,
+        id: `planet-${p.descriptor.name.toLowerCase().replace(/\s+/g, '-')}`,
         name: p.descriptor.name,
-        type: 'planet',
+        type: (p.descriptor as any).isMoon ? 'moon' : 'planet',
         position: p.position,
-        physicalRadius: p.descriptor.radius,
-        exclusionRadius: p.descriptor.radius * 1.12,
-        atmosphereRadius: p.descriptor.radius * 2.2,
+        physicalRadius: p.descriptor.radius || 120,
+        exclusionRadius: (p.descriptor.radius || 120) * 1.15,
+        atmosphereRadius: p.descriptor.atmosphereDensity > 0 ? (p.descriptor.radius || 120) * 1.8 : (p.descriptor.radius || 120) * 1.15,
       });
     }
 
@@ -395,6 +421,10 @@ export class SpaceScene {
     if (system.star) {
       this.updateStarVisuals(system.star);
     }
+
+    // 6. Initialize ambient space traffic and cosmic encounters for this system
+    const planetPositions = this.activePlanetList.map(p => p.position);
+    this.initSystemTrafficAndEncounters(system.seed || 1337, planetPositions);
   }
 
   /**
@@ -436,6 +466,13 @@ export class SpaceScene {
     if (this.activeCourierPod) {
       this.activeCourierPod.position.add(offset);
       this.activeCourierPod.group.position.add(offset);
+    }
+
+    if (this.trafficDirector) {
+      this.trafficDirector.onRebase(offset);
+    }
+    if (this.encounterManager) {
+      this.encounterManager.onRebase(offset);
     }
   }
 
@@ -820,7 +857,15 @@ export class SpaceScene {
 
     // Active Delivery Pod update
     if (this.activeCourierPod) {
-      this.activeCourierPod.update(dt);
+      this.activeCourierPod.update(dt, shipPos);
+    }
+
+    // Space Traffic & Cosmic Encounters
+    if (this.trafficDirector) {
+      this.lastCommsHail = this.trafficDirector.update(dt, shipPos);
+    }
+    if (this.encounterManager) {
+      this.encounterManager.update(dt);
     }
 
     // 5. Cosmic Dust Particle Recycling around Ship (only when displaced > 0.5 units)

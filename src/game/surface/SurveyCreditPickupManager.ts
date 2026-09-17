@@ -61,6 +61,8 @@ export class SurveyCreditPickupManager {
   });
 
   private clock = 0;
+  public pickupRadius = 6.5; // Auto-collect fly-through radius
+  public magnetismRadius = 16.0; // Gentle acceleration toward craft
 
   constructor(
     region: LandingRegionProfile,
@@ -119,8 +121,8 @@ export class SurveyCreditPickupManager {
     }
 
     // 3. Update active pickups (magnetism, auto-collection, animations)
-    const pickupRadius = 6.5; // Auto-collect fly-through radius
-    const magnetismRadius = 16.0; // Gentle acceleration toward craft
+    const pickupRadius = this.pickupRadius;
+    const magnetismRadius = this.magnetismRadius;
 
     for (const pickups of this.activeCells.values()) {
       for (let i = pickups.length - 1; i >= 0; i--) {

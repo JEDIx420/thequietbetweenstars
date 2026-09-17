@@ -35,7 +35,8 @@ export type VegetationArchetype =
   | 'fans'
   | 'bulbous'
   | 'crystals'
-  | 'grass';
+  | 'grass'
+  | 'spore_tree';
 
 export type FaunaArchetype =
   | 'quadruped'
@@ -43,7 +44,14 @@ export type FaunaArchetype =
   | 'jelly'
   | 'hopping'
   | 'ray'
-  | 'crawler';
+  | 'crawler'
+  | 'sky_whale'
+  | 'titan_strider'
+  | 'spore_medusa'
+  | 'crystal_scuttler'
+  | 'dune_serpent'
+  | 'avian_flock'
+  | 'biped_stalker';
 
 export interface RegionalSurfacePalette {
   lowland: string;
@@ -131,8 +139,8 @@ export class LandingRegionGenerator {
             wind: 1.4,
             vegDensity: 0.0,
             vegArchetype: 'none',
-            faunaDensity: 0.1,
-            faunaArchetypes: ['crawler'],
+            faunaDensity: 0.15,
+            faunaArchetypes: ['dune_serpent', 'crawler'],
             rockDensity: 0.2,
             landmarks: ['stone_arches'],
             palette: {
@@ -165,10 +173,10 @@ export class LandingRegionGenerator {
             moisture: 0.04,
             tempOffset: +6,
             wind: 0.7,
-            vegDensity: 0.05,
+            vegDensity: 0.1,
             vegArchetype: 'shrubs',
-            faunaDensity: 0.2,
-            faunaArchetypes: ['quadruped', 'crawler'],
+            faunaDensity: 0.35,
+            faunaArchetypes: ['avian_flock', 'crystal_scuttler', 'quadruped'],
             rockDensity: 0.8,
             landmarks: ['stone_arches', 'ejecta_boulders'],
             palette: {
@@ -201,10 +209,10 @@ export class LandingRegionGenerator {
             moisture: 0.0,
             tempOffset: +18,
             wind: 0.5,
-            vegDensity: 0.0,
-            vegArchetype: 'none',
-            faunaDensity: 0.0,
-            faunaArchetypes: [],
+            vegDensity: 0.05,
+            vegArchetype: 'crystals',
+            faunaDensity: 0.15,
+            faunaArchetypes: ['crystal_scuttler'],
             rockDensity: 0.15,
             landmarks: ['crystalline_clusters'],
             palette: {
@@ -237,10 +245,10 @@ export class LandingRegionGenerator {
             moisture: 0.05,
             tempOffset: 0,
             wind: 1.1,
-            vegDensity: 0.08,
-            vegArchetype: 'shrubs',
-            faunaDensity: 0.15,
-            faunaArchetypes: ['tripod', 'crawler'],
+            vegDensity: 0.12,
+            vegArchetype: 'fans',
+            faunaDensity: 0.25,
+            faunaArchetypes: ['tripod', 'biped_stalker', 'crawler'],
             rockDensity: 0.65,
             landmarks: ['stone_arches'],
             palette: {
@@ -278,9 +286,9 @@ export class LandingRegionGenerator {
             tempOffset: +4,
             wind: 0.6,
             vegDensity: 0.75,
-            vegArchetype: 'stalks',
+            vegArchetype: 'fans',
             faunaDensity: 0.7,
-            faunaArchetypes: ['ray', 'quadruped'],
+            faunaArchetypes: ['sky_whale', 'ray', 'avian_flock'],
             rockDensity: 0.35,
             landmarks: ['alien_flora'],
             palette: {
@@ -313,10 +321,10 @@ export class LandingRegionGenerator {
             moisture: 0.4,
             tempOffset: -16,
             wind: 1.3,
-            vegDensity: 0.25,
+            vegDensity: 0.35,
             vegArchetype: 'grass',
-            faunaDensity: 0.4,
-            faunaArchetypes: ['quadruped', 'hopping'],
+            faunaDensity: 0.5,
+            faunaArchetypes: ['titan_strider', 'biped_stalker', 'hopping'],
             rockDensity: 0.85,
             landmarks: ['stone_arches', 'ice_shards'],
             palette: {
@@ -349,10 +357,10 @@ export class LandingRegionGenerator {
             moisture: 0.85,
             tempOffset: +2,
             wind: 0.4,
-            vegDensity: 0.9,
-            vegArchetype: 'mushrooms',
-            faunaDensity: 0.85,
-            faunaArchetypes: ['quadruped', 'tripod', 'hopping'],
+            vegDensity: 0.95,
+            vegArchetype: 'spore_tree',
+            faunaDensity: 0.9,
+            faunaArchetypes: ['sky_whale', 'spore_medusa', 'titan_strider', 'avian_flock'],
             rockDensity: 0.3,
             landmarks: ['alien_flora'],
             palette: {
@@ -425,10 +433,10 @@ export class LandingRegionGenerator {
             moisture: 0.6,
             tempOffset: -12,
             wind: 1.4,
-            vegDensity: 0.0,
-            vegArchetype: 'none',
-            faunaDensity: 0.1,
-            faunaArchetypes: ['crawler'],
+            vegDensity: 0.08,
+            vegArchetype: 'crystals',
+            faunaDensity: 0.25,
+            faunaArchetypes: ['crystal_scuttler', 'crawler'],
             rockDensity: 0.7,
             landmarks: ['ice_shards'],
             palette: {
@@ -463,8 +471,8 @@ export class LandingRegionGenerator {
             wind: 1.2,
             vegDensity: 0.0,
             vegArchetype: 'none',
-            faunaDensity: 0.0,
-            faunaArchetypes: [],
+            faunaDensity: 0.15,
+            faunaArchetypes: ['sky_whale'],
             rockDensity: 0.2,
             landmarks: ['ice_shards'],
             palette: {
@@ -497,10 +505,10 @@ export class LandingRegionGenerator {
             moisture: 0.7,
             tempOffset: +8,
             wind: 0.8,
-            vegDensity: 0.05,
+            vegDensity: 0.15,
             vegArchetype: 'crystals',
-            faunaDensity: 0.25,
-            faunaArchetypes: ['jelly'],
+            faunaDensity: 0.4,
+            faunaArchetypes: ['spore_medusa', 'crystal_scuttler', 'jelly'],
             rockDensity: 0.5,
             landmarks: ['crystalline_clusters', 'ice_shards'],
             palette: {
@@ -537,10 +545,10 @@ export class LandingRegionGenerator {
             moisture: 0.0,
             tempOffset: +45,
             wind: 0.9,
-            vegDensity: 0.0,
-            vegArchetype: 'none',
-            faunaDensity: 0.1,
-            faunaArchetypes: ['crawler'],
+            vegDensity: 0.04,
+            vegArchetype: 'bulbous',
+            faunaDensity: 0.25,
+            faunaArchetypes: ['crystal_scuttler', 'crawler'],
             rockDensity: 0.9,
             landmarks: ['basalt_columns'],
             palette: {
@@ -575,8 +583,8 @@ export class LandingRegionGenerator {
             wind: 1.4,
             vegDensity: 0.0,
             vegArchetype: 'none',
-            faunaDensity: 0.0,
-            faunaArchetypes: [],
+            faunaDensity: 0.2,
+            faunaArchetypes: ['biped_stalker', 'crystal_scuttler'],
             rockDensity: 0.85,
             landmarks: ['basalt_columns', 'ejecta_boulders'],
             palette: {
@@ -615,9 +623,9 @@ export class LandingRegionGenerator {
             tempOffset: 0,
             wind: 0.5,
             vegDensity: planetProfile.biosignature !== 'none' ? 0.6 : 0.0,
-            vegArchetype: planetProfile.biosignature !== 'none' ? 'stalks' : 'none',
+            vegArchetype: planetProfile.biosignature !== 'none' ? 'spore_tree' : 'none',
             faunaDensity: planetProfile.biosignature === 'complex-ecosystem' ? 0.6 : 0.0,
-            faunaArchetypes: ['quadruped', 'crawler'],
+            faunaArchetypes: ['sky_whale', 'avian_flock', 'quadruped', 'crawler'],
             rockDensity: 0.4,
             landmarks: [planetProfile.landmark],
             palette: {
@@ -652,8 +660,8 @@ export class LandingRegionGenerator {
             wind: 1.2,
             vegDensity: planetProfile.biosignature !== 'none' ? 0.2 : 0.0,
             vegArchetype: 'grass',
-            faunaDensity: planetProfile.biosignature === 'complex-ecosystem' ? 0.3 : 0.0,
-            faunaArchetypes: ['hopping'],
+            faunaDensity: planetProfile.biosignature === 'complex-ecosystem' ? 0.35 : 0.0,
+            faunaArchetypes: ['titan_strider', 'biped_stalker', 'hopping'],
             rockDensity: 0.8,
             landmarks: [planetProfile.landmark, 'stone_arches'],
             palette: {
@@ -687,9 +695,9 @@ export class LandingRegionGenerator {
             tempOffset: +5,
             wind: 0.8,
             vegDensity: planetProfile.biosignature !== 'none' ? 0.15 : 0.0,
-            vegArchetype: 'shrubs',
-            faunaDensity: planetProfile.biosignature === 'complex-ecosystem' ? 0.2 : 0.0,
-            faunaArchetypes: ['crawler'],
+            vegArchetype: 'crystals',
+            faunaDensity: planetProfile.biosignature === 'complex-ecosystem' ? 0.25 : 0.0,
+            faunaArchetypes: ['crystal_scuttler', 'dune_serpent', 'crawler'],
             rockDensity: 0.9,
             landmarks: [planetProfile.landmark],
             palette: {

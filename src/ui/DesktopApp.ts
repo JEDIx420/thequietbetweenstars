@@ -396,7 +396,9 @@ export class DesktopApp {
           this.updateContextPrompt(`PROXIMITY: ${res.activeScanTarget.name} // SPACE TO SCAN`);
         }
       } else {
-        this.updateContextPrompt('SURFACE EXPLORATION // FLY THROUGH MOTES TO COLLECT · Q/E: ALTITUDE · F3: TELEMETRY · ESC: ORBIT');
+        const atmo = this.surfaceScene.currentAtmosphereState;
+        const atmoInfo = atmo ? ` · ${atmo.localTimeFormatted} [${atmo.phase}] · WX: ${atmo.weather.replace('_', ' ')}` : '';
+        this.updateContextPrompt(`SURFACE EXPLORATION${atmoInfo} // Q/E: ALTITUDE · F3: TELEMETRY · ESC: ORBIT`);
       }
 
       // Contextual action: Collect sample or initiate conversation or scan
@@ -469,7 +471,17 @@ export class DesktopApp {
       if (crEl) crEl.textContent = `${this.credits}`;
 
       // Check for pending courier deliveries and courier pod docking in space
-      this.updateCourierDelivery(shipPos);
+      this.updateCourierDelivery(shipPos, dt);
+
+      // Check for ambient traffic comms chatter
+      if (this.spaceScene.lastCommsHail) {
+        const hail = this.spaceScene.lastCommsHail;
+        this.spaceScene.lastCommsHail = null;
+        this.showHudNotice(hail);
+        audio.playConnectChime();
+      }
+
+      const scanReach = this.installedModules.has('mod_scanner_deep_ecology') ? 280 : 140;
 
       // Check Approach Controller for planets (strictly disabled while in deep cruise)
       const targetPlanet = (!this.deepCruiseController.state.isActive && phase !== FlightPhase.STELLAR_CRUISE)
@@ -491,12 +503,44 @@ export class DesktopApp {
         }
         this.clearApproachHUD();
 
+        // Check for nearby cosmic space encounters
+        const nearbyEncounter = this.spaceScene.encounterManager?.getNearbyEncounter(shipPos, scanReach);
+        if (nearbyEncounter && !nearbyEncounter.isScanned) {
+          const encDist = Math.round(nearbyEncounter.position.distanceTo(shipPos));
+          this.updateContextPrompt(`PROXIMITY: ${nearbyEncounter.name} [${encDist}m] // SPACE TO SCAN & HARVEST`);
+        }
+
         // Normal Scanner pulse in free space
         if (this.inputManager.consumeAction('scan')) {
           this.spaceScene.triggerScan(shipPos);
           audio.playScanEffect();
           this.tutorialDirector.onPlayerScan();
-          this.showHudNotice('SCAN INITIATED — ACOUSTIC RESONANCE EMITTED');
+
+          // Check if scanning a nearby cosmic encounter
+          const enc = this.spaceScene.encounterManager?.getNearbyEncounter(shipPos, scanReach);
+          if (enc && !enc.isScanned) {
+            enc.isScanned = true;
+            this.credits += enc.rewardCredits;
+            if (enc.rewardSampleCategory) {
+              this.sampleInventory[enc.rewardSampleCategory] = (this.sampleInventory[enc.rewardSampleCategory] || 0) + 1;
+            }
+            audio.playConnectChime();
+            const sampleNotice = enc.rewardSampleCategory ? ` · +1 ${enc.rewardSampleCategory} SAMPLE` : '';
+            this.showHudNotice(`DISCOVERY: ${enc.name} // +${enc.rewardCredits} CREDITS${sampleNotice}`);
+            saveManager.recordDiscovery({
+              id: enc.id,
+              type: 'anomaly',
+              name: enc.name,
+              systemName: this.spaceScene.currentSystem?.name || 'Deep Space',
+              sector: { ...this.worldPosition.sector },
+              timestamp: Date.now(),
+              details: enc.logSnippet,
+              category: 'ANOMALIES',
+            });
+            this.saveCurrentJourney();
+          } else {
+            this.showHudNotice('SCAN INITIATED — ACOUSTIC RESONANCE EMITTED');
+          }
 
           // Check if space anomalies or rare resonance trigger
           if (this.discoveredSpecies.size + this.visitedSystems.size >= 2 && !this.narrativeDirector.resonanceFlags.has('heard_first_resonance')) {
@@ -983,14 +1027,37 @@ export class DesktopApp {
     if (this.surfaceScene) {
       this.surfaceScene.surveyCraft.setInstalledModules(modulesList);
       if (this.installedModules.has('mod_surface_grav_stabilizer')) {
-        this.surfaceScene.maxAltitudeAGL = 75.0;
+        this.surfaceScene.maxAltitudeAGL = 95.0;
+      } else {
+        this.surfaceScene.maxAltitudeAGL = 40.0;
+      }
+      if (this.installedModules.has('mod_survey_mote_magnet')) {
+        this.surfaceScene.creditPickupManager.pickupRadius = 14.0;
+        this.surfaceScene.creditPickupManager.magnetismRadius = 85.0;
+      } else {
+        this.surfaceScene.creditPickupManager.pickupRadius = 6.5;
+        this.surfaceScene.creditPickupManager.magnetismRadius = 16.0;
       }
     }
 
     if (this.installedModules.has('mod_propulsion_ion_vector')) {
       this.flightModel.accelerationMultiplier = 1.35;
+      this.flightModel.turnRateMultiplier = 1.35;
     } else {
       this.flightModel.accelerationMultiplier = 1.0;
+      this.flightModel.turnRateMultiplier = 1.0;
+    }
+
+    if (this.installedModules.has('mod_sublight_overdrive')) {
+      this.flightModel.maxCruiseSpeedMultiplier = 1.5;
+    } else {
+      this.flightModel.maxCruiseSpeedMultiplier = 1.0;
+    }
+
+    if (this.installedModules.has('mod_warp_harmonic_field')) {
+      this.deepCruiseController.state.cruiseDuration = 6.0;
+    } else {
+      this.deepCruiseController.state.cruiseDuration = 10.0;
     }
   }
 
@@ -2103,7 +2170,7 @@ export class DesktopApp {
     this.saveCurrentJourney();
   }
 
-  public updateCourierDelivery(shipPos: any): void {
+  public updateCourierDelivery(shipPos: any, dt = 0.016): void {
     const now = Date.now();
 
     // Check pending orders arriving in space
@@ -2112,7 +2179,7 @@ export class DesktopApp {
         const elapsedSec = (now - order.orderedAt) / 1000;
         if (elapsedSec >= order.deliveryEtaSec && !this.spaceScene.activeCourierPod) {
           order.status = 'ARRIVED';
-          const spawnOffset = new THREE.Vector3(70, 15, -90);
+          const spawnOffset = new THREE.Vector3(45, 12, -65);
           const spawnPos = (shipPos as THREE.Vector3).clone().add(spawnOffset);
           this.spaceScene.spawnCourierPod(order, spawnPos);
           this.showHudNotice(`COURIER POD INCOMING // SUB-SPACE DELIVERY CAPSULE ARRIVED NEARBY`);
@@ -2121,16 +2188,21 @@ export class DesktopApp {
       }
     }
 
-    // Check docking range with active courier pod
+    // Check docking & tractor range with active courier pod
     if (this.spaceScene.activeCourierPod) {
       const pod = this.spaceScene.activeCourierPod;
       const dist = shipPos.distanceTo ? shipPos.distanceTo(pod.position) : 999;
 
-      if (dist < 45) {
-        this.updateContextPrompt(`DOCKING CORRIDOR ALIGNED: COURIER POD [${Math.round(dist)}m] // SPACE TO DOCK & INSTALL`);
-        if (this.inputManager.consumeAction('scan') || this.inputManager.consumeAction('confirm') || this.inputManager.consumeAction('interact')) {
-          this.dockCourierPod(pod);
+      if (dist <= 18) {
+        // Auto-dock & integrate
+        this.dockCourierPod(pod);
+      } else if (dist < 140) {
+        this.updateContextPrompt(`COURIER POD LOCKED [${Math.round(dist)}m] // HOLD SPACE FOR TRACTOR BEAM (PULL CAPSULE)`);
+        if (this.inputManager.isActionPressed('scan') || this.inputManager.isActionPressed('confirm') || this.inputManager.isActionPressed('interact')) {
+          pod.applyTractorPull(shipPos, dt);
         }
+      } else {
+        this.updateContextPrompt(`COURIER POD BEACON DETECTED [${Math.round(dist)}m] // APPROACH FOR TRACTOR LOCK`);
       }
     }
   }
@@ -2212,6 +2284,8 @@ export class DesktopApp {
         <div>Vert Accel: <span style="color: #cbd5e1;">${data.verticalAcceleration.toFixed(2)} m/s²</span></div>
         <div>Horizontal Speed: <span style="color: #facc15;">${data.speedMps} m/s</span></div>
         <div>Terrain Assist: <span style="color: ${data.terrainAssistActive ? '#38bdf8' : '#64748b'};">${data.terrainAssistActive ? 'ACTIVE [CREST CLIMB]' : 'STANDBY'}</span></div>
+        <div>Local Time: <span style="color: #facc15;">${this.surfaceScene?.currentAtmosphereState?.localTimeFormatted || '--:--'} (${this.surfaceScene?.currentAtmosphereState?.phase || 'MIDDAY'})</span></div>
+        <div>Weather: <span style="color: #67e8f9;">${this.surfaceScene?.currentAtmosphereState?.weather.replace('_', ' ') || 'CLEAR'}</span></div>
         <div>Frame dt: <span style="color: #64748b;">${(data.dt * 1000).toFixed(1)} ms</span></div>
       `;
     } else {

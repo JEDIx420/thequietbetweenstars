@@ -162,6 +162,210 @@ export class FaunaGenerator {
         break;
       }
 
+      case 'sky_whale': {
+        // Enormous atmospheric leviathan (20-30m) with dorsal ridge and ventral vents
+        const whaleMat = bodyMat.clone();
+        whaleMat.roughness = 0.4;
+        const glowMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 3.8, 14.0, 7), whaleMat);
+        body.rotation.x = Math.PI / 2;
+        body.position.y = 18.0;
+        group.add(body);
+
+        // Head dome
+        const whaleHead = new THREE.Mesh(new THREE.SphereGeometry(3.6, 8, 6), whaleMat);
+        whaleHead.position.set(0, 18.0, -7.0);
+        whaleHead.scale.set(0.9, 0.7, 1.3);
+        group.add(whaleHead);
+
+        // Pectoral flippers
+        const flipperGeo = new THREE.BoxGeometry(7.0, 0.3, 2.5);
+        const flippers = new THREE.Mesh(flipperGeo, whaleMat);
+        flippers.position.set(0, 17.5, -2.0);
+        group.add(flippers);
+
+        // Bioluminescent ventral vents
+        for (let v = -4; v <= 4; v += 2) {
+          const vent = new THREE.Mesh(new THREE.SphereGeometry(0.4, 5, 5), glowMat);
+          vent.position.set(0, 14.8, v);
+          group.add(vent);
+        }
+        behaviour = 'hover';
+        moveSpeed = rng.range(2.0, 4.2);
+        break;
+      }
+
+      case 'titan_strider': {
+        // Towering 6-legged colossus with elevated crest
+        const carapace = new THREE.Mesh(new THREE.DodecahedronGeometry(2.4, 0), bodyMat);
+        carapace.position.y = 7.5;
+        group.add(carapace);
+
+        const crestGeo = new THREE.ConeGeometry(0.8, 4.0, 4);
+        const crest = new THREE.Mesh(crestGeo, new THREE.MeshBasicMaterial({ color: 0x34d399 }));
+        crest.position.set(0, 10.0, -1.0);
+        crest.rotation.x = -0.3;
+        group.add(crest);
+
+        const legGeo = new THREE.CylinderGeometry(0.18, 0.25, 7.5, 4);
+        for (let l = 0; l < 6; l++) {
+          const side = l % 2 === 0 ? 1 : -1;
+          const zOffset = (Math.floor(l / 2) - 1) * 2.2;
+          const leg = new THREE.Mesh(legGeo, bodyMat);
+          leg.position.set(side * 2.4, 3.8, zOffset);
+          leg.rotation.z = side * 0.2;
+          group.add(leg);
+        }
+        behaviour = 'wander';
+        moveSpeed = rng.range(3.0, 5.5);
+        break;
+      }
+
+      case 'spore_medusa': {
+        // Translucent floating bell with glowing trailing tendrils
+        const bellMat = new THREE.MeshStandardMaterial({
+          color: baseColor,
+          roughness: 0.2,
+          metalness: 0.1,
+          transparent: true,
+          opacity: 0.85,
+        });
+        const glowMat = new THREE.MeshBasicMaterial({ color: 0xa855f7 });
+
+        const bell = new THREE.Mesh(new THREE.SphereGeometry(2.5, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.6), bellMat);
+        bell.rotation.x = Math.PI;
+        bell.position.y = 12.0;
+        group.add(bell);
+
+        // Core nucleus
+        const core = new THREE.Mesh(new THREE.SphereGeometry(0.8, 6, 6), glowMat);
+        core.position.y = 11.2;
+        group.add(core);
+
+        // Trailing tendrils
+        const tendrilGeo = new THREE.CylinderGeometry(0.05, 0.08, 6.0, 3);
+        for (let t = 0; t < 8; t++) {
+          const angle = (t * Math.PI * 2) / 8;
+          const tendril = new THREE.Mesh(tendrilGeo, bellMat);
+          tendril.position.set(Math.cos(angle) * 1.8, 8.5, Math.sin(angle) * 1.8);
+          group.add(tendril);
+        }
+        behaviour = 'hover';
+        moveSpeed = rng.range(1.6, 3.0);
+        break;
+      }
+
+      case 'crystal_scuttler': {
+        // Low-slung multi-legged faceted crustacean
+        const prismGeo = new THREE.ConeGeometry(1.6, 2.8, 6);
+        prismGeo.rotateX(Math.PI / 2);
+        const shell = new THREE.Mesh(prismGeo, bodyMat);
+        shell.scale.set(1.2, 0.5, 1.0);
+        shell.position.y = 0.9;
+        group.add(shell);
+
+        const gemGeo = new THREE.OctahedronGeometry(0.4, 0);
+        const gemMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+        for (let g = -1; g <= 1; g += 2) {
+          const gem = new THREE.Mesh(gemGeo, gemMat);
+          gem.position.set(g * 0.8, 1.2, 0);
+          group.add(gem);
+        }
+
+        const legGeo = new THREE.CylinderGeometry(0.08, 0.12, 1.2, 3);
+        for (let l = 0; l < 6; l++) {
+          const side = l % 2 === 0 ? 1 : -1;
+          const zOffset = (Math.floor(l / 2) - 1) * 0.9;
+          const leg = new THREE.Mesh(legGeo, bodyMat);
+          leg.position.set(side * 1.1, 0.45, zOffset);
+          leg.rotation.z = side * 0.45;
+          group.add(leg);
+        }
+        behaviour = 'wander';
+        moveSpeed = rng.range(4.0, 7.2);
+        break;
+      }
+
+      case 'dune_serpent': {
+        // Multi-segmented undulating desert serpent
+        const segCount = 7;
+        const segGeo = new THREE.SphereGeometry(0.9, 6, 5);
+        for (let s = 0; s < segCount; s++) {
+          const seg = new THREE.Mesh(segGeo, bodyMat);
+          const taper = 1.0 - (s / segCount) * 0.5;
+          seg.scale.set(taper, taper * 0.7, taper);
+          seg.position.set(0, 0.7, (s - 3) * 1.3);
+          group.add(seg);
+        }
+        // Serpent crest
+        const crest = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.2, 4), eyeMat);
+        crest.position.set(0, 1.5, -4.0);
+        crest.rotation.x = -0.6;
+        group.add(crest);
+
+        behaviour = 'wander';
+        moveSpeed = rng.range(4.5, 8.0);
+        break;
+      }
+
+      case 'avian_flock': {
+        // Group of swift soaring flyers
+        const flyerMat = bodyMat.clone();
+        for (let f = 0; f < 4; f++) {
+          const fGroup = new THREE.Group();
+          const fWing = new THREE.Mesh(new THREE.ConeGeometry(1.6, 3.2, 3), flyerMat);
+          fWing.rotation.x = Math.PI / 2;
+          fWing.scale.set(1.4, 0.15, 0.7);
+          fGroup.add(fWing);
+
+          const fBeak = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.8, 3), eyeMat);
+          fBeak.position.set(0, 0, -1.4);
+          fBeak.rotation.x = -Math.PI / 2;
+          fGroup.add(fBeak);
+
+          const fAng = (f * Math.PI * 2) / 4;
+          fGroup.position.set(Math.cos(fAng) * 4.0, 14.0 + (f % 2) * 2.0, Math.sin(fAng) * 4.0);
+          group.add(fGroup);
+        }
+        behaviour = 'circle';
+        moveSpeed = rng.range(8.5, 14.0);
+        break;
+      }
+
+      case 'biped_stalker': {
+        // Fast bipedal predatory runner with counterbalanced tail
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.4, 2.2), bodyMat);
+        torso.position.y = 2.4;
+        group.add(torso);
+
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 1.4, 4), bodyMat);
+        neck.position.set(0, 3.2, -1.0);
+        neck.rotation.x = 0.4;
+        group.add(neck);
+
+        const head = new THREE.Mesh(new THREE.ConeGeometry(0.6, 1.4, 4), bodyMat);
+        head.position.set(0, 3.8, -1.8);
+        head.rotation.x = -Math.PI / 2;
+        group.add(head);
+
+        const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.4, 3.0, 4), bodyMat);
+        tail.position.set(0, 2.2, 1.8);
+        tail.rotation.x = -0.5;
+        group.add(tail);
+
+        const legGeo = new THREE.CylinderGeometry(0.18, 0.14, 2.4, 4);
+        for (const side of [-1, 1]) {
+          const leg = new THREE.Mesh(legGeo, bodyMat);
+          leg.position.set(side * 0.8, 1.2, 0.1);
+          leg.rotation.x = 0.2;
+          group.add(leg);
+        }
+        behaviour = 'wander';
+        moveSpeed = rng.range(5.0, 9.0);
+        break;
+      }
+
       case 'crawler':
       default: {
         // Multi-segmented low ground crawler
@@ -194,25 +398,28 @@ export class FaunaGenerator {
       phase,
       scanInfo,
       update: (dt: number, getHeightAt: (x: number, z: number) => number) => {
-        phase += dt * (archetype === 'jelly' ? 1.8 : 3.0);
+        phase += dt * (archetype === 'jelly' || archetype === 'spore_medusa' ? 1.8 : 3.0);
 
         if (behaviour === 'circle') {
-          headingAngle += dt * 0.35;
-          const targetX = spawnPos.x + Math.cos(headingAngle) * 35;
-          const targetZ = spawnPos.z + Math.sin(headingAngle) * 35;
-          const curY = getHeightAt(group.position.x, group.position.z) + 12 + Math.sin(phase) * 1.5;
+          headingAngle += dt * (archetype === 'avian_flock' ? 0.5 : 0.35);
+          const circleRadius = archetype === 'avian_flock' ? 55 : 35;
+          const targetX = spawnPos.x + Math.cos(headingAngle) * circleRadius;
+          const targetZ = spawnPos.z + Math.sin(headingAngle) * circleRadius;
+          const baseAlt = archetype === 'avian_flock' ? 22 : 12;
+          const curY = getHeightAt(group.position.x, group.position.z) + baseAlt + Math.sin(phase) * 2.0;
           group.position.set(targetX, curY, targetZ);
           group.rotation.y = -headingAngle + Math.PI / 2;
         } else if (behaviour === 'hover') {
           group.position.x += Math.cos(headingAngle) * moveSpeed * dt;
           group.position.z += Math.sin(headingAngle) * moveSpeed * dt;
-          const curY = getHeightAt(group.position.x, group.position.z) + 7 + Math.sin(phase) * 1.2;
+          const hoverAlt = archetype === 'sky_whale' ? 24 : (archetype === 'spore_medusa' ? 14 : 7);
+          const curY = getHeightAt(group.position.x, group.position.z) + hoverAlt + Math.sin(phase) * 1.5;
           group.position.y = curY;
-          if (group.position.distanceTo(spawnPos) > 45) {
+          if (group.position.distanceTo(spawnPos) > (archetype === 'sky_whale' ? 80 : 45)) {
             headingAngle += Math.PI * 0.8;
           }
         } else {
-          // Ground walking / grazing / hopping
+          // Ground walking / grazing / hopping / slithering
           group.position.x += Math.cos(headingAngle) * moveSpeed * dt;
           group.position.z += Math.sin(headingAngle) * moveSpeed * dt;
           const curY = getHeightAt(group.position.x, group.position.z);
@@ -220,7 +427,12 @@ export class FaunaGenerator {
           group.position.y = curY + hop;
           group.rotation.y = -headingAngle - Math.PI / 2;
 
-          if (group.position.distanceTo(spawnPos) > 40) {
+          if (archetype === 'dune_serpent') {
+            // Sinuous spine wave rotation
+            group.rotation.y += Math.sin(phase * 2.5) * 0.25;
+          }
+
+          if (group.position.distanceTo(spawnPos) > 45) {
             headingAngle += Math.PI * 0.75 + (rng.next() - 0.5);
           }
         }
@@ -242,6 +454,13 @@ export class FaunaGenerator {
       hopping: ['Spring Biped', 'Saltation Pod', 'Basalt Hopper', 'Quartz Hopper'],
       ray: ['Aerial Manta', 'Atmospheric Ray', 'Thermal Soarer', 'Zephyr Glider'],
       crawler: ['Segmented Scuttler', 'Lithic Carver', 'Basalt Grub', 'Silicate Myriapod'],
+      sky_whale: ['Atmospheric Leviathan', 'Vapour Whale', 'Celestial Aerostat', 'Nimbus Monarch'],
+      titan_strider: ['Apex Hexapod Colossus', 'Obsidian Strider', 'Lithic Canopy Walker', 'Plateau Titan'],
+      spore_medusa: ['Luminescent Spore Medusa', 'Phosphor Bell', 'Ion Siphon', 'Aetheric Cnidarian'],
+      crystal_scuttler: ['Prismatic Scuttler', 'Quartz Mantis', 'Faceted Carapace', 'Silicate Skimmer'],
+      dune_serpent: ['Sub-Sand Dune Serpent', 'Regolith Wyrm', 'Lithic Glider', 'Basalt Ouroboros'],
+      avian_flock: ['Thermal Dart Flock', 'Vapour Swifts', 'Aero-Falcons', 'Prism Skimmers'],
+      biped_stalker: ['Savannah Raptor', 'Canyon Strider', 'Swift Crested Runner', 'Basalt Stalker'],
     };
 
     const diets = [
@@ -250,6 +469,7 @@ export class FaunaGenerator {
       'Silica-rich mineral accretions',
       'Hydrocarbon vapor condensates',
       'Endolithic bacterial filaments',
+      'Ambient electrostatic energy & stellar flux',
     ];
 
     const temperaments = [
@@ -258,6 +478,7 @@ export class FaunaGenerator {
       'Inquisitive towards vessel thruster harmonics',
       'Docile aerial herbivore',
       'Passive territorial sentinel',
+      'Majestic sovereign drifter',
     ];
 
     const adaptations = [
@@ -266,9 +487,11 @@ export class FaunaGenerator {
       'Gas bladder regulating electrostatic buoyancy',
       'Resonant acoustic echolocation organs',
       'Bioluminescent signaling chromatophores',
+      'Thermal mantle absorbing stellar radiation',
     ];
 
-    const name = `${region.name} ${rng.pick(titles[archetype])}`;
+    const titlesForArch = titles[archetype] || titles.crawler;
+    const name = `${region.name} ${rng.pick(titlesForArch)}`;
 
     return {
       name,
