@@ -123,4 +123,48 @@ describe('Save Schema v4 & Ship Progression Persistence', () => {
     expect(migrated?.stats.samplesCollected).toBe(0);
     expect(migrated?.stats.modulesInstalled).toBe(0);
   });
+
+  it('only detects saved journey when player has actually started playing', async () => {
+    // 1. Unplayed slot (default position, 0 flight time, 0 discoveries)
+    const unplayedSlot: any = {
+      slotId: 'current_journey',
+      saveVersion: 4,
+      updatedAt: Date.now(),
+      universeSeed: 'QUIET-DEFAULT-001',
+      playerSector: { x: 0, y: 0, z: 0 },
+      playerLocalPos: { x: 0, y: 0, z: 100 },
+      currentSystem: null,
+      targetSystem: null,
+      flightPhase: 'SYSTEM_CRUISE',
+      credits: 250,
+      sampleInventory: {},
+      installedModules: [],
+      pendingOrders: [],
+      npcMemories: {},
+      collectedCreditIds: [],
+      stats: {
+        systemsVisited: 1,
+        planetsScanned: 0,
+        surfacesVisited: 0,
+        speciesDiscovered: 0,
+        sentientDiscovered: 0,
+        loreLearned: 0,
+        samplesCollected: 0,
+        modulesInstalled: 0,
+        anomaliesDiscovered: 0,
+        flightTimeSeconds: 0,
+      },
+      tutorial: { started: false, completed: false, step: 'WAKE_INTRO', skipped: false },
+      narrative: { triggeredEventIds: [], resonanceFlags: [] },
+    };
+
+    await saveMgr.saveJourney(unplayedSlot);
+    expect(await saveMgr.hasSavedJourney()).toBe(false);
+
+    // 2. Once the player has flown or moved or scanned, hasSavedJourney becomes true
+    unplayedSlot.stats.flightTimeSeconds = 12;
+    await saveMgr.saveJourney(unplayedSlot);
+    expect(await saveMgr.hasSavedJourney()).toBe(true);
+  });
 });
+

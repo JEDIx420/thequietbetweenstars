@@ -828,37 +828,37 @@ export class DesktopApp {
             this.hasSavedJourney
               ? `
             <button id="btn-continue" style="
-              padding: 16px 54px;
-              background: linear-gradient(135deg, rgba(56, 189, 248, 0.35), rgba(14, 165, 233, 0.2));
-              border: 1px solid rgba(56, 189, 248, 0.8);
+              padding: 16px 56px;
+              background: linear-gradient(135deg, rgba(56, 189, 248, 0.4), rgba(14, 165, 233, 0.25));
+              border: 1.5px solid rgba(56, 189, 248, 0.9);
               border-radius: 9999px;
               color: #f8fafc;
               font-size: 14px;
-              font-weight: 600;
+              font-weight: 700;
               letter-spacing: 0.2em;
               cursor: pointer;
               transition: all 0.25s ease;
-              box-shadow: 0 0 35px rgba(56, 189, 248, 0.35);
-              min-width: 260px;
+              box-shadow: 0 0 40px rgba(56, 189, 248, 0.45);
+              min-width: 280px;
             ">CONTINUE JOURNEY</button>
           `
               : ''
           }
 
           <button id="btn-begin" style="
-            padding: ${this.hasSavedJourney ? '12px 42px' : '18px 54px'};
-            background: ${this.hasSavedJourney ? 'rgba(30, 41, 59, 0.6)' : 'linear-gradient(135deg, rgba(14, 165, 233, 0.25), rgba(56, 189, 248, 0.12))'};
-            border: 1px solid ${this.hasSavedJourney ? 'rgba(148, 163, 184, 0.3)' : 'rgba(56, 189, 248, 0.65)'};
+            padding: ${this.hasSavedJourney ? '12px 44px' : '18px 60px'};
+            background: ${this.hasSavedJourney ? 'rgba(30, 41, 59, 0.65)' : 'linear-gradient(135deg, rgba(14, 165, 233, 0.5), rgba(56, 189, 248, 0.3))'};
+            border: ${this.hasSavedJourney ? '1px solid rgba(148, 163, 184, 0.35)' : '1.5px solid rgba(56, 189, 248, 0.95)'};
             border-radius: 9999px;
-            color: ${this.hasSavedJourney ? '#cbd5e1' : '#f8fafc'};
+            color: ${this.hasSavedJourney ? '#94a3b8' : '#ffffff'};
             font-size: ${this.hasSavedJourney ? '12px' : '15px'};
-            font-weight: 600;
-            letter-spacing: 0.2em;
+            font-weight: ${this.hasSavedJourney ? '600' : '700'};
+            letter-spacing: 0.22em;
             cursor: pointer;
             transition: all 0.25s ease;
-            box-shadow: 0 0 35px rgba(56, 189, 248, 0.25);
-            min-width: 260px;
-          ">${this.hasSavedJourney ? 'NEW JOURNEY' : 'BEGIN JOURNEY'}</button>
+            box-shadow: ${this.hasSavedJourney ? 'none' : '0 0 50px rgba(56, 189, 248, 0.55), inset 0 0 20px rgba(56, 189, 248, 0.2)'};
+            min-width: 280px;
+          ">${this.hasSavedJourney ? 'NEW JOURNEY' : 'START NEW GAME'}</button>
         </div>
 
         <div id="audio-unlock-hint" style="

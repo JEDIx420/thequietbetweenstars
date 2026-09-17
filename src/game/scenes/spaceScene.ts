@@ -4,7 +4,7 @@ import { CelestialPhysicsSystem, type CelestialBody } from '../core/celestialPhy
 import { InfiniteBackground } from '../universe/InfiniteBackground';
 import { PlanetVisualGenerator } from '../planets/PlanetVisualGenerator';
 import { PlanetEnvironmentGenerator } from '../planets/PlanetEnvironmentProfile';
-import type { PlanetDescriptor, StarSystemDescriptor } from '../systems/PlanetDescriptor';
+import type { PlanetDescriptor, StarSystemDescriptor, StarDescriptor } from '../systems/PlanetDescriptor';
 import { CourierPod } from '../flight/CourierPod';
 
 export class SpaceScene {
@@ -35,10 +35,12 @@ export class SpaceScene {
   public sunDirLight: THREE.DirectionalLight;
   public sunPos = new THREE.Vector3(1200, 500, -2200);
   private sunCore: THREE.Mesh;
-  private sunCoronaInner: THREE.Mesh;
-  private sunCoronaOuter: THREE.Mesh;
-  private sunSpikes: THREE.Mesh;
+  private sunSurfaceTexture: THREE.CanvasTexture | null = null;
+  private sunCoronaInner: THREE.Sprite;
+  private sunCoronaOuter: THREE.Sprite;
+  private sunFlares: THREE.Sprite;
   private sunLight: THREE.PointLight;
+  private currentStarRadius = 130;
 
   // Primary System Planets (Aurelia & Zephyr)
   public aureliaDescriptor: PlanetDescriptor;
@@ -160,7 +162,7 @@ export class SpaceScene {
     this.sunCore = sunData.core;
     this.sunCoronaInner = sunData.coronaInner;
     this.sunCoronaOuter = sunData.coronaOuter;
-    this.sunSpikes = sunData.spikes;
+    this.sunFlares = sunData.flares;
     this.sunLight = sunData.light;
     this.worldRoot.add(this.sunGroup);
 
@@ -389,11 +391,10 @@ export class SpaceScene {
       this.physics = new CelestialPhysicsSystem(bodies);
     }
 
-    // 5. Update Star Color & Illumination
-    const starColor = new THREE.Color(system.star.lightColor || 0xfff7ed);
-    (this.sunCore.material as THREE.MeshBasicMaterial).color.copy(starColor);
-    this.sunLight.color.copy(starColor);
-    this.sunDirLight.color.copy(starColor);
+    // 5. Update Star Color, Corona & Illumination
+    if (system.star) {
+      this.updateStarVisuals(system.star);
+    }
   }
 
   /**
@@ -454,59 +455,275 @@ export class SpaceScene {
     }
   }
 
+  private createSolarSurfaceTexture(lightColorHex: number, coronaColorHex: number): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return new THREE.CanvasTexture(canvas);
+
+    const lightCol = new THREE.Color(lightColorHex);
+    const coronaCol = new THREE.Color(coronaColorHex);
+
+    // 1. Base solar plasma background gradient
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, 256);
+    bgGrad.addColorStop(0, coronaCol.getStyle());
+    bgGrad.addColorStop(0.25, '#ffffff');
+    bgGrad.addColorStop(0.5, lightCol.getStyle());
+    bgGrad.addColorStop(0.75, '#ffffff');
+    bgGrad.addColorStop(1, coronaCol.getStyle());
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, 512, 256);
+
+    // 2. High-density convective plasma granules
+    for (let i = 0; i < 360; i++) {
+      const x = Math.random() * 512;
+      const y = Math.random() * 256;
+      const r = 5 + Math.random() * 18;
+      const radGrad = ctx.createRadialGradient(x, y, 0, x, y, r);
+      radGrad.addColorStop(0, '#ffffff');
+      radGrad.addColorStop(0.35, lightCol.getStyle());
+      radGrad.addColorStop(0.75, coronaCol.getStyle());
+      radGrad.addColorStop(1, 'transparent');
+
+      ctx.fillStyle = radGrad;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 3. Turbulent magnetic filaments
+    ctx.lineWidth = 2.5;
+    for (let j = 0; j < 30; j++) {
+      const y = Math.random() * 256;
+      ctx.strokeStyle = Math.random() > 0.45 ? '#ffffff' : coronaCol.getStyle();
+      ctx.globalAlpha = 0.25 + Math.random() * 0.35;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      for (let x = 0; x <= 512; x += 32) {
+        ctx.lineTo(x, y + (Math.random() - 0.5) * 16);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1.0;
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    return texture;
+  }
+
+  private createInnerCoronaTexture(coronaColorHex: number): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return new THREE.CanvasTexture(canvas);
+
+    const coronaCol = new THREE.Color(coronaColorHex);
+    const grad = ctx.createRadialGradient(256, 256, 0, 256, 256, 256);
+    // Smooth, radiant limb: white-hot core transitioning into rich corona glow
+    grad.addColorStop(0, '#ffffff');
+    grad.addColorStop(0.28, '#ffffff');
+    grad.addColorStop(0.44, coronaCol.getStyle());
+    grad.addColorStop(0.68, `rgba(${Math.round(coronaCol.r * 255)}, ${Math.round(coronaCol.g * 255)}, ${Math.round(coronaCol.b * 255)}, 0.4)`);
+    grad.addColorStop(1, 'transparent');
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 512, 512);
+
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  private createOuterCoronaTexture(coronaColorHex: number): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return new THREE.CanvasTexture(canvas);
+
+    const coronaCol = new THREE.Color(coronaColorHex);
+    const grad = ctx.createRadialGradient(256, 256, 0, 256, 256, 256);
+    grad.addColorStop(0, `rgba(${Math.round(coronaCol.r * 255)}, ${Math.round(coronaCol.g * 255)}, ${Math.round(coronaCol.b * 255)}, 0.55)`);
+    grad.addColorStop(0.35, `rgba(${Math.round(coronaCol.r * 255)}, ${Math.round(coronaCol.g * 255)}, ${Math.round(coronaCol.b * 255)}, 0.25)`);
+    grad.addColorStop(0.70, `rgba(${Math.round(coronaCol.r * 255)}, ${Math.round(coronaCol.g * 255)}, ${Math.round(coronaCol.b * 255)}, 0.08)`);
+    grad.addColorStop(1, 'transparent');
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 512, 512);
+
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  private createSolarFlareTexture(coronaColorHex: number): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return new THREE.CanvasTexture(canvas);
+
+    const coronaCol = new THREE.Color(coronaColorHex);
+    ctx.clearRect(0, 0, 512, 512);
+
+    // Central soft glow
+    const centerGrad = ctx.createRadialGradient(256, 256, 0, 256, 256, 70);
+    centerGrad.addColorStop(0, '#ffffff');
+    centerGrad.addColorStop(0.45, coronaCol.getStyle());
+    centerGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = centerGrad;
+    ctx.beginPath();
+    ctx.arc(256, 256, 70, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 8 soft radial optical diffraction rays (no harsh polygon edges)
+    const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
+    for (const angle of angles) {
+      ctx.save();
+      ctx.translate(256, 256);
+      ctx.rotate(angle);
+
+      const isPrimary = angle === 0 || angle === Math.PI / 2;
+      const rayLength = isPrimary ? 250 : 185;
+      const rayWidth = isPrimary ? 8 : 4.5;
+
+      const grad = ctx.createLinearGradient(0, 0, rayLength, 0);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.18, coronaCol.getStyle());
+      grad.addColorStop(0.65, `rgba(${Math.round(coronaCol.r * 255)}, ${Math.round(coronaCol.g * 255)}, ${Math.round(coronaCol.b * 255)}, 0.15)`);
+      grad.addColorStop(1, 'transparent');
+
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, -rayWidth / 2, rayLength, rayWidth);
+
+      const gradNeg = ctx.createLinearGradient(0, 0, -rayLength, 0);
+      gradNeg.addColorStop(0, '#ffffff');
+      gradNeg.addColorStop(0.18, coronaCol.getStyle());
+      gradNeg.addColorStop(0.65, `rgba(${Math.round(coronaCol.r * 255)}, ${Math.round(coronaCol.g * 255)}, ${Math.round(coronaCol.b * 255)}, 0.15)`);
+      gradNeg.addColorStop(1, 'transparent');
+
+      ctx.fillStyle = gradNeg;
+      ctx.fillRect(-rayLength, -rayWidth / 2, rayLength, rayWidth);
+
+      ctx.restore();
+    }
+
+    return new THREE.CanvasTexture(canvas);
+  }
+
   private createProceduralSun(): {
     group: THREE.Group;
     core: THREE.Mesh;
-    coronaInner: THREE.Mesh;
-    coronaOuter: THREE.Mesh;
-    spikes: THREE.Mesh;
+    coronaInner: THREE.Sprite;
+    coronaOuter: THREE.Sprite;
+    flares: THREE.Sprite;
     light: THREE.PointLight;
   } {
     const group = new THREE.Group();
     group.position.set(1200, 500, -2200);
 
-    const coreGeo = new THREE.SphereGeometry(130, 48, 36);
-    const coreMat = new THREE.MeshBasicMaterial({ color: 0xfff7ed });
+    // 1. High-Fidelity Photosphere Sphere (64x48 segments for perfectly round silhouette)
+    this.sunSurfaceTexture = this.createSolarSurfaceTexture(0xfff3d6, 0xf59e0b);
+    const coreGeo = new THREE.SphereGeometry(130, 64, 48);
+    const coreMat = new THREE.MeshBasicMaterial({ map: this.sunSurfaceTexture });
     const core = new THREE.Mesh(coreGeo, coreMat);
     group.add(core);
 
-    const coronaInGeo = new THREE.SphereGeometry(148, 48, 48);
-    const coronaInMat = new THREE.MeshBasicMaterial({
-      color: 0xfbbf24,
-      transparent: true,
-      opacity: 0.55,
-      side: THREE.BackSide,
+    // 2. Camera-Facing Inner Corona Billboard (seamless limb bloom, no clipping)
+    const innerTex = this.createInnerCoronaTexture(0xf59e0b);
+    const innerMat = new THREE.SpriteMaterial({
+      map: innerTex,
       blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      transparent: true,
     });
-    const coronaInner = new THREE.Mesh(coronaInGeo, coronaInMat);
+    const coronaInner = new THREE.Sprite(innerMat);
+    const innerScale = 130 * 2.8;
+    coronaInner.scale.set(innerScale, innerScale, 1);
     group.add(coronaInner);
 
-    const coronaOutGeo = new THREE.SphereGeometry(195, 48, 48);
-    const coronaOutMat = new THREE.MeshBasicMaterial({
-      color: 0xf59e0b,
-      transparent: true,
-      opacity: 0.22,
-      side: THREE.BackSide,
+    // 3. Camera-Facing Outer Atmospheric Corona Halo
+    const outerTex = this.createOuterCoronaTexture(0xf59e0b);
+    const outerMat = new THREE.SpriteMaterial({
+      map: outerTex,
       blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.65,
     });
-    const coronaOuter = new THREE.Mesh(coronaOutGeo, coronaOutMat);
+    const coronaOuter = new THREE.Sprite(outerMat);
+    const outerScale = 130 * 4.8;
+    coronaOuter.scale.set(outerScale, outerScale, 1);
     group.add(coronaOuter);
 
-    const spikesGeo = new THREE.RingGeometry(132, 280, 4);
-    const spikesMat = new THREE.MeshBasicMaterial({
-      color: 0xfef08a,
-      transparent: true,
-      opacity: 0.15,
-      side: THREE.DoubleSide,
+    // 4. Camera-Facing Soft Anamorphic Solar Flares & Diffraction Rays
+    const flareTex = this.createSolarFlareTexture(0xf59e0b);
+    const flareMat = new THREE.SpriteMaterial({
+      map: flareTex,
       blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.45,
     });
-    const spikes = new THREE.Mesh(spikesGeo, spikesMat);
-    group.add(spikes);
+    const flares = new THREE.Sprite(flareMat);
+    const flareScale = 130 * 4.2;
+    flares.scale.set(flareScale, flareScale, 1);
+    group.add(flares);
 
-    const light = new THREE.PointLight(0xffedd5, 3.2, 7000, 0.4);
+    // 5. Point Light
+    const light = new THREE.PointLight(0xffedd5, 3.4, 8000, 0.35);
     group.add(light);
 
-    return { group, core, coronaInner, coronaOuter, spikes, light };
+    return { group, core, coronaInner, coronaOuter, flares, light };
+  }
+
+  /**
+   * Dynamically updates the primary star's photosphere, corona halo,
+   * solar flares, and lighting to match the star system's stellar class.
+   */
+  public updateStarVisuals(star: StarDescriptor): void {
+    const starRadius = star.radius || 130;
+    this.currentStarRadius = starRadius;
+
+    // 1. Rescale and re-texture Photosphere Core
+    this.sunCore.scale.setScalar(starRadius / 130);
+
+    const lightColor = star.lightColor || 0xfff7ed;
+    const coronaColor = star.coronaColor || 0xf59e0b;
+
+    if (this.sunSurfaceTexture) {
+      this.sunSurfaceTexture.dispose();
+    }
+    this.sunSurfaceTexture = this.createSolarSurfaceTexture(lightColor, coronaColor);
+    (this.sunCore.material as THREE.MeshBasicMaterial).map = this.sunSurfaceTexture;
+    (this.sunCore.material as THREE.MeshBasicMaterial).needsUpdate = true;
+
+    // 2. Re-texture and rescale Corona Sprites
+    if (this.sunCoronaInner.material.map) this.sunCoronaInner.material.map.dispose();
+    this.sunCoronaInner.material.map = this.createInnerCoronaTexture(coronaColor);
+    this.sunCoronaInner.material.needsUpdate = true;
+    const innerScale = starRadius * 2.8;
+    this.sunCoronaInner.scale.set(innerScale, innerScale, 1);
+
+    if (this.sunCoronaOuter.material.map) this.sunCoronaOuter.material.map.dispose();
+    this.sunCoronaOuter.material.map = this.createOuterCoronaTexture(coronaColor);
+    this.sunCoronaOuter.material.needsUpdate = true;
+    const outerScale = starRadius * 4.8;
+    this.sunCoronaOuter.scale.set(outerScale, outerScale, 1);
+
+    if (this.sunFlares.material.map) this.sunFlares.material.map.dispose();
+    this.sunFlares.material.map = this.createSolarFlareTexture(coronaColor);
+    this.sunFlares.material.needsUpdate = true;
+    const flareScale = starRadius * 4.2;
+    this.sunFlares.scale.set(flareScale, flareScale, 1);
+
+    // 3. Update Illumination Color and Intensity
+    const starColor = new THREE.Color(lightColor);
+    this.sunLight.color.copy(starColor);
+    this.sunDirLight.color.copy(starColor);
+
+    // Dynamic directional light intensity based on temperature
+    const tempRatio = Math.min(2.5, Math.max(0.7, (star.temperature || 5778) / 5778));
+    this.sunDirLight.intensity = 2.2 * tempRatio;
   }
 
   private createCosmicDust(): { points: THREE.Points; positions: Float32Array } {
@@ -569,15 +786,19 @@ export class SpaceScene {
     const flightMode = this.warpFactor > 0.1 ? 'warp' : 'space';
     this.surveyCraft.updateVisuals(dt, throttle, flightMode);
 
-    // 3. Solar Corona Multi-harmonic Pulsations
+    // 3. Solar Corona Multi-harmonic Pulsations & Flare Rotation
     const pulse1 = Math.sin(this.clock * 0.7) * 0.035;
-    const pulse2 = Math.cos(this.clock * 1.4) * 0.02;
-    const coronaScale = 1.0 + pulse1 + pulse2;
-    this.sunCoronaInner.scale.set(coronaScale, coronaScale, coronaScale);
-    this.sunCoronaOuter.scale.set(1.0 - pulse1 * 0.5, 1.0 - pulse1 * 0.5, 1.0 - pulse1 * 0.5);
+    const pulse2 = Math.cos(this.clock * 1.3) * 0.02;
+    const innerScale = this.currentStarRadius * 2.8 * (1.0 + pulse1);
+    const outerScale = this.currentStarRadius * 4.8 * (1.0 - pulse1 * 0.6 + pulse2);
+    this.sunCoronaInner.scale.set(innerScale, innerScale, 1);
+    this.sunCoronaOuter.scale.set(outerScale, outerScale, 1);
 
-    this.sunSpikes.rotation.z += dt * 0.015;
+    this.sunFlares.material.rotation += dt * 0.005;
     this.sunCore.rotation.y += dt * 0.004;
+    if (this.sunSurfaceTexture) {
+      this.sunSurfaceTexture.offset.x += dt * 0.004;
+    }
     this.sunLight.intensity = 3.2 + Math.sin(this.clock * 2.1) * 0.25;
 
     // 4. Planetary & Lunar Orbital Rotations

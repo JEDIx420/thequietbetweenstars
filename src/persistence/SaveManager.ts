@@ -374,7 +374,29 @@ export class SaveManager {
 
   public async hasSavedJourney(): Promise<boolean> {
     const slot = await this.getSaveSlot();
-    return slot !== null && slot.updatedAt > 0;
+    if (!slot || slot.updatedAt <= 0) return false;
+
+    // A journey only counts as started when the player has actually played
+    const hasFlight = (slot.stats?.flightTimeSeconds || 0) > 0;
+    const hasExplored = (slot.stats?.planetsScanned || 0) > 0 ||
+      (slot.stats?.surfacesVisited || 0) > 0 ||
+      (slot.stats?.speciesDiscovered || 0) > 0 ||
+      (slot.stats?.anomaliesDiscovered || 0) > 0 ||
+      (slot.stats?.systemsVisited || 1) > 1;
+    const hasItems = (slot.installedModules?.length || 0) > 0 ||
+      Object.keys(slot.sampleInventory || {}).length > 0 ||
+      (slot.collectedCreditIds?.length || 0) > 0;
+    const hasDialogue = Object.keys(slot.npcMemories || {}).length > 0 ||
+      (slot.narrative?.triggeredEventIds?.length || 0) > 0;
+    const hasMoved = Math.hypot(
+      slot.playerLocalPos.x,
+      slot.playerLocalPos.y,
+      slot.playerLocalPos.z - 100
+    ) > 10;
+    const hasTutorial = slot.tutorial?.started === true;
+    const hasNonDefaultCredits = slot.credits !== 250;
+
+    return hasFlight || hasExplored || hasItems || hasDialogue || hasMoved || hasTutorial || hasNonDefaultCredits;
   }
 
   // ==========================================
