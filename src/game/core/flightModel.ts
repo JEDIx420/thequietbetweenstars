@@ -260,19 +260,23 @@ export class FlightModel {
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);
 
     const speedRatio = Math.min(1, speed / this.maxCruiseSpeed);
-    const distanceBehind = 8.2 + speedRatio * 3.6;
-    const heightAbove = 2.6 + speedRatio * 0.8;
+    const distanceBehind = 6.5 + speedRatio * 1.8;
+    const heightAbove = 1.15 + speedRatio * 0.4;
 
     const desiredCamPos = this.position
       .clone()
       .sub(forward.clone().multiplyScalar(distanceBehind))
       .add(up.clone().multiplyScalar(heightAbove));
 
-    const lookAheadDist = 20 + speedRatio * 14;
-    const desiredLookTarget = this.position.clone().add(forward.clone().multiplyScalar(lookAheadDist));
+    const lookAheadDist = 16.0 + speedRatio * 8.0;
+    const lookHeight = 0.35 + speedRatio * 0.25;
+    const desiredLookTarget = this.position
+      .clone()
+      .add(forward.clone().multiplyScalar(lookAheadDist))
+      .add(up.clone().multiplyScalar(lookHeight));
 
     // Soft camera up interpolation preventing horizon flips
-    const desiredUp = up.clone().lerp(new THREE.Vector3(0, 1, 0), 0.25).normalize();
+    const desiredUp = up.clone().lerp(new THREE.Vector3(0, 1, 0), 0.15).normalize();
 
     if (!this.isCameraInitialized) {
       this.cameraTargetPos.copy(desiredCamPos);

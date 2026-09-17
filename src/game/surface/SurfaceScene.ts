@@ -394,9 +394,11 @@ export class SurfaceScene {
     const maxCameraBankRad = 0.10;
     const targetCameraBank = THREE.MathUtils.clamp(this.shipRoll * 0.25, -maxCameraBankRad, maxCameraBankRad);
 
-    const camOffset = new THREE.Vector3(0, 5.5, 14.5).applyAxisAngle(SurfaceScene.WORLD_UP, this.shipYaw);
+    const camOffset = new THREE.Vector3(0, 1.8, 8.2).applyAxisAngle(SurfaceScene.WORLD_UP, this.shipYaw);
     const targetCamPos = this.shipPosition.clone().add(camOffset);
-    const targetCamLook = this.shipPosition.clone().addScaledVector(forward, 16.0);
+    const targetCamLook = this.shipPosition.clone()
+      .addScaledVector(forward, 14.0)
+      .add(new THREE.Vector3(0, 0.6, 0));
 
     if (!this.isCamInitialized) {
       this.smoothedCamPos.copy(targetCamPos);

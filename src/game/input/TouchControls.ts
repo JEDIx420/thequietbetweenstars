@@ -144,19 +144,35 @@ export class TouchControls {
             padding: 4px 8px !important;
             font-size: 9px !important;
           }
+          #touch-toggle-btn {
+            font-size: 8.5px !important;
+            padding: 2.5px 7px !important;
+            margin-top: 18px !important;
+          }
+          #touch-emote-drawer {
+            padding: 3px 6px !important;
+            gap: 4px !important;
+            border-radius: 8px !important;
+          }
+          #touch-emote-drawer button {
+            width: 28px !important;
+            height: 25px !important;
+            font-size: 11px !important;
+          }
         }
       </style>
 
       <!-- Top Status & Toggle Bar -->
-      <div style="display: flex; justify-content: flex-end; align-items: center; width: 100%; pointer-events: auto;">
+      <div style="display: flex; justify-content: flex-start; align-items: center; width: 100%; pointer-events: none; margin-top: 22px;">
         <button id="touch-toggle-btn" style="
+          pointer-events: auto;
           background: rgba(15, 23, 42, 0.75);
           border: 1px solid rgba(56, 189, 248, 0.35);
           color: #38bdf8;
-          padding: 4px 10px;
+          padding: 3px 9px;
           border-radius: 9999px;
           font-family: ui-monospace, SFMono-Regular, monospace;
-          font-size: 9.5px;
+          font-size: 9px;
           font-weight: 600;
           letter-spacing: 0.05em;
           cursor: pointer;

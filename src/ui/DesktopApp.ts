@@ -1391,6 +1391,37 @@ export class DesktopApp {
             font-size: 9.5px !important;
             letter-spacing: 0.15em !important;
           }
+          #hud-notice {
+            font-size: 9px !important;
+            padding: 4px 10px !important;
+            max-width: min(440px, 84vw) !important;
+            line-height: 1.35 !important;
+            border-radius: 8px !important;
+          }
+          #proximity-indicator {
+            padding: 4px 10px !important;
+            font-size: 8.5px !important;
+          }
+          #hud-inspace-warp-countdown {
+            bottom: 8px !important;
+            padding: 4px 12px !important;
+            gap: 8px !important;
+            max-width: 90vw !important;
+          }
+          #hud-inspace-warp-countdown span {
+            font-size: 8.5px !important;
+          }
+          #hud-inspace-warp-countdown strong {
+            font-size: 9px !important;
+          }
+          #inspace-warp-digit {
+            font-size: 13px !important;
+            padding: 1px 6px !important;
+          }
+          #inspace-warp-abort-btn {
+            padding: 2px 8px !important;
+            font-size: 8px !important;
+          }
         }
       </style>
       <div style="
@@ -1591,40 +1622,57 @@ export class DesktopApp {
               display: flex;
               align-items: center;
               justify-content: center;
+              position: relative;
+              z-index: 60;
             " title="Toggle Fullscreen">⛶</button>
           </div>
         </div>
 
-        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; align-self: center;">
+        <!-- Top-anchored Heads-Up Notification & Proximity Strip -->
+        <div id="hud-notifications-group" style="
+          position: absolute;
+          top: max(46px, env(safe-area-inset-top, 46px));
+          left: 50%;
+          transform: translateX(-50%);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          pointer-events: none;
+          z-index: 40;
+          width: max-content;
+          max-width: min(520px, 86vw);
+        ">
           <div id="proximity-indicator" style="
             display: none;
             align-items: center;
             gap: 10px;
             font-family: ui-monospace, SFMono-Regular, monospace;
-            font-size: 11px;
+            font-size: 10.5px;
             letter-spacing: 0.08em;
-            background: rgba(15, 23, 42, 0.85);
+            background: rgba(15, 23, 42, 0.88);
             border: 1px solid rgba(56, 189, 248, 0.35);
-            padding: 6px 16px;
-            border-radius: 20px;
+            padding: 5px 14px;
+            border-radius: 9999px;
             color: #e2e8f0;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
           "></div>
 
           <div id="hud-notice" style="
-            font-size: 13px;
-            letter-spacing: 0.12em;
+            font-size: 11px;
+            letter-spacing: 0.06em;
+            line-height: 1.35;
             color: #38bdf8;
-            background: rgba(15, 23, 42, 0.85);
+            background: rgba(10, 16, 28, 0.90);
             border: 1px solid rgba(56, 189, 248, 0.4);
-            padding: 7px 20px;
-            border-radius: 20px;
+            padding: 5px 14px;
+            border-radius: 9999px;
             opacity: 0;
             transition: opacity 0.3s;
             pointer-events: none;
-            max-width: min(640px, 90vw);
+            max-width: min(520px, 86vw);
             text-align: center;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+            box-shadow: 0 4px 18px rgba(0,0,0,0.6);
           "></div>
         </div>
 
@@ -1881,6 +1929,7 @@ export class DesktopApp {
 
   private renderSurfaceHUD(): void {
     this.updateControlContext(FlightPhase.SURFACE_FLIGHT);
+    const isTouch = isTouchDevice();
 
     this.uiContainer.innerHTML = `
       <style>
@@ -1892,11 +1941,23 @@ export class DesktopApp {
             font-size: 9px !important;
           }
           #btn-return-orbit {
-            padding: 5px 12px !important;
-            font-size: 10px !important;
+            padding: 4px 10px !important;
+            font-size: 9.5px !important;
+          }
+          #btn-surface-mute, #btn-surface-fullscreen {
+            padding: 4px 8px !important;
+            font-size: 10.5px !important;
+          }
+          #hud-notice {
+            font-size: 8.5px !important;
+            padding: 3px 10px !important;
+            max-width: min(380px, 82vw) !important;
+            letter-spacing: 0.04em !important;
+            line-height: 1.3 !important;
+            border-radius: 9999px !important;
           }
           #hud-controls-hint {
-            font-size: 9px !important;
+            font-size: 8.5px !important;
           }
         }
       </style>
@@ -1906,46 +1967,90 @@ export class DesktopApp {
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        padding: 24px;
+        padding: max(10px, env(safe-area-inset-top, 10px)) max(14px, env(safe-area-inset-right, 14px)) max(10px, env(safe-area-inset-bottom, 10px)) max(14px, env(safe-area-inset-left, 14px));
         box-sizing: border-box;
         pointer-events: none;
         font-family: ui-sans-serif, system-ui, sans-serif;
       ">
-        <div style="display: flex; justify-content: space-between; align-items: center; pointer-events: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; pointer-events: auto; width: 100%;">
           <div id="surface-hud-title" style="font-size: 11px; letter-spacing: 0.25em; color: #38bdf8; font-weight: 600;">
             ${this.orbitController.planet?.name.toUpperCase()} SURFACE // LOW-ALTITUDE HOVER
           </div>
 
-          <button id="btn-return-orbit" style="
-            background: rgba(15, 23, 42, 0.8);
-            border: 1px solid rgba(56, 189, 248, 0.4);
-            border-radius: 8px;
-            color: #38bdf8;
-            padding: 8px 16px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-          ">RETURN TO ORBIT [E]</button>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button id="btn-surface-mute" style="
+              background: rgba(15, 23, 42, 0.75);
+              border: 1px solid rgba(148, 163, 184, 0.25);
+              border-radius: 8px;
+              color: #cbd5e1;
+              padding: 5px 10px;
+              font-size: 10.5px;
+              cursor: pointer;
+              touch-action: manipulation;
+            ">${audio.getIsMuted() ? '🔇' : '🔊'}</button>
+
+            <button id="btn-surface-fullscreen" style="
+              background: rgba(15, 23, 42, 0.75);
+              border: 1px solid rgba(56, 189, 248, 0.35);
+              border-radius: 8px;
+              color: #38bdf8;
+              padding: 5px 10px;
+              font-size: 12px;
+              cursor: pointer;
+              touch-action: manipulation;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              position: relative;
+              z-index: 60;
+            " title="Toggle Fullscreen">⛶</button>
+
+            <button id="btn-return-orbit" style="
+              background: rgba(15, 23, 42, 0.8);
+              border: 1px solid rgba(56, 189, 248, 0.4);
+              border-radius: 8px;
+              color: #38bdf8;
+              padding: 6px 14px;
+              font-size: 11px;
+              font-weight: 600;
+              cursor: pointer;
+            ">RETURN TO ORBIT [E]</button>
+          </div>
         </div>
 
-        <div id="hud-notice" style="
-          align-self: center;
-          font-size: 13px;
-          letter-spacing: 0.12em;
-          color: #38bdf8;
-          background: rgba(15, 23, 42, 0.85);
-          border: 1px solid rgba(56, 189, 248, 0.35);
-          padding: 6px 18px;
-          border-radius: 20px;
-          opacity: 0;
-          transition: opacity 0.3s;
+        <!-- Top-anchored Surface Notice -->
+        <div style="
+          position: absolute;
+          top: max(46px, env(safe-area-inset-top, 46px));
+          left: 50%;
+          transform: translateX(-50%);
           pointer-events: none;
-        "></div>
+          z-index: 40;
+          width: max-content;
+          max-width: min(520px, 86vw);
+        ">
+          <div id="hud-notice" style="
+            font-size: 11px;
+            letter-spacing: 0.06em;
+            line-height: 1.35;
+            color: #38bdf8;
+            background: rgba(10, 16, 28, 0.90);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            padding: 5px 14px;
+            border-radius: 9999px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            text-align: center;
+            box-shadow: 0 4px 18px rgba(0,0,0,0.6);
+          "></div>
+        </div>
 
         <div id="hud-controls-hint" style="
           font-size: 11px;
           color: #94a3b8;
           font-family: ui-monospace, monospace;
+          display: ${isTouch ? 'none' : 'block'};
         ">
           SURFACE HOVER FLIGHT · STEER W/A/S/D · SHIFT THROTTLE · SPACE TO SCAN MONOLITHS
         </div>
@@ -1955,6 +2060,46 @@ export class DesktopApp {
     this.uiContainer.querySelector('#btn-return-orbit')?.addEventListener('click', () => {
       this.returnToOrbitFromSurface();
     });
+
+    this.uiContainer.querySelector('#btn-surface-mute')?.addEventListener('click', () => {
+      const isMuted = audio.toggleMute();
+      const btn = this.uiContainer.querySelector('#btn-surface-mute') as HTMLButtonElement;
+      if (btn) btn.textContent = isMuted ? '🔇' : '🔊';
+    });
+
+    const updateSurfaceFsIcon = () => {
+      const isFs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
+      const btn = this.uiContainer.querySelector('#btn-surface-fullscreen') as HTMLButtonElement;
+      if (btn) {
+        btn.innerHTML = isFs ? '🗗' : '⛶';
+        btn.title = isFs ? 'Exit Fullscreen' : 'Toggle Fullscreen';
+      }
+    };
+
+    this.uiContainer.querySelector('#btn-surface-fullscreen')?.addEventListener('click', async () => {
+      audio.playBlip();
+      try {
+        if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
+          if (document.documentElement.requestFullscreen) {
+            await document.documentElement.requestFullscreen();
+          } else if ((document.documentElement as any).webkitRequestFullscreen) {
+            await (document.documentElement as any).webkitRequestFullscreen();
+          }
+        } else {
+          if (document.exitFullscreen) {
+            await document.exitFullscreen();
+          } else if ((document as any).webkitExitFullscreen) {
+            await (document as any).webkitExitFullscreen();
+          }
+        }
+      } catch (err) {
+        console.warn('[DesktopApp] Fullscreen error:', err);
+      }
+      updateSurfaceFsIcon();
+    });
+
+    document.addEventListener('fullscreenchange', updateSurfaceFsIcon);
+    document.addEventListener('webkitfullscreenchange', updateSurfaceFsIcon);
   }
 
   public showHudNotice(text: string, durationMs = 3200): void {

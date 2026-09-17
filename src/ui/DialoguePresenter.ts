@@ -35,21 +35,28 @@ export class DialoguePresenter {
       @media (max-width: 850px), (max-height: 520px) {
         #dialogue-presenter-container {
           bottom: auto !important;
-          top: max(48px, env(safe-area-inset-top, 48px)) !important;
+          top: max(44px, env(safe-area-inset-top, 44px)) !important;
           left: 50% !important;
           transform: translateX(-50%) !important;
-          max-width: min(440px, 92vw) !important;
-          width: min(440px, 92vw) !important;
+          max-width: min(380px, 86vw) !important;
+          width: min(380px, 86vw) !important;
         }
         #dialogue-presenter-container .dialogue-bubble {
-          padding: 8px 12px !important;
+          padding: 6px 10px !important;
+          gap: 4px !important;
+          border-radius: 6px !important;
         }
         #dialogue-presenter-container .dialogue-speaker {
-          font-size: 10px !important;
+          font-size: 8.5px !important;
+          letter-spacing: 0.12em !important;
         }
         #dialogue-presenter-container .dialogue-text {
-          font-size: 12px !important;
-          line-height: 1.4 !important;
+          font-size: 10px !important;
+          line-height: 1.35 !important;
+        }
+        #dialogue-presenter-container button {
+          font-size: 9.5px !important;
+          padding: 4px 8px !important;
         }
       }
     `;

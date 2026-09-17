@@ -51,18 +51,20 @@ export class NavRadar {
       @media (max-width: 850px), (max-height: 520px) {
         #nav-radar-widget {
           bottom: auto !important;
-          top: max(48px, env(safe-area-inset-top, 48px)) !important;
-          right: max(14px, env(safe-area-inset-right, 14px)) !important;
-          gap: 4px !important;
+          top: max(40px, env(safe-area-inset-top, 40px)) !important;
+          right: max(10px, env(safe-area-inset-right, 10px)) !important;
+          gap: 6px !important;
+          flex-direction: row-reverse !important;
+          align-items: flex-start !important;
         }
         #nav-radar-widget .radar-canvas {
-          width: 90px !important;
-          height: 90px !important;
+          width: 80px !important;
+          height: 80px !important;
         }
         #nav-radar-widget .radar-info {
-          max-width: 140px !important;
+          max-width: 135px !important;
           padding: 4px 8px !important;
-          font-size: 9px !important;
+          font-size: 8.5px !important;
         }
       }
     `;
