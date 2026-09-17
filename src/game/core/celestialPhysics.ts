@@ -36,6 +36,21 @@ export class CelestialPhysicsSystem {
     this.bodies.push(body);
   }
 
+  private static readonly scratchPrevPos = new THREE.Vector3();
+  private static readonly scratchDelta = new THREE.Vector3();
+  private static readonly scratchPrevDelta = new THREE.Vector3();
+  private static readonly scratchHitNormal = new THREE.Vector3();
+  private static readonly scratchSeg = new THREE.Vector3();
+  private static readonly scratchHitPoint = new THREE.Vector3();
+  private static readonly scratchNormal = new THREE.Vector3();
+  private static readonly defaultNormal = new THREE.Vector3(0, 1, 0);
+
+  private readonly cachedResult: CollisionResult = {
+    hasCollided: false,
+    penetrationDepth: 0,
+    surfaceNormal: new THREE.Vector3(),
+  };
+
   /**
    * Resolves collision and proximity physics for the ship.
    * Prevents tunneling through celestial bodies and projects velocity onto the tangent plane.
@@ -45,35 +60,36 @@ export class CelestialPhysicsSystem {
     shipVelocity: THREE.Vector3,
     dt: number
   ): CollisionResult {
-    let result: CollisionResult = {
-      hasCollided: false,
-      penetrationDepth: 0,
-    };
+    this.cachedResult.hasCollided = false;
+    this.cachedResult.collidedBody = undefined;
+    this.cachedResult.isDanger = false;
+    this.cachedResult.penetrationDepth = 0;
 
-    const prevPos = shipPosition.clone().sub(shipVelocity.clone().multiplyScalar(dt));
+    // prevPos = shipPosition - shipVelocity * dt
+    const prevPos = CelestialPhysicsSystem.scratchPrevPos.copy(shipPosition).addScaledVector(shipVelocity, -dt);
 
     for (const body of this.bodies) {
-      const delta = new THREE.Vector3().subVectors(shipPosition, body.position);
+      const delta = CelestialPhysicsSystem.scratchDelta.subVectors(shipPosition, body.position);
       const dist = delta.length();
-      const prevDelta = new THREE.Vector3().subVectors(prevPos, body.position);
+      const prevDelta = CelestialPhysicsSystem.scratchPrevDelta.subVectors(prevPos, body.position);
       const prevDist = prevDelta.length();
 
       // Continuous swept collision detection: check if segment from prevPos to shipPosition intersects exclusion sphere
       let sweptHit = false;
-      let hitNormal = new THREE.Vector3(0, 1, 0);
+      const hitNormal = CelestialPhysicsSystem.scratchHitNormal.copy(CelestialPhysicsSystem.defaultNormal);
 
       if (dist < body.exclusionRadius) {
         // Direct penetration
         sweptHit = true;
         // Direction-safe normal: always face the approach vector (prevDelta) so we never clamp out the back side
         if (prevDist > 0.001) {
-          hitNormal = prevDelta.clone().normalize();
+          hitNormal.copy(prevDelta).normalize();
         } else if (dist > 0.001) {
-          hitNormal = delta.clone().normalize();
+          hitNormal.copy(delta).normalize();
         }
       } else if (prevDist >= body.exclusionRadius) {
         // Check swept segment intersection (anti-tunneling at high speeds)
-        const seg = new THREE.Vector3().subVectors(shipPosition, prevPos);
+        const seg = CelestialPhysicsSystem.scratchSeg.subVectors(shipPosition, prevPos);
         const segLenSq = seg.lengthSq();
         if (segLenSq > 0.0001) {
           const a = segLenSq;
@@ -85,8 +101,8 @@ export class CelestialPhysicsSystem {
             const tEntry = (-b - sqrtDisc) / (2 * a);
             if (tEntry >= 0 && tEntry <= 1.0) {
               sweptHit = true;
-              const hitPoint = prevPos.clone().addScaledVector(seg, tEntry);
-              hitNormal = hitPoint.sub(body.position).normalize();
+              const hitPoint = CelestialPhysicsSystem.scratchHitPoint.copy(prevPos).addScaledVector(seg, tEntry);
+              hitNormal.copy(hitPoint).sub(body.position).normalize();
             }
           }
         }
@@ -109,21 +125,24 @@ export class CelestialPhysicsSystem {
           shipVelocity.addScaledVector(hitNormal, reboundSpeed);
         }
 
-        result = {
-          hasCollided: true,
-          collidedBody: body,
-          isDanger: body.type === 'star' || (body.dangerRadius !== undefined && dist < body.dangerRadius),
-          penetrationDepth: penetration,
-          surfaceNormal: hitNormal,
-        };
+        this.cachedResult.hasCollided = true;
+        this.cachedResult.collidedBody = body;
+        this.cachedResult.isDanger = body.type === 'star' || (body.dangerRadius !== undefined && dist < body.dangerRadius);
+        this.cachedResult.penetrationDepth = penetration;
+        this.cachedResult.surfaceNormal?.copy(hitNormal);
 
-        break;
+        return this.cachedResult;
       }
 
       // Progressive soft atmospheric buffer (exclusionRadius to 1.4 * exclusionRadius)
       const bufferOuter = body.exclusionRadius * 1.4;
       if (dist < bufferOuter && dist >= body.exclusionRadius) {
-        const normal = dist > 0.001 ? delta.clone().normalize() : new THREE.Vector3(0, 1, 0);
+        const normal = CelestialPhysicsSystem.scratchNormal;
+        if (dist > 0.001) {
+          normal.copy(delta).normalize();
+        } else {
+          normal.copy(CelestialPhysicsSystem.defaultNormal);
+        }
         const inwardSpeed = shipVelocity.dot(normal);
         if (inwardSpeed < 0) {
           // Progressively damp inward velocity as ship approaches exclusion boundary
@@ -134,14 +153,14 @@ export class CelestialPhysicsSystem {
 
       // Subtle gravitational assist in upper atmosphere envelope
       if (dist < body.atmosphereRadius && dist >= body.exclusionRadius) {
-        const normal = delta.clone().divideScalar(dist);
+        const normal = CelestialPhysicsSystem.scratchNormal.copy(delta).divideScalar(dist);
         // Very gentle orbital pull towards planet (relaxing cosmic drift, not harsh black hole)
         const gravityStrength = (body.type === 'star' ? 12 : 6) * (1 - (dist - body.exclusionRadius) / (body.atmosphereRadius - body.exclusionRadius));
         shipVelocity.addScaledVector(normal, -gravityStrength * dt);
       }
     }
 
-    return result;
+    return this.cachedResult;
   }
 
   /**

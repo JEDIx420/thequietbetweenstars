@@ -71,12 +71,24 @@ export class SpaceScene {
   private clock = 0;
 
   // Warp hyperspace effects
+  // Warp hyperspace effects
   public warpFactor = 0;
   public warpHeading?: THREE.Vector3;
   public warpTunnelGroup = new THREE.Group();
-  private warpStreakLines: Array<{ line: THREE.Line; baseRadius: number; baseAngle: number; zOffset: number; speed: number }> = [];
+  private warpStreakSegments: THREE.LineSegments;
+  private warpStreakGeo: THREE.BufferGeometry;
+  private warpStreakPositions: Float32Array;
+  private warpStreakData: Array<{ baseRadius: number; baseAngle: number; length: number; zOffset: number; speed: number }> = [];
   private warpStreakMat: THREE.LineBasicMaterial;
   private warpShroudMesh: THREE.Mesh;
+
+  // Static scratch vectors & texture caches
+  private static readonly scratchForward = new THREE.Vector3(0, 0, -1);
+  private static readonly scratchHeading = new THREE.Vector3();
+  private static solarSurfaceTexCache: Map<string, THREE.CanvasTexture> = new Map();
+  private static solarInnerCoronaCache: Map<number, THREE.CanvasTexture> = new Map();
+  private static solarOuterCoronaCache: Map<number, THREE.CanvasTexture> = new Map();
+  private static solarFlareCache: Map<number, THREE.CanvasTexture> = new Map();
 
   // Active Loaded Star System
   public currentSystem: StarSystemDescriptor | null = null;
@@ -103,7 +115,7 @@ export class SpaceScene {
     this.infiniteBackground = new InfiniteBackground();
     this.backgroundRoot.add(this.infiniteBackground.group);
 
-    // Relativistic Hyperspace Warp Tunnel (activated during warp cruise)
+    // Relativistic Hyperspace Warp Tunnel (batched single LineSegments draw call)
     this.warpStreakMat = new THREE.LineBasicMaterial({
       color: 0x93c5fd,
       transparent: true,
@@ -113,24 +125,39 @@ export class SpaceScene {
     });
 
     const streakCount = 64;
+    this.warpStreakPositions = new Float32Array(streakCount * 6);
+    this.warpStreakData = [];
+
     for (let i = 0; i < streakCount; i++) {
       const r = 12 + Math.random() * 55;
       const angle = Math.random() * Math.PI * 2;
       const length = 50 + Math.random() * 140;
-      const geom = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(0, 0, -length),
-      ]);
-      const line = new THREE.Line(geom, this.warpStreakMat);
-      this.warpTunnelGroup.add(line);
-      this.warpStreakLines.push({
-        line,
+      const zOffset = (Math.random() - 0.5) * 800;
+      const speed = 900 + Math.random() * 1400;
+
+      this.warpStreakData.push({
         baseRadius: r,
         baseAngle: angle,
-        zOffset: (Math.random() - 0.5) * 800,
-        speed: 900 + Math.random() * 1400,
+        length,
+        zOffset,
+        speed,
       });
+
+      const x = Math.cos(angle) * r;
+      const y = Math.sin(angle) * r;
+      const idx = i * 6;
+      this.warpStreakPositions[idx] = x;
+      this.warpStreakPositions[idx + 1] = y;
+      this.warpStreakPositions[idx + 2] = zOffset;
+      this.warpStreakPositions[idx + 3] = x;
+      this.warpStreakPositions[idx + 4] = y;
+      this.warpStreakPositions[idx + 5] = zOffset - length;
     }
+
+    this.warpStreakGeo = new THREE.BufferGeometry();
+    this.warpStreakGeo.setAttribute('position', new THREE.BufferAttribute(this.warpStreakPositions, 3));
+    this.warpStreakSegments = new THREE.LineSegments(this.warpStreakGeo, this.warpStreakMat);
+    this.warpTunnelGroup.add(this.warpStreakSegments);
 
     const shroudGeo = new THREE.CylinderGeometry(30, 30, 800, 16, 1, true);
     shroudGeo.rotateX(Math.PI / 2);
@@ -326,6 +353,30 @@ export class SpaceScene {
   }
 
   /**
+   * Properly traverses and disposes previous planet meshes, materials, and ring geometries.
+   */
+  private disposePlanetMeshes(): void {
+    for (const group of this.planetGroups) {
+      group.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          // Dispose unique ring geometries (unit spheres are shared static singletons)
+          if (obj.geometry instanceof THREE.RingGeometry) {
+            obj.geometry.dispose();
+          }
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((m) => m.dispose());
+          } else if (obj.material) {
+            obj.material.dispose();
+          }
+        }
+      });
+      this.worldRoot.remove(group);
+    }
+    this.planetGroups = [];
+    this.planetMeshes = [];
+  }
+
+  /**
    * Loads a procedural star system into the 3D space scene.
    * Cleans up any previously loaded planet groups, builds new planet meshes,
    * generates orbital distances, sets up celestial physics and lighting.
@@ -333,12 +384,8 @@ export class SpaceScene {
   public loadSystem(system: StarSystemDescriptor): void {
     this.currentSystem = system;
 
-    // 1. Remove previous dynamic planet groups from worldRoot
-    for (const group of this.planetGroups) {
-      this.worldRoot.remove(group);
-    }
-    this.planetGroups = [];
-    this.planetMeshes = [];
+    // 1. Remove and cleanly dispose previous dynamic planet groups from worldRoot
+    this.disposePlanetMeshes();
     this.activePlanetList = [];
 
     // 2. Hide or show origin system meshes (Aurelia & Zephyr)
@@ -727,28 +774,43 @@ export class SpaceScene {
     const lightColor = star.lightColor || 0xfff7ed;
     const coronaColor = star.coronaColor || 0xf59e0b;
 
-    if (this.sunSurfaceTexture) {
-      this.sunSurfaceTexture.dispose();
+    const surfKey = `${lightColor}_${coronaColor}`;
+    let surfTex = SpaceScene.solarSurfaceTexCache.get(surfKey);
+    if (!surfTex) {
+      surfTex = this.createSolarSurfaceTexture(lightColor, coronaColor);
+      SpaceScene.solarSurfaceTexCache.set(surfKey, surfTex);
     }
-    this.sunSurfaceTexture = this.createSolarSurfaceTexture(lightColor, coronaColor);
+    this.sunSurfaceTexture = surfTex;
     (this.sunCore.material as THREE.MeshBasicMaterial).map = this.sunSurfaceTexture;
     (this.sunCore.material as THREE.MeshBasicMaterial).needsUpdate = true;
 
     // 2. Re-texture and rescale Corona Sprites
-    if (this.sunCoronaInner.material.map) this.sunCoronaInner.material.map.dispose();
-    this.sunCoronaInner.material.map = this.createInnerCoronaTexture(coronaColor);
+    let innerTex = SpaceScene.solarInnerCoronaCache.get(coronaColor);
+    if (!innerTex) {
+      innerTex = this.createInnerCoronaTexture(coronaColor);
+      SpaceScene.solarInnerCoronaCache.set(coronaColor, innerTex);
+    }
+    this.sunCoronaInner.material.map = innerTex;
     this.sunCoronaInner.material.needsUpdate = true;
     const innerScale = starRadius * 2.8;
     this.sunCoronaInner.scale.set(innerScale, innerScale, 1);
 
-    if (this.sunCoronaOuter.material.map) this.sunCoronaOuter.material.map.dispose();
-    this.sunCoronaOuter.material.map = this.createOuterCoronaTexture(coronaColor);
+    let outerTex = SpaceScene.solarOuterCoronaCache.get(coronaColor);
+    if (!outerTex) {
+      outerTex = this.createOuterCoronaTexture(coronaColor);
+      SpaceScene.solarOuterCoronaCache.set(coronaColor, outerTex);
+    }
+    this.sunCoronaOuter.material.map = outerTex;
     this.sunCoronaOuter.material.needsUpdate = true;
     const outerScale = starRadius * 4.8;
     this.sunCoronaOuter.scale.set(outerScale, outerScale, 1);
 
-    if (this.sunFlares.material.map) this.sunFlares.material.map.dispose();
-    this.sunFlares.material.map = this.createSolarFlareTexture(coronaColor);
+    let flareTex = SpaceScene.solarFlareCache.get(coronaColor);
+    if (!flareTex) {
+      flareTex = this.createSolarFlareTexture(coronaColor);
+      SpaceScene.solarFlareCache.set(coronaColor, flareTex);
+    }
+    this.sunFlares.material.map = flareTex;
     this.sunFlares.material.needsUpdate = true;
     const flareScale = starRadius * 4.2;
     this.sunFlares.scale.set(flareScale, flareScale, 1);
@@ -917,9 +979,8 @@ export class SpaceScene {
       this.warpTunnelGroup.visible = true;
       this.warpTunnelGroup.position.copy(cameraPos);
       if (this.warpHeading && this.warpHeading.lengthSq() > 0.001) {
-        const forward = new THREE.Vector3(0, 0, -1);
-        const headingNorm = this.warpHeading.clone().normalize();
-        this.warpTunnelGroup.quaternion.setFromUnitVectors(forward, headingNorm);
+        SpaceScene.scratchHeading.copy(this.warpHeading).normalize();
+        this.warpTunnelGroup.quaternion.setFromUnitVectors(SpaceScene.scratchForward, SpaceScene.scratchHeading);
       }
 
       const op = Math.min(1.0, this.warpFactor * 1.25);
@@ -928,8 +989,11 @@ export class SpaceScene {
 
       const tunnelLength = 800;
       const halfLen = tunnelLength / 2;
-      for (let i = 0; i < this.warpStreakLines.length; i++) {
-        const s = this.warpStreakLines[i];
+      const posAttr = this.warpStreakGeo.attributes.position;
+      const positions = this.warpStreakPositions;
+
+      for (let i = 0; i < this.warpStreakData.length; i++) {
+        const s = this.warpStreakData[i];
         s.zOffset += dt * s.speed * (0.6 + this.warpFactor * 1.8);
         if (s.zOffset > halfLen) {
           s.zOffset -= tunnelLength;
@@ -937,11 +1001,58 @@ export class SpaceScene {
         }
         const x = Math.cos(s.baseAngle) * s.baseRadius;
         const y = Math.sin(s.baseAngle) * s.baseRadius;
-        s.line.position.set(x, y, s.zOffset);
+        const idx = i * 6;
+        positions[idx] = x;
+        positions[idx + 1] = y;
+        positions[idx + 2] = s.zOffset;
+        positions[idx + 3] = x;
+        positions[idx + 4] = y;
+        positions[idx + 5] = s.zOffset - s.length;
       }
+      posAttr.needsUpdate = true;
       this.warpShroudMesh.rotation.z += dt * 2.2;
     } else {
       this.warpTunnelGroup.visible = false;
     }
+  }
+
+  public dispose(): void {
+    this.infiniteBackground.dispose();
+
+    this.warpStreakGeo.dispose();
+    this.warpStreakMat.dispose();
+    this.warpShroudMesh.geometry.dispose();
+    (this.warpShroudMesh.material as THREE.Material).dispose();
+
+    this.dustPoints.geometry.dispose();
+    (this.dustPoints.material as THREE.Material).dispose();
+
+    this.sunCore.geometry.dispose();
+    (this.sunCore.material as THREE.Material).dispose();
+    this.sunCoronaInner.material.dispose();
+    this.sunCoronaOuter.material.dispose();
+    this.sunFlares.material.dispose();
+    this.sunLight.dispose();
+    this.sunDirLight.dispose();
+
+    this.scanWave.geometry.dispose();
+    (this.scanWave.material as THREE.Material).dispose();
+
+    this.disposePlanetMeshes();
+
+    if (this.activeCourierPod) {
+      this.activeCourierPod.dispose();
+      this.activeCourierPod = null;
+    }
+    if (this.trafficDirector) {
+      this.trafficDirector.dispose();
+      this.trafficDirector = null;
+    }
+    if (this.encounterManager) {
+      this.encounterManager.dispose();
+      this.encounterManager = null;
+    }
+
+    this.scene.clear();
   }
 }

@@ -119,31 +119,43 @@ export class FlightModel {
     }
   }
 
+  // Static persistent scratch vectors & quaternions for zero GC per frame
+  private static readonly scratchRight = new THREE.Vector3();
+  private static readonly scratchUp = new THREE.Vector3();
+  private static readonly scratchForward = new THREE.Vector3();
+  private static readonly scratchWorldUp = new THREE.Vector3(0, 1, 0);
+  private static readonly scratchProjectedUp = new THREE.Vector3();
+  private static readonly scratchCross = new THREE.Vector3();
+  private static readonly scratchQPitch = new THREE.Quaternion();
+  private static readonly scratchQYaw = new THREE.Quaternion();
+  private static readonly scratchQRoll = new THREE.Quaternion();
+  private static readonly scratchQAssist = new THREE.Quaternion();
+  private static readonly scratchDesiredCamPos = new THREE.Vector3();
+  private static readonly scratchDesiredLookTarget = new THREE.Vector3();
+  private static readonly scratchDesiredUp = new THREE.Vector3();
+
   public update(input: NormalizedInputState, dt: number, camera: THREE.PerspectiveCamera): void {
     const clampedDt = Math.max(0.001, Math.min(dt, 0.05));
     this.stepSimulation(input, clampedDt);
 
-    // Apply strict transform ownership
-    // 1. Physics root receives position and orientation quaternion
+    // 2. Visual banking on shipVisualRoot
+    const targetBank = -input.axes.x * this.autoBankFactor;
+    this.visualBankAngle += (targetBank - this.visualBankAngle) * Math.min(1, clampedDt * 8.0);
+    this.shipVisualRoot.rotation.z = this.visualBankAngle;
+
+    // 3. Update physics root transform
     this.shipPhysicsRoot.position.copy(this.position);
     this.shipPhysicsRoot.quaternion.copy(this.quaternion);
 
-    // 2. Visual banking tilt is applied strictly to shipVisualRoot
-    const targetBank = -input.axes.x * this.autoBankFactor;
-    this.visualBankAngle += (targetBank - this.visualBankAngle) * Math.min(1, clampedDt * 8.0);
-    this.shipVisualRoot.rotation.set(0, 0, 0);
-    this.shipVisualRoot.rotateZ(this.visualBankAngle);
-
-    // 3. Angular discontinuity detection
-    const angleDeltaRad = 2 * Math.acos(Math.min(1.0, Math.abs(this.quaternion.dot(this.prevQuat))));
-    const angleDeltaDeg = (angleDeltaRad * 180) / Math.PI;
+    // Telemetry angle delta
+    const angleDeltaDeg = this.quaternion.angleTo(this.prevQuat) * (180 / Math.PI);
     const hasDiscontinuity = angleDeltaDeg > 45.0;
     this.prevQuat.copy(this.quaternion);
 
     // 4. Update Cinematic Chase Camera
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
+    FlightModel.scratchForward.set(0, 0, -1).applyQuaternion(this.quaternion);
     const speed = this.velocity.length();
-    this.updateCinematicCamera(camera, clampedDt, forward, speed);
+    this.updateCinematicCamera(camera, clampedDt, FlightModel.scratchForward, speed);
 
     // 5. Update Telemetry
     this.telemetry.physicsQuat.copy(this.quaternion);
@@ -154,7 +166,7 @@ export class FlightModel {
     this.telemetry.rollRate = this.rollVelocity;
     this.telemetry.simSteps = 1;
     this.telemetry.dt = clampedDt;
-    this.telemetry.cameraUpDotWorldUp = camera.up.dot(new THREE.Vector3(0, 1, 0));
+    this.telemetry.cameraUpDotWorldUp = camera.up.dot(FlightModel.scratchWorldUp);
     this.telemetry.hasDiscontinuity = hasDiscontinuity;
   }
 
@@ -176,46 +188,44 @@ export class FlightModel {
     this.yawVelocity += (targetYaw - this.yawVelocity) * angularBlend;
     this.rollVelocity += (targetRoll - this.rollVelocity) * angularBlend;
 
-    // 3. Local Axis-Angle Quaternion Integration
-    // Derive current local basis vectors from existing quaternion
-    const localRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.quaternion);
-    const localUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);
-    const localForward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
+    // 3. Local Axis-Angle Quaternion Integration using scratch vectors
+    FlightModel.scratchRight.set(1, 0, 0).applyQuaternion(this.quaternion);
+    FlightModel.scratchUp.set(0, 1, 0).applyQuaternion(this.quaternion);
+    FlightModel.scratchForward.set(0, 0, -1).applyQuaternion(this.quaternion);
 
     // Pitch around local right
     if (Math.abs(this.pitchVelocity) > 0.0001) {
-      const qPitch = new THREE.Quaternion().setFromAxisAngle(localRight, this.pitchVelocity * stepDt);
-      this.quaternion.premultiply(qPitch);
+      FlightModel.scratchQPitch.setFromAxisAngle(FlightModel.scratchRight, this.pitchVelocity * stepDt);
+      this.quaternion.premultiply(FlightModel.scratchQPitch);
     }
 
     // Yaw around local up
     if (Math.abs(this.yawVelocity) > 0.0001) {
-      const qYaw = new THREE.Quaternion().setFromAxisAngle(localUp, this.yawVelocity * stepDt);
-      this.quaternion.premultiply(qYaw);
+      FlightModel.scratchQYaw.setFromAxisAngle(FlightModel.scratchUp, this.yawVelocity * stepDt);
+      this.quaternion.premultiply(FlightModel.scratchQYaw);
     }
 
     // Roll around local forward
     if (Math.abs(this.rollVelocity) > 0.0001) {
-      const qRoll = new THREE.Quaternion().setFromAxisAngle(localForward, this.rollVelocity * stepDt);
-      this.quaternion.premultiply(qRoll);
+      FlightModel.scratchQRoll.setFromAxisAngle(FlightModel.scratchForward, this.rollVelocity * stepDt);
+      this.quaternion.premultiply(FlightModel.scratchQRoll);
     }
 
     // 4. Soft Horizon Restorative Tendency
     // If player is not actively commanding roll, gently nudge craft upright relative to reference up
     if (Math.abs(input.roll) < 0.05) {
-      const currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);
-      const worldUp = new THREE.Vector3(0, 1, 0);
+      FlightModel.scratchUp.set(0, 1, 0).applyQuaternion(this.quaternion);
 
       // Determine tilt along roll axis
-      const projectedUp = currentUp.clone().projectOnPlane(localForward).normalize();
-      const dotUp = projectedUp.dot(worldUp);
+      FlightModel.scratchProjectedUp.copy(FlightModel.scratchUp).projectOnPlane(FlightModel.scratchForward).normalize();
+      const dotUp = FlightModel.scratchProjectedUp.dot(FlightModel.scratchWorldUp);
 
       if (dotUp > -0.5 && dotUp < 0.999) {
         // Cross product gives correction sign around forward axis
-        const cross = new THREE.Vector3().crossVectors(projectedUp, worldUp);
-        const correctionAngle = cross.dot(localForward) * this.horizonAssistStrength * stepDt;
-        const qAssist = new THREE.Quaternion().setFromAxisAngle(localForward, correctionAngle);
-        this.quaternion.premultiply(qAssist);
+        FlightModel.scratchCross.crossVectors(FlightModel.scratchProjectedUp, FlightModel.scratchWorldUp);
+        const correctionAngle = FlightModel.scratchCross.dot(FlightModel.scratchForward) * this.horizonAssistStrength * stepDt;
+        FlightModel.scratchQAssist.setFromAxisAngle(FlightModel.scratchForward, correctionAngle);
+        this.quaternion.premultiply(FlightModel.scratchQAssist);
       }
     }
 
@@ -223,10 +233,10 @@ export class FlightModel {
     this.quaternion.normalize();
 
     // 5. Momentum & Propulsion Integration
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
+    FlightModel.scratchForward.set(0, 0, -1).applyQuaternion(this.quaternion);
     const accel = this.baseAcceleration * this.accelerationMultiplier;
     const effectiveThrust = Math.pow(this.currentThrottle, 1.25) * accel;
-    this.velocity.addScaledVector(forward, effectiveThrust * stepDt);
+    this.velocity.addScaledVector(FlightModel.scratchForward, effectiveThrust * stepDt);
 
     // Space drag / velocity damping
     this.velocity.multiplyScalar(Math.pow(this.linearDamping, stepDt * 60));
@@ -257,50 +267,55 @@ export class FlightModel {
     forward: THREE.Vector3,
     speed: number
   ): void {
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);
+    FlightModel.scratchUp.set(0, 1, 0).applyQuaternion(this.quaternion);
 
     const speedRatio = Math.min(1, speed / this.maxCruiseSpeed);
     const distanceBehind = 6.5 + speedRatio * 1.8;
     const heightAbove = 1.15 + speedRatio * 0.4;
 
-    const desiredCamPos = this.position
-      .clone()
-      .sub(forward.clone().multiplyScalar(distanceBehind))
-      .add(up.clone().multiplyScalar(heightAbove));
+    FlightModel.scratchDesiredCamPos
+      .copy(this.position)
+      .addScaledVector(forward, -distanceBehind)
+      .addScaledVector(FlightModel.scratchUp, heightAbove);
 
     const lookAheadDist = 16.0 + speedRatio * 8.0;
     const lookHeight = 0.35 + speedRatio * 0.25;
-    const desiredLookTarget = this.position
-      .clone()
-      .add(forward.clone().multiplyScalar(lookAheadDist))
-      .add(up.clone().multiplyScalar(lookHeight));
+    FlightModel.scratchDesiredLookTarget
+      .copy(this.position)
+      .addScaledVector(forward, lookAheadDist)
+      .addScaledVector(FlightModel.scratchUp, lookHeight);
 
     // Soft camera up interpolation preventing horizon flips
-    const desiredUp = up.clone().lerp(new THREE.Vector3(0, 1, 0), 0.15).normalize();
+    FlightModel.scratchDesiredUp
+      .copy(FlightModel.scratchUp)
+      .lerp(FlightModel.scratchWorldUp, 0.15)
+      .normalize();
 
     if (!this.isCameraInitialized) {
-      this.cameraTargetPos.copy(desiredCamPos);
-      this.cameraLookTarget.copy(desiredLookTarget);
-      this.currentCameraUp.copy(desiredUp);
+      this.cameraTargetPos.copy(FlightModel.scratchDesiredCamPos);
+      this.cameraLookTarget.copy(FlightModel.scratchDesiredLookTarget);
+      this.currentCameraUp.copy(FlightModel.scratchDesiredUp);
       this.isCameraInitialized = true;
     } else {
       // High-precision frame-rate independent critical damping follow
       const posLerp = 1 - Math.exp(-14.0 * dt);
       const lookLerp = 1 - Math.exp(-18.0 * dt);
-      this.cameraTargetPos.lerp(desiredCamPos, posLerp);
-      this.cameraLookTarget.lerp(desiredLookTarget, lookLerp);
-      this.currentCameraUp.lerp(desiredUp, Math.min(1, dt * 8.0)).normalize();
+      this.cameraTargetPos.lerp(FlightModel.scratchDesiredCamPos, posLerp);
+      this.cameraLookTarget.lerp(FlightModel.scratchDesiredLookTarget, lookLerp);
+      this.currentCameraUp.lerp(FlightModel.scratchDesiredUp, Math.min(1, dt * 8.0)).normalize();
     }
 
     camera.position.copy(this.cameraTargetPos);
     camera.up.copy(this.currentCameraUp);
     camera.lookAt(this.cameraLookTarget);
 
-    // Dynamic FOV easing (63° cruise to 72° boost)
+    // Dynamic FOV easing (63° cruise to 72° boost) - only update projection matrix when delta > 0.05
     const targetFov = 63 + speedRatio * 9;
     this.currentFov += (targetFov - this.currentFov) * Math.min(1, dt * 4.0);
-    camera.fov = this.currentFov;
-    camera.updateProjectionMatrix();
+    if (Math.abs(camera.fov - this.currentFov) > 0.05) {
+      camera.fov = this.currentFov;
+      camera.updateProjectionMatrix();
+    }
   }
 
   public getSpeed(): number {

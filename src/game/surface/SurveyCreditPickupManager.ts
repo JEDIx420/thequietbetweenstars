@@ -80,6 +80,9 @@ export class SurveyCreditPickupManager {
     return Array.from(this.collectedIds);
   }
 
+  private lastCellX: number | null = null;
+  private lastCellZ: number | null = null;
+
   public update(
     craftPos: THREE.Vector3,
     dt: number,
@@ -90,37 +93,42 @@ export class SurveyCreditPickupManager {
 
     const centerCellX = Math.floor(craftPos.x / this.cellSize);
     const centerCellZ = Math.floor(craftPos.z / this.cellSize);
-    const neededKeys = new Set<string>();
 
-    // 1. Stream active pickup cells around craft
-    for (let dx = -this.activationRadius; dx <= this.activationRadius; dx++) {
-      for (let dz = -this.activationRadius; dz <= this.activationRadius; dz++) {
-        const cx = centerCellX + dx;
-        const cz = centerCellZ + dz;
-        const key = `${cx},${cz}`;
-        neededKeys.add(key);
+    // 1. Only re-evaluate cell streaming when craft crosses a cell boundary
+    if (centerCellX !== this.lastCellX || centerCellZ !== this.lastCellZ) {
+      this.lastCellX = centerCellX;
+      this.lastCellZ = centerCellZ;
+      const neededKeys = new Set<string>();
 
-        if (!this.activeCells.has(key)) {
-          const pickups = this.spawnCell(cx, cz, getHeightAt);
-          this.activeCells.set(key, pickups);
-          for (const p of pickups) {
-            this.pickupGroup.add(p.group);
+      for (let dx = -this.activationRadius; dx <= this.activationRadius; dx++) {
+        for (let dz = -this.activationRadius; dz <= this.activationRadius; dz++) {
+          const cx = centerCellX + dx;
+          const cz = centerCellZ + dz;
+          const key = `${cx},${cz}`;
+          neededKeys.add(key);
+
+          if (!this.activeCells.has(key)) {
+            const pickups = this.spawnCell(cx, cz, getHeightAt);
+            this.activeCells.set(key, pickups);
+            for (const p of pickups) {
+              this.pickupGroup.add(p.group);
+            }
           }
         }
       }
-    }
 
-    // 2. Unload distant cells
-    for (const [key, pickups] of this.activeCells.entries()) {
-      if (!neededKeys.has(key)) {
-        for (const p of pickups) {
-          this.pickupGroup.remove(p.group);
+      // Unload distant cells
+      for (const [key, pickups] of this.activeCells.entries()) {
+        if (!neededKeys.has(key)) {
+          for (const p of pickups) {
+            this.pickupGroup.remove(p.group);
+          }
+          this.activeCells.delete(key);
         }
-        this.activeCells.delete(key);
       }
     }
 
-    // 3. Update active pickups (magnetism, auto-collection, animations)
+    // 2. Update active pickups (magnetism, auto-collection, animations)
     const pickupRadius = this.pickupRadius;
     const magnetismRadius = this.magnetismRadius;
 
@@ -279,5 +287,14 @@ export class SurveyCreditPickupManager {
       }
     }
     this.activeCells.clear();
+    this.pickupGroup.clear();
+
+    this.sharedRingGeo.dispose();
+    this.sharedCoreCommonGeo.dispose();
+    this.sharedCoreRareGeo.dispose();
+    this.commonRingMat.dispose();
+    this.commonCoreMat.dispose();
+    this.rareRingMat.dispose();
+    this.rareCoreMat.dispose();
   }
 }

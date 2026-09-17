@@ -220,6 +220,18 @@ export class SpaceEncounterManager {
 
   public dispose(): void {
     for (const enc of this.encounters) {
+      enc.group.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry?.dispose();
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((m) => m.dispose());
+          } else {
+            obj.material?.dispose();
+          }
+        } else if (obj instanceof THREE.PointLight) {
+          obj.dispose();
+        }
+      });
       this.group.remove(enc.group);
     }
     this.encounters = [];

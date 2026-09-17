@@ -26,6 +26,11 @@ export class NavRadar {
   private onTargetCycleCallback: ((target: RadarTargetItem) => void) | null = null;
   private onOpenSystemMapCallback: (() => void) | null = null;
 
+  // Static scratch vector & offscreen background canvas for high performance rendering
+  private static readonly scratchForward = new THREE.Vector3();
+  private bgCanvas: HTMLCanvasElement;
+  private lastChipKey = '';
+
   constructor(parent: HTMLElement, autopilot: AutopilotController) {
     this.autopilotController = autopilot;
 
@@ -87,6 +92,12 @@ export class NavRadar {
     `;
     this.ctx = this.canvas.getContext('2d')!;
 
+    // Static background offscreen canvas
+    this.bgCanvas = document.createElement('canvas');
+    this.bgCanvas.width = 140;
+    this.bgCanvas.height = 140;
+    this.renderStaticBackground();
+
     // Info chip below radar
     this.targetInfoEl = document.createElement('div');
     this.targetInfoEl.className = 'radar-info';
@@ -115,6 +126,67 @@ export class NavRadar {
     this.canvas.addEventListener('dblclick', () => {
       if (this.onOpenSystemMapCallback) this.onOpenSystemMapCallback();
     });
+  }
+
+  private renderStaticBackground(): void {
+    const ctx = this.bgCanvas.getContext('2d');
+    if (!ctx) return;
+    const w = this.bgCanvas.width;
+    const h = this.bgCanvas.height;
+    const cx = w / 2;
+    const cy = h / 2;
+    const rMax = this.radarRadius - 4;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // 1. Forward Vision Cone (Frustum Wedge ±32° matching chase camera FOV)
+    ctx.save();
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.07)';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, this.radarRadius, -Math.PI / 2 - 0.56, -Math.PI / 2 + 0.56);
+    ctx.closePath();
+    ctx.fill();
+
+    // Vision cone radial dashed edges
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.22)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 4]);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(-Math.PI / 2 - 0.56) * this.radarRadius, cy + Math.sin(-Math.PI / 2 - 0.56) * this.radarRadius);
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(-Math.PI / 2 + 0.56) * this.radarRadius, cy + Math.sin(-Math.PI / 2 + 0.56) * this.radarRadius);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // 2. Concentric Holographic Range Rings & Scale Markers
+    const ringRadii = [rMax * 0.33, rMax * 0.66, rMax];
+    const ringLabels = ['1.2k', '5.5k', '25k'];
+
+    ctx.lineWidth = 1;
+    for (let i = 0; i < ringRadii.length; i++) {
+      const rad = ringRadii[i];
+      ctx.strokeStyle = i === ringRadii.length - 1 ? 'rgba(56, 189, 248, 0.35)' : 'rgba(56, 189, 248, 0.15)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Subtle range markings
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.45)';
+      ctx.font = '7.5px ui-monospace, SFMono-Regular, monospace';
+      ctx.fillText(ringLabels[i], cx + 4, cy - rad + 8);
+    }
+
+    // Crosshairs
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - this.radarRadius);
+    ctx.lineTo(cx, cy + this.radarRadius);
+    ctx.moveTo(cx - this.radarRadius, cy);
+    ctx.lineTo(cx + this.radarRadius, cy);
+    ctx.stroke();
   }
 
   public setOnTargetCycle(cb: (target: RadarTargetItem) => void): void {
@@ -257,7 +329,7 @@ export class NavRadar {
   public selectTargetInForwardView(shipPos: THREE.Vector3, shipQuat: THREE.Quaternion): boolean {
     if (this.targets.length === 0) return false;
 
-    const shipForward = new THREE.Vector3(0, 0, -1).applyQuaternion(shipQuat);
+    const shipForward = NavRadar.scratchForward.set(0, 0, -1).applyQuaternion(shipQuat);
     const shipYaw = Math.atan2(shipForward.x, -shipForward.z);
 
     let bestIndex = -1;
@@ -311,58 +383,12 @@ export class NavRadar {
     const rMax = this.radarRadius - 4;
 
     ctx.clearRect(0, 0, w, h);
-
-    // 1. Forward Vision Cone (Frustum Wedge ±32° matching cockpit chase camera FOV)
-    ctx.save();
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.07)';
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, this.radarRadius, -Math.PI / 2 - 0.56, -Math.PI / 2 + 0.56);
-    ctx.closePath();
-    ctx.fill();
-
-    // Vision cone radial dashed edges
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.22)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([2, 4]);
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + Math.cos(-Math.PI / 2 - 0.56) * this.radarRadius, cy + Math.sin(-Math.PI / 2 - 0.56) * this.radarRadius);
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + Math.cos(-Math.PI / 2 + 0.56) * this.radarRadius, cy + Math.sin(-Math.PI / 2 + 0.56) * this.radarRadius);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-
-    // 2. Concentric Holographic Range Rings & Scale Markers
-    const ringRadii = [rMax * 0.33, rMax * 0.66, rMax];
-    const ringLabels = ['1.2k', '5.5k', '25k'];
-
-    ctx.lineWidth = 1;
-    for (let i = 0; i < ringRadii.length; i++) {
-      const rad = ringRadii[i];
-      ctx.strokeStyle = i === ringRadii.length - 1 ? 'rgba(56, 189, 248, 0.35)' : 'rgba(56, 189, 248, 0.15)';
-      ctx.beginPath();
-      ctx.arc(cx, cy, rad, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Subtle range markings
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.45)';
-      ctx.font = '7.5px ui-monospace, SFMono-Regular, monospace';
-      ctx.fillText(ringLabels[i], cx + 4, cy - rad + 8);
+    if (ctx.drawImage) {
+      ctx.drawImage(this.bgCanvas, 0, 0);
     }
 
-    // Crosshairs
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - this.radarRadius);
-    ctx.lineTo(cx, cy + this.radarRadius);
-    ctx.moveTo(cx - this.radarRadius, cy);
-    ctx.lineTo(cx + this.radarRadius, cy);
-    ctx.stroke();
-
     // 3. Stabilized Horizontal Heading Calculation (Invariant to pitch and roll)
-    const shipForward = new THREE.Vector3(0, 0, -1).applyQuaternion(shipQuat);
+    const shipForward = NavRadar.scratchForward.set(0, 0, -1).applyQuaternion(shipQuat);
     const shipYaw = Math.atan2(shipForward.x, -shipForward.z);
 
     // Smooth logarithmic distance projection mapping 0 to 25,000 units
@@ -515,21 +541,27 @@ export class NavRadar {
     ctx.closePath();
     ctx.fill();
 
-    // 7. Update Target Information Chip
+    // 7. Update Target Information Chip (dirty-checked to eliminate DOM string parsing overhead)
     const active = this.getSelectedTarget();
     if (active) {
-      const d = active.position.distanceTo(shipPos);
-      const autoText = this.autopilotController.isActive
-        ? '<span style="color:#4ade80; font-weight: 700;">[AUTOPILOT ON]</span>'
-        : '<span style="color:#94a3b8;">[TAB: Cycle · T: Target Ahead]</span>';
+      const d = Math.round(active.position.distanceTo(shipPos));
+      const autoOn = this.autopilotController.isActive;
+      const chipKey = `${active.id}_${d}_${autoOn}`;
+      if (chipKey !== this.lastChipKey) {
+        this.lastChipKey = chipKey;
+        const autoText = autoOn
+          ? '<span style="color:#4ade80; font-weight: 700;">[AUTOPILOT ON]</span>'
+          : '<span style="color:#94a3b8;">[TAB: Cycle · T: Target Ahead]</span>';
 
-      const typeLabel = active.isAnomaly ? `⚡ ${active.type}` : active.type;
-      this.targetInfoEl.innerHTML = `
-        <div style="color: #38bdf8; font-weight: 600; font-size: 11px;">${active.name}</div>
-        <div style="font-size: 9px; color: #cbd5e1; margin-top: 1px;">${typeLabel} · ${Math.round(d)}u</div>
-        <div style="font-size: 9px; margin-top: 3px;">${autoText}</div>
-      `;
-    } else {
+        const typeLabel = active.isAnomaly ? `⚡ ${active.type}` : active.type;
+        this.targetInfoEl.innerHTML = `
+          <div style="color: #38bdf8; font-weight: 600; font-size: 11px;">${active.name}</div>
+          <div style="font-size: 9px; color: #cbd5e1; margin-top: 1px;">${typeLabel} · ${d}u</div>
+          <div style="font-size: 9px; margin-top: 3px;">${autoText}</div>
+        `;
+      }
+    } else if (this.lastChipKey !== '__none__') {
+      this.lastChipKey = '__none__';
       this.targetInfoEl.innerHTML = '<div style="color: #64748b;">NO TARGET SELECTED</div>';
     }
   }

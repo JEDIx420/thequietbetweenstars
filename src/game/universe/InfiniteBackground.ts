@@ -11,22 +11,40 @@ export class InfiniteBackground {
   private twinkleStarfield: THREE.Points;
   private nebulaPoints: THREE.Points;
 
-  // Cosmic Shooting Stars (Zero buffer re-upload)
-  private shootingStarsGroup: THREE.Group;
-  private shootingStarLines: THREE.Line[] = [];
+  // Cosmic Shooting Stars (Batched single LineSegments draw call)
+  private shootingStarsMesh: THREE.LineSegments;
+  private shootingStarsGeo: THREE.BufferGeometry;
+  private shootingStarsMat: THREE.LineBasicMaterial;
+  private shootingStarPositions: Float32Array;
   private shootingStarCount = 14;
+  private shootingStarData: Array<{
+    x: number;
+    y: number;
+    z: number;
+    dirX: number;
+    dirY: number;
+    dirZ: number;
+    len: number;
+    speed: number;
+  }> = [];
 
   constructor() {
     this.group = new THREE.Group();
     this.deepStarfield = this.createDeepStarfield();
     this.twinkleStarfield = this.createTwinkleStarfield();
     this.nebulaPoints = this.createCosmicNebula();
-    this.shootingStarsGroup = this.createShootingStars();
+
+    const { mesh, geo, mat, positions, data } = this.createShootingStars();
+    this.shootingStarsMesh = mesh;
+    this.shootingStarsGeo = geo;
+    this.shootingStarsMat = mat;
+    this.shootingStarPositions = positions;
+    this.shootingStarData = data;
 
     this.group.add(this.deepStarfield);
     this.group.add(this.twinkleStarfield);
     this.group.add(this.nebulaPoints);
-    this.group.add(this.shootingStarsGroup);
+    this.group.add(this.shootingStarsMesh);
   }
 
   private createDeepStarfield(): THREE.Points {
@@ -156,47 +174,77 @@ export class InfiniteBackground {
     return new THREE.Points(geometry, material);
   }
 
-  private createShootingStars(): THREE.Group {
-    const group = new THREE.Group();
-    this.shootingStarLines = [];
+  private createShootingStars(): {
+    mesh: THREE.LineSegments;
+    geo: THREE.BufferGeometry;
+    mat: THREE.LineBasicMaterial;
+    positions: Float32Array;
+    data: Array<{
+      x: number;
+      y: number;
+      z: number;
+      dirX: number;
+      dirY: number;
+      dirZ: number;
+      len: number;
+      speed: number;
+    }>;
+  } {
     const count = this.shootingStarCount;
     const spawnRadius = 2200;
+    const data: Array<{
+      x: number;
+      y: number;
+      z: number;
+      dirX: number;
+      dirY: number;
+      dirZ: number;
+      len: number;
+      speed: number;
+    }> = [];
+
+    // Each segment has 2 vertices = 6 floats
+    const positions = new Float32Array(count * 6);
+
+    for (let i = 0; i < count; i++) {
+      const len = 120 + Math.random() * 200;
+      const rawX = 0.7 + (Math.random() - 0.5) * 0.4;
+      const rawY = 0.3 + (Math.random() - 0.5) * 0.3;
+      const rawZ = -0.6 + (Math.random() - 0.5) * 0.4;
+      const norm = Math.hypot(rawX, rawY, rawZ) || 1;
+      const dirX = rawX / norm;
+      const dirY = rawY / norm;
+      const dirZ = rawZ / norm;
+      const speed = 400 + Math.random() * 500;
+
+      const x = (Math.random() - 0.5) * spawnRadius;
+      const y = (Math.random() - 0.5) * spawnRadius * 0.7;
+      const z = (Math.random() - 0.5) * spawnRadius;
+
+      data.push({ x, y, z, dirX, dirY, dirZ, len, speed });
+
+      const idx = i * 6;
+      positions[idx] = x;
+      positions[idx + 1] = y;
+      positions[idx + 2] = z;
+      positions[idx + 3] = x - dirX * len;
+      positions[idx + 4] = y - dirY * len;
+      positions[idx + 5] = z - dirZ * len;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
     const mat = new THREE.LineBasicMaterial({
       color: 0x38bdf8,
       transparent: true,
       opacity: 0.75,
       blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
 
-    for (let i = 0; i < count; i++) {
-      const len = 120 + Math.random() * 200;
-      const dirX = 0.7 + (Math.random() - 0.5) * 0.4;
-      const dirY = 0.3 + (Math.random() - 0.5) * 0.3;
-      const dirZ = -0.6 + (Math.random() - 0.5) * 0.4;
-
-      const geo = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(-dirX * len, -dirY * len, -dirZ * len),
-      ]);
-
-      const line = new THREE.Line(geo, mat);
-      const speed = 400 + Math.random() * 500;
-      line.userData = {
-        vel: new THREE.Vector3(dirX * speed, dirY * speed, dirZ * speed),
-      };
-
-      line.position.set(
-        (Math.random() - 0.5) * spawnRadius,
-        (Math.random() - 0.5) * spawnRadius * 0.7,
-        (Math.random() - 0.5) * spawnRadius
-      );
-
-      this.shootingStarLines.push(line);
-      group.add(line);
-    }
-
-    return group;
+    const mesh = new THREE.LineSegments(geo, mat);
+    return { mesh, geo, mat, positions, data };
   }
 
   /**
@@ -210,27 +258,33 @@ export class InfiniteBackground {
     const twinkleMat = this.twinkleStarfield.material as THREE.PointsMaterial;
     twinkleMat.opacity = 0.65 + Math.sin(clock * 3.5) * 0.25;
 
-    // Animate shooting stars (Zero buffer re-upload)
+    // Animate shooting stars via single batched typed array update
     const limit = 2200;
-    for (let i = 0; i < this.shootingStarLines.length; i++) {
-      const line = this.shootingStarLines[i];
-      const vel = line.userData.vel as THREE.Vector3;
-      const speedMult = 1.0 + warpFactor * 3.0;
+    const speedMult = 1.0 + warpFactor * 3.0;
+    const posAttr = this.shootingStarsGeo.attributes.position;
+    const positions = this.shootingStarPositions;
 
-      line.position.addScaledVector(vel, dt * speedMult);
+    for (let i = 0; i < this.shootingStarData.length; i++) {
+      const s = this.shootingStarData[i];
+      s.x += s.dirX * s.speed * dt * speedMult;
+      s.y += s.dirY * s.speed * dt * speedMult;
+      s.z += s.dirZ * s.speed * dt * speedMult;
 
-      if (
-        Math.abs(line.position.x) > limit ||
-        Math.abs(line.position.y) > limit ||
-        Math.abs(line.position.z) > limit
-      ) {
-        line.position.set(
-          (Math.random() - 0.5) * limit,
-          (Math.random() - 0.5) * limit * 0.6,
-          -limit * 0.8 + Math.random() * (limit * 1.6)
-        );
+      if (Math.abs(s.x) > limit || Math.abs(s.y) > limit || Math.abs(s.z) > limit) {
+        s.x = (Math.random() - 0.5) * limit;
+        s.y = (Math.random() - 0.5) * limit * 0.6;
+        s.z = -limit * 0.8 + Math.random() * (limit * 1.6);
       }
+
+      const idx = i * 6;
+      positions[idx] = s.x;
+      positions[idx + 1] = s.y;
+      positions[idx + 2] = s.z;
+      positions[idx + 3] = s.x - s.dirX * s.len;
+      positions[idx + 4] = s.y - s.dirY * s.len;
+      positions[idx + 5] = s.z - s.dirZ * s.len;
     }
+    posAttr.needsUpdate = true;
 
     if (warpFactor > 0 && warpHeading) {
       // Warp stretch: scale points along velocity vector
@@ -248,5 +302,21 @@ export class InfiniteBackground {
       twinkleMat.size = 3.5;
       this.deepStarfield.scale.set(1, 1, 1);
     }
+  }
+
+  public dispose(): void {
+    this.deepStarfield.geometry.dispose();
+    (this.deepStarfield.material as THREE.Material).dispose();
+
+    this.twinkleStarfield.geometry.dispose();
+    (this.twinkleStarfield.material as THREE.Material).dispose();
+
+    this.nebulaPoints.geometry.dispose();
+    (this.nebulaPoints.material as THREE.Material).dispose();
+
+    this.shootingStarsGeo.dispose();
+    this.shootingStarsMat.dispose();
+
+    this.group.clear();
   }
 }

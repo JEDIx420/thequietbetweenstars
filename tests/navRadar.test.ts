@@ -37,6 +37,7 @@ class MockDOMElement {
         addColorStop: () => {},
       }),
       fillText: () => {},
+      drawImage: () => {},
       setLineDash: () => {},
       save: () => {},
       restore: () => {},

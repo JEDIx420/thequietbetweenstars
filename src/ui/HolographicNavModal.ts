@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import type { StarSystemDescriptor } from '../game/systems/PlanetDescriptor';
 import type { WorldPosition } from '../game/universe/WorldPosition';
 import type { SectorManager } from '../game/universe/SectorManager';
+import type { StarSystemSummary } from '../game/systems/StarSystemSummary';
+import type { GameRenderer } from '../game/rendering/renderer';
 import { audio } from '../audio/AudioEngine';
 
 export type HolographicScale = 'GALACTIC' | 'STELLAR' | 'SYSTEM';
@@ -9,7 +11,7 @@ export type HolographicScale = 'GALACTIC' | 'STELLAR' | 'SYSTEM';
 interface StarNodeItem {
   mesh: THREE.Mesh;
   hitbox: THREE.Mesh;
-  system: StarSystemDescriptor;
+  system: StarSystemDescriptor | StarSystemSummary;
   worldRelPos: THREE.Vector3;
   distanceLy: number;
 }
@@ -22,9 +24,10 @@ export class HolographicNavModal {
   private countdownOverlayEl!: HTMLElement;
   private isVisible = false;
 
-  private scene: THREE.Scene;
-  private camera: THREE.PerspectiveCamera;
-  private renderer: THREE.WebGLRenderer;
+  public scene: THREE.Scene;
+  public camera: THREE.PerspectiveCamera;
+  private renderer: THREE.WebGLRenderer | null = null;
+  private gameRenderer?: GameRenderer;
 
   private sectorManager: SectorManager;
   private playerWorldPos: WorldPosition;
@@ -34,6 +37,19 @@ export class HolographicNavModal {
   public currentScale: HolographicScale = 'STELLAR';
   public selectedSystem: StarSystemDescriptor | null = null;
   public activeCourseSystem: StarSystemDescriptor | null = null;
+
+  // Reusable geometries & materials for star nodes
+  private sharedStarGeo = new THREE.SphereGeometry(2.4, 12, 12);
+  private sharedRingGeo = new THREE.RingGeometry(3.6, 4.0, 24);
+  private sharedHitboxGeo = new THREE.SphereGeometry(6.0, 8, 8);
+  private sharedHitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+  private sharedStemMat = new THREE.LineBasicMaterial({
+    color: 0x0284c7,
+    transparent: true,
+    opacity: 0.35,
+  });
+  private batchedStemGeo: THREE.BufferGeometry | null = null;
+  private nodeMaterials: THREE.Material[] = [];
 
   // 3D Scene Groups
   private gridGroup = new THREE.Group();
@@ -73,11 +89,13 @@ export class HolographicNavModal {
     parent: HTMLElement,
     sectorManager: SectorManager,
     playerWorldPos: WorldPosition,
-    onSelectDestination: (system: StarSystemDescriptor) => void
+    onSelectDestination: (system: StarSystemDescriptor) => void,
+    gameRenderer?: GameRenderer
   ) {
     this.sectorManager = sectorManager;
     this.playerWorldPos = playerWorldPos;
     this.onSelectDestination = onSelectDestination;
+    this.gameRenderer = gameRenderer;
 
     this.container = document.createElement('div');
     this.container.id = 'holographic-nav-modal';
@@ -85,8 +103,8 @@ export class HolographicNavModal {
       position: fixed;
       inset: 0;
       z-index: 2000;
-      background: radial-gradient(circle at 50% 50%, rgba(5, 9, 18, 0.96) 0%, rgba(2, 3, 6, 0.99) 100%);
-      backdrop-filter: blur(14px);
+      background: ${this.gameRenderer ? 'rgba(3, 5, 10, 0.45)' : 'radial-gradient(circle at 50% 50%, rgba(5, 9, 18, 0.96) 0%, rgba(2, 3, 6, 0.99) 100%)'};
+      backdrop-filter: blur(12px);
       display: none;
       flex-direction: column;
       color: #f8fafc;
@@ -319,10 +337,12 @@ export class HolographicNavModal {
     this.camera = new THREE.PerspectiveCamera(45, 1, 1, 2000);
     this.updateCameraOrbit();
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    const isMobile = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0) || window.innerWidth < 800);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2));
-    this.canvasContainer.appendChild(this.renderer.domElement);
+    if (!this.gameRenderer) {
+      this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      const isMobile = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0) || window.innerWidth < 800);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2));
+      this.canvasContainer.appendChild(this.renderer.domElement);
+    }
 
     // Add Scene Layers
     this.scene.add(this.gridGroup);
@@ -453,7 +473,7 @@ export class HolographicNavModal {
     this.rebuildStarsAndDestinations();
     this.renderDetailsPanel();
 
-    if (!this.animId) {
+    if (!this.gameRenderer && !this.animId) {
       this.animate();
     }
   }
@@ -512,12 +532,20 @@ export class HolographicNavModal {
    * Only displays the player's origin beacon and valid destination stars.
    */
   private rebuildStarsAndDestinations(): void {
-    // Clear old elements
+    // Clear old elements and dispose previous transient materials
     while (this.starNodesGroup.children.length > 0) {
       this.starNodesGroup.remove(this.starNodesGroup.children[0]);
     }
     while (this.originGroup.children.length > 0) {
       this.originGroup.remove(this.originGroup.children[0]);
+    }
+    for (const mat of this.nodeMaterials) {
+      mat.dispose();
+    }
+    this.nodeMaterials = [];
+    if (this.batchedStemGeo) {
+      this.batchedStemGeo.dispose();
+      this.batchedStemGeo = null;
     }
     this.starNodes = [];
 
@@ -526,6 +554,7 @@ export class HolographicNavModal {
     const originMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
     const originMesh = new THREE.Mesh(originGeo, originMat);
     this.originGroup.add(originMesh);
+    this.nodeMaterials.push(originMat);
 
     const originRingGeo = new THREE.RingGeometry(3.6, 4.2, 32);
     originRingGeo.rotateX(Math.PI / 2);
@@ -537,14 +566,16 @@ export class HolographicNavModal {
     });
     const originRing = new THREE.Mesh(originRingGeo, originRingMat);
     this.originGroup.add(originRing);
+    this.nodeMaterials.push(originRingMat);
 
-    // 2. Fetch destination systems in radius 4 sectors
-    const systemEntries = this.sectorManager.getSystemsInRadius(this.playerWorldPos.sector, 4);
+    // 2. Fetch destination systems using ultra-lightweight summaries
+    const systemEntries = this.sectorManager.getSystemSummariesInRadius(this.playerWorldPos.sector, 4);
     const playerSector = this.playerWorldPos.sector;
+    const stemPoints: THREE.Vector3[] = [];
 
     // Filter to destination systems
     for (const entry of systemEntries) {
-      const sys = entry.system;
+      const sys = entry.summary;
       const sDx = sys.sectorX - playerSector.x;
       const sDy = sys.sectorY - playerSector.y;
       const sDz = sys.sectorZ - playerSector.z;
@@ -564,47 +595,35 @@ export class HolographicNavModal {
 
       const distLy = Math.max(1.2, sectorDist * 3.26);
 
-      // Star Node 3D Sphere
-      const starGeo = new THREE.SphereGeometry(2.4, 16, 16);
+      // Star Node 3D Sphere (using shared geometry)
       const starMat = new THREE.MeshBasicMaterial({
         color: new THREE.Color(sys.star.lightColor),
       });
-      const starMesh = new THREE.Mesh(starGeo, starMat);
+      this.nodeMaterials.push(starMat);
+      const starMesh = new THREE.Mesh(this.sharedStarGeo, starMat);
       starMesh.position.copy(relPos);
 
-      // Concentric halo ring
-      const ringGeo = new THREE.RingGeometry(3.6, 4.0, 24);
-      ringGeo.rotateX(Math.PI / 2);
+      // Concentric halo ring (using shared geometry)
       const ringMat = new THREE.MeshBasicMaterial({
         color: new THREE.Color(sys.star.lightColor),
         transparent: true,
         opacity: 0.35,
         side: THREE.DoubleSide,
       });
-      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+      this.nodeMaterials.push(ringMat);
+      const ringMesh = new THREE.Mesh(this.sharedRingGeo, ringMat);
+      ringMesh.rotation.x = Math.PI / 2;
       ringMesh.position.copy(relPos);
 
-      // Depth stem line to reference plane (y=0)
-      const stemGeo = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(relX, 0, relZ),
-        relPos,
-      ]);
-      const stemMat = new THREE.LineBasicMaterial({
-        color: 0x0284c7,
-        transparent: true,
-        opacity: 0.35,
-      });
-      const stem = new THREE.Line(stemGeo, stemMat);
+      // Depth stem point pair for batched LineSegments
+      stemPoints.push(new THREE.Vector3(relX, 0, relZ), relPos);
 
-      // Invisible Click Hitbox (radius 6.0) for effortless raycast clicking
-      const hitboxGeo = new THREE.SphereGeometry(6.0, 8, 8);
-      const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-      const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+      // Invisible Click Hitbox (using shared geometry & material)
+      const hitbox = new THREE.Mesh(this.sharedHitboxGeo, this.sharedHitboxMat);
       hitbox.position.copy(relPos);
 
       this.starNodesGroup.add(starMesh);
       this.starNodesGroup.add(ringMesh);
-      this.starNodesGroup.add(stem);
       this.starNodesGroup.add(hitbox);
 
       this.starNodes.push({
@@ -614,6 +633,13 @@ export class HolographicNavModal {
         worldRelPos: relPos,
         distanceLy: distLy,
       });
+    }
+
+    // Single batched LineSegments for all depth stems
+    if (stemPoints.length > 0) {
+      this.batchedStemGeo = new THREE.BufferGeometry().setFromPoints(stemPoints);
+      const stemLines = new THREE.LineSegments(this.batchedStemGeo, this.sharedStemMat);
+      this.starNodesGroup.add(stemLines);
     }
 
     // Sort destinations by distance
@@ -648,6 +674,7 @@ export class HolographicNavModal {
       const sys = node.system;
       const isSelected = this.selectedSystem?.id === sys.id;
       const isLocked = this.activeCourseSystem?.id === sys.id;
+      const planetCount = 'planets' in sys ? sys.planets.length : sys.planetCount;
 
       const card = document.createElement('div');
       card.style.cssText = `
@@ -670,7 +697,7 @@ export class HolographicNavModal {
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8;">
           <span>Class ${sys.star.spectralClass} Star</span>
-          <span>${sys.planets.length} Worlds</span>
+          <span>${planetCount} Worlds</span>
         </div>
         ${isLocked ? `<div style="font-size: 10px; color: #22c55e; margin-top: 4px; font-weight: 600;">✓ COURSE LOCKED</div>` : ''}
       `;
@@ -689,8 +716,11 @@ export class HolographicNavModal {
   /**
    * Select a star system, light it up in 3D, and update the UI
    */
-  public selectSystem(sys: StarSystemDescriptor, openDrawer = true): void {
-    this.selectedSystem = sys;
+  public selectSystem(sys: StarSystemDescriptor | StarSystemSummary, openDrawer = true): void {
+    const fullSystem = 'planets' in sys
+      ? sys
+      : this.sectorManager.getFullSystem(sys.sectorX, sys.sectorY, sys.sectorZ);
+    this.selectedSystem = fullSystem;
     this.updateSelectionHighlight();
     this.renderDestinationsSidebar();
     this.renderDetailsPanel();
@@ -940,28 +970,38 @@ export class HolographicNavModal {
     if (w > 0 && h > 0) {
       this.camera.aspect = w / h;
       this.camera.updateProjectionMatrix();
-      this.renderer.setSize(w, h);
+      if (this.renderer) {
+        this.renderer.setSize(w, h);
+      }
     }
   }
 
-  private animate(): void {
+  public update(dt: number = 0.016): void {
     if (!this.isVisible || this.isDisposed) return;
-    this.animId = requestAnimationFrame(() => this.animate());
 
     // Smoothly interpolate camera look-at position
-    this.currentCamLook.lerp(this.targetCamLook, 0.05);
+    this.currentCamLook.lerp(this.targetCamLook, Math.min(1.0, dt * 4.0));
     this.updateCameraOrbit();
 
     // Rotate holographic selection reticle
-    this.targetReticleGroup.rotation.y += 0.012;
+    this.targetReticleGroup.rotation.y += dt * 0.75;
 
     // Pulse halo mesh
     if (this.highlightHaloMesh) {
       const pulse = 1.0 + Math.sin(performance.now() * 0.005) * 0.12;
       this.highlightHaloMesh.scale.set(pulse, pulse, pulse);
     }
+  }
 
-    this.renderer.render(this.scene, this.camera);
+  private animate(): void {
+    if (!this.isVisible || this.isDisposed) return;
+    if (this.gameRenderer) return;
+    this.animId = requestAnimationFrame(() => this.animate());
+
+    this.update(0.016);
+    if (this.renderer) {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   /**
@@ -1002,103 +1042,99 @@ export class HolographicNavModal {
         </div>
         <div style="display: flex; justify-content: space-between;">
           <span style="color: #94a3b8;">SPECTRAL TYPE:</span>
-          <span style="color: #${sys.star.lightColor.toString(16).padStart(6, '0')}; font-weight: bold;">CLASS ${sys.star.spectralClass} STAR</span>
+          <span style="color: #f8fafc;">Class ${sys.star.spectralClass} (T: ${sys.star.temperature}K)</span>
         </div>
         <div style="display: flex; justify-content: space-between;">
-          <span style="color: #94a3b8;">SECTOR COORDS:</span>
-          <span>[${sys.sectorX}, ${sys.sectorY}, ${sys.sectorZ}]</span>
+          <span style="color: #94a3b8;">PRIMARY RADIUS:</span>
+          <span style="color: #f8fafc;">${sys.star.radius * 10} km</span>
         </div>
         <div style="display: flex; justify-content: space-between;">
-          <span style="color: #94a3b8;">ORBITAL WORLDS:</span>
-          <span>${sys.planets.length} REGISTERED</span>
+          <span style="color: #94a3b8;">CONFIRMED WORLDS:</span>
+          <span style="color: #38bdf8; font-weight: 600;">${sys.planets.length} bodies</span>
         </div>
         <div style="display: flex; justify-content: space-between;">
-          <span style="color: #94a3b8;">DEEP ANOMALIES:</span>
-          <span style="color: #fbbf24;">${sys.anomalies?.length || 0} DETECTED</span>
-        </div>
-      </div>
-
-      <!-- Worlds Preview -->
-      <div style="margin-bottom: 16px;">
-        <div style="font-size: 10px; letter-spacing: 0.15em; color: #94a3b8; margin-bottom: 6px;">SURVEYED WORLDS</div>
-        <div style="display: flex; flex-direction: column; gap: 5px; max-height: 110px; overflow-y: auto;">
-          ${sys.planets.map((p, idx) => `
-            <div style="display: flex; justify-content: space-between; font-size: 10.5px; padding: 5px 8px; background: rgba(15, 23, 42, 0.5); border-radius: 4px;">
-              <span style="color: #e2e8f0;">${idx + 1}. ${p.name}</span>
-              <span style="color: #64748b;">${p.type || 'Terrestrial'}</span>
-            </div>
-          `).join('')}
+          <span style="color: #94a3b8;">SECTOR COORD:</span>
+          <span style="color: #94a3b8;">[${sys.sectorX}, ${sys.sectorY}, ${sys.sectorZ}]</span>
         </div>
       </div>
 
       <!-- Action Buttons -->
-      <div style="display: flex; flex-direction: column; gap: 8px; margin-top: auto;">
-        <button id="holo-btn-lock-course" style="
+      <div style="display: flex; flex-direction: column; gap: 10px; margin-top: auto;">
+        <button id="holo-btn-set-course" style="
+          width: 100%;
           padding: 10px;
-          background: ${isLocked ? 'rgba(34, 197, 94, 0.25)' : 'rgba(14, 165, 233, 0.2)'};
-          border: 1px solid ${isLocked ? '#22c55e' : 'rgba(56, 189, 248, 0.5)'};
-          border-radius: 8px;
-          color: #f8fafc;
+          background: ${isLocked ? 'rgba(34, 197, 94, 0.2)' : 'rgba(2, 132, 199, 0.2)'};
+          border: 1px solid ${isLocked ? '#22c55e' : '#38bdf8'};
+          border-radius: 6px;
+          color: ${isLocked ? '#22c55e' : '#38bdf8'};
+          font-family: ui-monospace, monospace;
           font-size: 11px;
-          letter-spacing: 0.1em;
           font-weight: 600;
+          letter-spacing: 0.1em;
           cursor: pointer;
-        ">${isLocked ? '✓ COURSE LOCKED' : 'LOCK COURSE VECTOR'}</button>
+          transition: all 0.15s ease;
+        ">
+          ${isLocked ? '✓ COURSE LOCKED' : 'LOCK DESTINATION COURSE'}
+        </button>
 
-        <button id="holo-btn-engage-warp" style="
-          padding: 11px;
-          background: linear-gradient(135deg, rgba(56, 189, 248, 0.4), rgba(14, 165, 233, 0.25));
+        <button id="holo-btn-warp-now" style="
+          width: 100%;
+          padding: 12px;
+          background: linear-gradient(135deg, #0284c7, #0369a1);
           border: 1px solid #38bdf8;
-          border-radius: 8px;
-          color: #f8fafc;
+          border-radius: 6px;
+          color: white;
+          font-family: ui-monospace, monospace;
           font-size: 12px;
-          letter-spacing: 0.15em;
           font-weight: 700;
+          letter-spacing: 0.15em;
           cursor: pointer;
-          box-shadow: 0 0 16px rgba(56, 189, 248, 0.25);
-          transition: all 0.2s ease;
-        ">ENGAGE WARP DRIVE</button>
+          box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);
+          transition: all 0.15s ease;
+        ">
+          INITIATE WARP TRANSIT ➔
+        </button>
       </div>
     `;
 
-    this.detailsPanel.querySelector('#holo-btn-details-close')?.addEventListener('click', () => {
+    // Hook up detail action buttons
+    const closeBtn = this.detailsPanel.querySelector('#holo-btn-details-close') as HTMLElement;
+    closeBtn?.addEventListener('click', () => {
       this.detailsPanel.classList.remove('drawer-open');
     });
 
-    this.detailsPanel.querySelector('#holo-btn-lock-course')?.addEventListener('click', () => {
+    const setCourseBtn = this.detailsPanel.querySelector('#holo-btn-set-course') as HTMLElement;
+    setCourseBtn?.addEventListener('click', () => {
       audio.playConnectChime();
       this.activeCourseSystem = sys;
-      if (this.onCourseSetCallback) this.onCourseSetCallback(sys);
+      if (this.onCourseSetCallback) {
+        this.onCourseSetCallback(sys);
+      }
       this.renderDestinationsSidebar();
       this.renderDetailsPanel();
     });
 
-    this.detailsPanel.querySelector('#holo-btn-engage-warp')?.addEventListener('click', () => {
-      audio.playBlip();
-      this.activeCourseSystem = sys;
-      this.close();
-      this.onSelectDestination(sys);
+    const warpBtn = this.detailsPanel.querySelector('#holo-btn-warp-now') as HTMLElement;
+    warpBtn?.addEventListener('click', () => {
+      this.startCountdown(sys);
     });
   }
 
   /**
-   * Starts the 5-to-1 animated countdown overlay before initiating warp drive
+   * Start the 5-second warp countdown sequence
    */
-  public startWarpCountdown(sys: StarSystemDescriptor): void {
-    this.abortCountdown();
+  private startCountdown(sys: StarSystemDescriptor): void {
+    if (this.countdownInterval !== null) return;
+
     this.countdownValue = 5;
-
-    const targetNameEl = this.container.querySelector('#holo-countdown-target-name') as HTMLElement;
-    const digitEl = this.container.querySelector('#holo-countdown-digit') as HTMLElement;
-
-    if (targetNameEl) targetNameEl.textContent = `TARGET // ${sys.name.toUpperCase()}`;
-    if (digitEl) {
-      digitEl.textContent = '5';
-      digitEl.style.transform = 'scale(1.2)';
-      setTimeout(() => { if (digitEl) digitEl.style.transform = 'scale(1.0)'; }, 100);
-    }
-
     this.countdownOverlayEl.style.display = 'flex';
+
+    const destNameEl = this.container.querySelector('#holo-warp-dest-name');
+    const digitEl = this.container.querySelector('#holo-warp-digit') as HTMLElement;
+
+    if (destNameEl) destNameEl.textContent = sys.name.toUpperCase();
+    if (digitEl) digitEl.textContent = '5';
+
     audio.playWarpCountdownTick(5);
 
     this.countdownInterval = window.setInterval(() => {
@@ -1139,7 +1175,25 @@ export class HolographicNavModal {
     this.isDisposed = true;
     this.abortCountdown();
     if (this.animId) cancelAnimationFrame(this.animId);
-    this.renderer.dispose();
+
+    this.sharedStarGeo.dispose();
+    this.sharedRingGeo.dispose();
+    this.sharedHitboxGeo.dispose();
+    this.sharedHitboxMat.dispose();
+    this.sharedStemMat.dispose();
+    if (this.batchedStemGeo) {
+      this.batchedStemGeo.dispose();
+      this.batchedStemGeo = null;
+    }
+    for (const mat of this.nodeMaterials) {
+      mat.dispose();
+    }
+    this.nodeMaterials = [];
+
+    if (this.renderer) {
+      this.renderer.dispose();
+      this.renderer.domElement.remove();
+    }
     this.container.remove();
   }
 }

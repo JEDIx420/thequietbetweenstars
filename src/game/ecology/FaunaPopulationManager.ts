@@ -44,6 +44,11 @@ export interface SentientEncounterSite {
   beaconLight: THREE.PointLight;
 }
 
+// Reusable scratch vectors to eliminate hot-loop per-creature allocations
+const scratchFleeDir = new THREE.Vector3();
+const scratchForward = new THREE.Vector3();
+const scratchGiantDir = new THREE.Vector3();
+
 export class FaunaPopulationManager {
   private ecology: PlanetEcologyProfile;
   private region: LandingRegionProfile;
@@ -64,6 +69,11 @@ export class FaunaPopulationManager {
   // Reusable materials cache
   private materialsCache: Map<string, THREE.Material> = new Map();
   private clock = 0;
+  private simFrame = 0;
+  private lastCellX: number | null = null;
+  private lastCellZ: number | null = null;
+  private activeCreaturesCache: ActiveCreature[] = [];
+  private cacheDirty = true;
 
   constructor(
     ecology: PlanetEcologyProfile,
@@ -190,54 +200,85 @@ export class FaunaPopulationManager {
     const centerCellX = Math.floor(craftPos.x / this.cellSize);
     const centerCellZ = Math.floor(craftPos.z / this.cellSize);
 
-    const neededCellKeys = new Set<string>();
+    if (centerCellX !== this.lastCellX || centerCellZ !== this.lastCellZ) {
+      this.lastCellX = centerCellX;
+      this.lastCellZ = centerCellZ;
+      const neededCellKeys = new Set<string>();
 
-    for (let dx = -this.activationRadius; dx <= this.activationRadius; dx++) {
-      for (let dz = -this.activationRadius; dz <= this.activationRadius; dz++) {
-        const cx = centerCellX + dx;
-        const cz = centerCellZ + dz;
-        const key = `${cx},${cz}`;
-        neededCellKeys.add(key);
+      for (let dx = -this.activationRadius; dx <= this.activationRadius; dx++) {
+        for (let dz = -this.activationRadius; dz <= this.activationRadius; dz++) {
+          const cx = centerCellX + dx;
+          const cz = centerCellZ + dz;
+          const key = `${cx},${cz}`;
+          neededCellKeys.add(key);
 
-        if (!this.activeCells.has(key)) {
-          const spawned = this.spawnCell(cx, cz, getHeightAt);
-          this.activeCells.set(key, spawned);
-          for (const c of spawned) {
-            this.faunaGroup.add(c.group);
+          if (!this.activeCells.has(key)) {
+            const spawned = this.spawnCell(cx, cz, getHeightAt);
+            this.activeCells.set(key, spawned);
+            for (const c of spawned) {
+              this.faunaGroup.add(c.group);
+            }
+            this.cacheDirty = true;
           }
         }
       }
-    }
 
-    // Despawn distant cells to maintain high frame rate
-    for (const [key, creatures] of this.activeCells.entries()) {
-      if (!neededCellKeys.has(key)) {
-        for (const c of creatures) {
-          this.faunaGroup.remove(c.group);
+      // Despawn distant cells to maintain high frame rate
+      for (const [key, creatures] of this.activeCells.entries()) {
+        if (!neededCellKeys.has(key)) {
+          for (const c of creatures) {
+            this.faunaGroup.remove(c.group);
+            c.group.traverse((obj) => {
+              if (obj instanceof THREE.Mesh) {
+                obj.geometry?.dispose();
+              }
+            });
+          }
+          this.activeCells.delete(key);
+          this.cacheDirty = true;
         }
-        this.activeCells.delete(key);
       }
     }
 
-    // Kinematic updates for active creatures in streamed cells
+    // Kinematic updates for active creatures in streamed cells with distance-based simulation LOD
+    this.simFrame++;
     for (const creatures of this.activeCells.values()) {
       for (const creature of creatures) {
-        creature.update(dt, getHeightAt, craftPos, craftThrottle);
+        const dist = creature.group.position.distanceTo(craftPos);
+        if (dist < 120) {
+          // Near: update every frame
+          creature.update(dt, getHeightAt, craftPos, craftThrottle);
+        } else if (dist < 260) {
+          // Mid: update every 2nd frame
+          if (this.simFrame % 2 === 0) {
+            creature.update(dt * 2, getHeightAt, craftPos, craftThrottle);
+          }
+        } else {
+          // Far: update every 5th frame
+          if (this.simFrame % 5 === 0) {
+            creature.update(dt * 5, getHeightAt, craftPos, craftThrottle);
+          }
+        }
       }
     }
   }
 
   public getActiveCreatures(): ActiveCreature[] {
-    const list: ActiveCreature[] = [];
-    // Include encounter site giants first
-    for (const site of this.encounterSites) {
-      list.push(site.giantCreature);
+    if (this.cacheDirty) {
+      this.activeCreaturesCache.length = 0;
+      // Include encounter site giants first
+      for (const site of this.encounterSites) {
+        this.activeCreaturesCache.push(site.giantCreature);
+      }
+      // Include streamed cell creatures
+      for (const cell of this.activeCells.values()) {
+        for (const c of cell) {
+          this.activeCreaturesCache.push(c);
+        }
+      }
+      this.cacheDirty = false;
     }
-    // Include streamed cell creatures
-    for (const cell of this.activeCells.values()) {
-      for (const c of cell) list.push(c);
-    }
-    return list;
+    return this.activeCreaturesCache;
   }
 
   public getEncounterSites(): SentientEncounterSite[] {
@@ -604,16 +645,16 @@ export class FaunaPopulationManager {
         if (distToShip < 40 && shipThrottle > 0.3) {
           if (species.temperament === 'timid' || species.category === 'GROUND') {
             reactSpeed *= 2.2;
-            const fleeDir = new THREE.Vector3().subVectors(group.position, shipPos).normalize();
-            headingAngle = Math.atan2(fleeDir.x, fleeDir.z);
+            scratchFleeDir.subVectors(group.position, shipPos).normalize();
+            headingAngle = Math.atan2(scratchFleeDir.x, scratchFleeDir.z);
           }
         }
 
         if (species.category === 'AERIAL') {
           // Aerial flight dynamics
           headingAngle += Math.sin(phase * 0.2) * 0.02;
-          const forward = new THREE.Vector3(Math.sin(headingAngle), 0, Math.cos(headingAngle));
-          group.position.addScaledVector(forward, reactSpeed * dt);
+          scratchForward.set(Math.sin(headingAngle), 0, Math.cos(headingAngle));
+          group.position.addScaledVector(scratchForward, reactSpeed * dt);
 
           const groundY = getHeightAt(group.position.x, group.position.z);
           const flightAlt = groundY + Math.max(12, s * 8) + Math.sin(phase * 0.8) * 3.0;
@@ -623,8 +664,8 @@ export class FaunaPopulationManager {
         } else {
           // Ground wandering dynamics
           headingAngle += Math.sin(phase * 0.15) * 0.03;
-          const forward = new THREE.Vector3(Math.sin(headingAngle), 0, Math.cos(headingAngle));
-          group.position.addScaledVector(forward, reactSpeed * dt);
+          scratchForward.set(Math.sin(headingAngle), 0, Math.cos(headingAngle));
+          group.position.addScaledVector(scratchForward, reactSpeed * dt);
 
           const groundY = getHeightAt(group.position.x, group.position.z);
           group.position.y = THREE.MathUtils.lerp(group.position.y, groundY, dt * 8.0);
@@ -752,8 +793,8 @@ export class FaunaPopulationManager {
         // Look-at tracking: head and upper body smoothly turn toward ship
         const distToShip = group.position.distanceTo(shipPos);
         if (distToShip < 90.0) {
-          const dir = new THREE.Vector3().subVectors(shipPos, group.position);
-          const targetAngle = Math.atan2(dir.x, dir.z);
+          scratchGiantDir.subVectors(shipPos, group.position);
+          const targetAngle = Math.atan2(scratchGiantDir.x, scratchGiantDir.z);
           group.rotation.y = THREE.MathUtils.lerp(group.rotation.y, targetAngle, dt * 2.5);
 
           // Tilt head slightly toward ship elevation
@@ -773,10 +814,37 @@ export class FaunaPopulationManager {
     for (const cell of this.activeCells.values()) {
       for (const c of cell) {
         this.faunaGroup.remove(c.group);
+        c.group.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) {
+            obj.geometry?.dispose();
+          }
+        });
       }
     }
     this.activeCells.clear();
-    this.encounterSitesGroup.clear();
+    this.activeCreaturesCache = [];
+    this.cacheDirty = true;
+
+    for (const site of this.encounterSites) {
+      site.landmarkGroup.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry?.dispose();
+        }
+      });
+      site.giantCreature.group.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry?.dispose();
+        }
+      });
+      site.beaconLight.dispose();
+    }
     this.encounterSites = [];
+    this.encounterSitesGroup.clear();
+    this.faunaGroup.clear();
+
+    for (const mat of this.materialsCache.values()) {
+      mat.dispose();
+    }
+    this.materialsCache.clear();
   }
 }

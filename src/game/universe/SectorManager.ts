@@ -2,6 +2,7 @@ import { SeededRandom } from './SeededRandom';
 import { WorldPosition, type SectorCoord } from './WorldPosition';
 import { StarSystemGenerator } from '../systems/StarSystemGenerator';
 import type { StarSystemDescriptor } from '../systems/PlanetDescriptor';
+import type { StarSystemSummary } from '../systems/StarSystemSummary';
 
 export interface ActiveSector {
   coord: SectorCoord;
@@ -14,6 +15,9 @@ export class SectorManager {
   public readonly universeSeed: string;
   public readonly sectorRadius = 1; // 3x3x3 sector neighbourhood around player
   private activeSectors: Map<string, ActiveSector> = new Map();
+  private summaryCache: Map<string, StarSystemSummary | null> = new Map();
+  private fullSystemCache: Map<string, StarSystemDescriptor> = new Map();
+  private readonly maxCachedFullSystems = 32;
 
   constructor(universeSeed: string = 'QUIET-DEFAULT-001') {
     this.universeSeed = universeSeed;
@@ -80,7 +84,7 @@ export class SectorManager {
 
     let system: StarSystemDescriptor | undefined;
     if (hasSystem) {
-      system = StarSystemGenerator.generateSystem(this.universeSeed, sx, sy, sz);
+      system = this.getFullSystem(sx, sy, sz);
     }
 
     return {
@@ -89,6 +93,35 @@ export class SectorManager {
       hasSystem,
       system,
     };
+  }
+
+  public getFullSystem(sx: number, sy: number, sz: number): StarSystemDescriptor {
+    const key = SectorManager.getSectorKey(sx, sy, sz);
+
+    // Check active sectors first
+    const active = this.activeSectors.get(key);
+    if (active?.system) {
+      return active.system;
+    }
+
+    // Check LRU full system cache
+    const cached = this.fullSystemCache.get(key);
+    if (cached) {
+      // Refresh LRU order
+      this.fullSystemCache.delete(key);
+      this.fullSystemCache.set(key, cached);
+      return cached;
+    }
+
+    // Generate full system descriptor
+    const fullSystem = StarSystemGenerator.generateSystem(this.universeSeed, sx, sy, sz);
+
+    if (this.fullSystemCache.size >= this.maxCachedFullSystems) {
+      const oldestKey = this.fullSystemCache.keys().next().value;
+      if (oldestKey) this.fullSystemCache.delete(oldestKey);
+    }
+    this.fullSystemCache.set(key, fullSystem);
+    return fullSystem;
   }
 
   public getActiveSectors(): ActiveSector[] {
@@ -100,8 +133,54 @@ export class SectorManager {
   }
 
   /**
-   * Deterministically queries star systems within a sector radius on demand.
-   * Does NOT instantiate Three.js meshes, keeping map rendering lightweight.
+   * Query lightweight summaries within a sector radius for lightning-fast star map rendering.
+   * Computes star properties and planet counts without generating full planetary profiles or textures.
+   */
+  public getSystemSummariesInRadius(
+    centerSector: SectorCoord,
+    radius: number = 5
+  ): Array<{ coord: SectorCoord; summary: StarSystemSummary; distanceSectors: number }> {
+    const results: Array<{ coord: SectorCoord; summary: StarSystemSummary; distanceSectors: number }> = [];
+
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dz = -radius; dz <= radius; dz++) {
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (dist > radius) continue;
+
+          const sx = centerSector.x + dx;
+          const sy = centerSector.y + dy;
+          const sz = centerSector.z + dz;
+          const key = SectorManager.getSectorKey(sx, sy, sz);
+
+          if (this.summaryCache.has(key)) {
+            const cached = this.summaryCache.get(key);
+            if (cached) {
+              results.push({ coord: { x: sx, y: sy, z: sz }, summary: cached, distanceSectors: dist });
+            }
+            continue;
+          }
+
+          const sectorHash = SeededRandom.hashCoords(this.universeSeed, sx, sy, sz);
+          const rng = new SeededRandom(sectorHash);
+          const hasSystem = (sx === 0 && sy === 0 && sz === 0) || rng.chance(0.35);
+
+          if (hasSystem) {
+            const summary = StarSystemGenerator.generateSystemSummary(this.universeSeed, sx, sy, sz);
+            this.summaryCache.set(key, summary);
+            results.push({ coord: { x: sx, y: sy, z: sz }, summary, distanceSectors: dist });
+          } else {
+            this.summaryCache.set(key, null);
+          }
+        }
+      }
+    }
+
+    return results.sort((a, b) => a.distanceSectors - b.distanceSectors);
+  }
+
+  /**
+   * Deterministically queries full star systems within a sector radius on demand.
    */
   public getSystemsInRadius(
     centerSector: SectorCoord,
@@ -129,13 +208,12 @@ export class SectorManager {
             continue;
           }
 
-          // Deterministic generation on demand without storing in active 3D render cache
           const sectorHash = SeededRandom.hashCoords(this.universeSeed, sx, sy, sz);
           const rng = new SeededRandom(sectorHash);
           const hasSystem = (sx === 0 && sy === 0 && sz === 0) || rng.chance(0.35);
 
           if (hasSystem) {
-            const system = StarSystemGenerator.generateSystem(this.universeSeed, sx, sy, sz);
+            const system = this.getFullSystem(sx, sy, sz);
             results.push({
               coord: { x: sx, y: sy, z: sz },
               system,
@@ -146,7 +224,6 @@ export class SectorManager {
       }
     }
 
-    // Sort by distance from center sector
     return results.sort((a, b) => a.distanceSectors - b.distanceSectors);
   }
 }

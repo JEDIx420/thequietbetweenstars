@@ -12,9 +12,26 @@ import type { PlanetDescriptor } from '../systems/PlanetDescriptor';
  * 5. Independent rotating cloud layer
  */
 export class PlanetVisualGenerator {
-  // Texture cache by planet seed
+  // Shared unit sphere geometries to eliminate duplicate GPU allocations
+  private static unitPlanetGeo = new THREE.SphereGeometry(1, 64, 48);
+  private static unitCloudGeo = new THREE.SphereGeometry(1, 48, 36);
+  private static unitAtmoGeo = new THREE.SphereGeometry(1, 48, 48);
+
+  // Bounded LRU texture cache by planet seed (max 16 entries)
+  private static readonly MAX_TEXTURE_CACHE = 16;
   private static textureCache: Map<number, THREE.CanvasTexture> = new Map();
   private static cloudCache: Map<number, THREE.CanvasTexture> = new Map();
+
+  public static clearTextureCaches(): void {
+    for (const tex of this.textureCache.values()) {
+      tex.dispose();
+    }
+    for (const tex of this.cloudCache.values()) {
+      tex.dispose();
+    }
+    this.textureCache.clear();
+    this.cloudCache.clear();
+  }
 
   public static createPlanetMesh(planet: PlanetDescriptor): {
     group: THREE.Group;
@@ -28,7 +45,6 @@ export class PlanetVisualGenerator {
 
     // 1. Procedural surface texture canvas
     const texture = this.getOrCreateSurfaceTexture(planet);
-    const geometry = new THREE.SphereGeometry(planet.radius, 64, 48);
 
     const roughness = profile.family === 'cryogenic-ice'
       ? 0.25
@@ -50,14 +66,14 @@ export class PlanetVisualGenerator {
       metalness,
     });
 
-    const planetMesh = new THREE.Mesh(geometry, material);
+    const planetMesh = new THREE.Mesh(PlanetVisualGenerator.unitPlanetGeo, material);
+    planetMesh.scale.setScalar(planet.radius);
     group.add(planetMesh);
 
     // 2. Cloud Sphere layer (for atmospheric planets)
     let cloudMesh: THREE.Mesh | null = null;
     if (profile.atmosphere.hasAtmosphere && profile.cloudCoverage > 0.08) {
       const cloudTex = this.getOrCreateCloudTexture(planet);
-      const cloudGeo = new THREE.SphereGeometry(planet.radius * 1.018, 48, 36);
       const cloudMat = new THREE.MeshStandardMaterial({
         map: cloudTex,
         transparent: true,
@@ -65,14 +81,14 @@ export class PlanetVisualGenerator {
         blending: THREE.NormalBlending,
         roughness: 0.9,
       });
-      cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
+      cloudMesh = new THREE.Mesh(PlanetVisualGenerator.unitCloudGeo, cloudMat);
+      cloudMesh.scale.setScalar(planet.radius * 1.018);
       group.add(cloudMesh);
     }
 
     // 3. Rayleigh Atmospheric Limb Glow Shell
     let atmosphereMesh: THREE.Mesh | null = null;
     if (profile.atmosphere.hasAtmosphere) {
-      const atmoGeo = new THREE.SphereGeometry(planet.radius * 1.055, 48, 48);
       const atmoMat = new THREE.MeshBasicMaterial({
         color: new THREE.Color(profile.palette.atmosphereGlow),
         transparent: true,
@@ -80,7 +96,8 @@ export class PlanetVisualGenerator {
         side: THREE.BackSide,
         blending: THREE.AdditiveBlending,
       });
-      atmosphereMesh = new THREE.Mesh(atmoGeo, atmoMat);
+      atmosphereMesh = new THREE.Mesh(PlanetVisualGenerator.unitAtmoGeo, atmoMat);
+      atmosphereMesh.scale.setScalar(planet.radius * 1.055);
       group.add(atmosphereMesh);
     }
 
@@ -108,18 +125,46 @@ export class PlanetVisualGenerator {
   }
 
   private static getOrCreateSurfaceTexture(planet: PlanetDescriptor): THREE.CanvasTexture {
-    if (this.textureCache.has(planet.seed)) {
-      return this.textureCache.get(planet.seed)!;
+    const existing = this.textureCache.get(planet.seed);
+    if (existing) {
+      // Refresh LRU order
+      this.textureCache.delete(planet.seed);
+      this.textureCache.set(planet.seed, existing);
+      return existing;
     }
+
+    if (this.textureCache.size >= this.MAX_TEXTURE_CACHE) {
+      const oldestKey = this.textureCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        const oldTex = this.textureCache.get(oldestKey);
+        oldTex?.dispose();
+        this.textureCache.delete(oldestKey);
+      }
+    }
+
     const tex = this.generateSurfaceTexture(planet);
     this.textureCache.set(planet.seed, tex);
     return tex;
   }
 
   private static getOrCreateCloudTexture(planet: PlanetDescriptor): THREE.CanvasTexture {
-    if (this.cloudCache.has(planet.seed)) {
-      return this.cloudCache.get(planet.seed)!;
+    const existing = this.cloudCache.get(planet.seed);
+    if (existing) {
+      // Refresh LRU order
+      this.cloudCache.delete(planet.seed);
+      this.cloudCache.set(planet.seed, existing);
+      return existing;
     }
+
+    if (this.cloudCache.size >= this.MAX_TEXTURE_CACHE) {
+      const oldestKey = this.cloudCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        const oldTex = this.cloudCache.get(oldestKey);
+        oldTex?.dispose();
+        this.cloudCache.delete(oldestKey);
+      }
+    }
+
     const tex = this.generateCloudTexture(planet);
     this.cloudCache.set(planet.seed, tex);
     return tex;

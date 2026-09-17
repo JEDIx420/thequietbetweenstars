@@ -70,14 +70,16 @@ export class CourierPod {
     this.group.position.copy(this.position);
   }
 
+  private static readonly scratchToShip = new THREE.Vector3();
+
   public applyTractorPull(targetPos: THREE.Vector3, dt: number): void {
     this.isTractorLocked = true;
-    const toShip = new THREE.Vector3().subVectors(targetPos, this.position);
-    const dist = toShip.length();
+    CourierPod.scratchToShip.subVectors(targetPos, this.position);
+    const dist = CourierPod.scratchToShip.length();
     if (dist > 1.0) {
-      toShip.normalize();
+      CourierPod.scratchToShip.normalize();
       const pullSpeed = Math.min(45, Math.max(22, dist * 0.4));
-      this.position.addScaledVector(toShip, pullSpeed * dt);
+      this.position.addScaledVector(CourierPod.scratchToShip, pullSpeed * dt);
       this.group.position.copy(this.position);
     }
     (this.tractorGlowMesh.material as THREE.MeshBasicMaterial).opacity = 0.85;
@@ -93,8 +95,8 @@ export class CourierPod {
     if (!this.isTractorLocked && shipPos) {
       const dist = this.position.distanceTo(shipPos);
       if (dist > 120) {
-        const dir = new THREE.Vector3().subVectors(shipPos, this.position).normalize();
-        this.position.addScaledVector(dir, Math.min(25, (dist - 100) * 0.3) * dt);
+        CourierPod.scratchToShip.subVectors(shipPos, this.position).normalize();
+        this.position.addScaledVector(CourierPod.scratchToShip, Math.min(25, (dist - 100) * 0.3) * dt);
       }
     }
 
@@ -111,5 +113,20 @@ export class CourierPod {
       (this.tractorGlowMesh.material as THREE.MeshBasicMaterial).opacity = 0.2 + Math.sin(this.clock * 3.0) * 0.15;
     }
     this.isTractorLocked = false; // Reset for next frame
+  }
+
+  public dispose(): void {
+    this.group.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry?.dispose();
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach((m) => m.dispose());
+        } else {
+          obj.material?.dispose();
+        }
+      } else if (obj instanceof THREE.PointLight) {
+        obj.dispose();
+      }
+    });
   }
 }

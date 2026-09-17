@@ -34,6 +34,10 @@ import { ExpeditionBriefing } from './ExpeditionBriefing';
 import { ShipEmoteDirector, type EmoteType } from '../game/scenes/ShipEmoteDirector';
 import type { NPCIdentity } from '../game/ecology/SentientSpeciesProfile';
 import type { StarSystemDescriptor } from '../game/systems/PlanetDescriptor';
+import { RuntimeScheduler } from '../game/performance/RuntimeScheduler';
+import { RenderQualityController } from '../game/performance/RenderQualityController';
+
+const scratchShipForward = new THREE.Vector3();
 
 export type UIState = 'title' | 'playing' | 'cinematic';
 
@@ -51,6 +55,8 @@ export class DesktopApp {
   private debugOverlay!: DebugOverlay;
 
   // Universe and Flight Subsystems
+  public scheduler: RuntimeScheduler = new RuntimeScheduler();
+  public renderQualityController!: RenderQualityController;
   public stateMachine: FlightStateMachine = new FlightStateMachine(FlightPhase.SYSTEM_CRUISE);
   public approachController: ApproachController = new ApproachController();
   public orbitController: OrbitController = new OrbitController();
@@ -140,6 +146,7 @@ export class DesktopApp {
     this.setupDebugKeyListeners();
     this.setupAudioUnlockListeners();
     this.setupOrientationHandler();
+    this.setupVisibilityListener();
     this.initTouchControls();
 
     // 3-Second Live Title Reveal Sequence on page load
@@ -156,6 +163,7 @@ export class DesktopApp {
 
   private initGameEngine(): void {
     this.renderer = new GameRenderer(this.canvasContainer);
+    this.renderQualityController = new RenderQualityController(this.renderer);
     this.spaceScene = new SpaceScene();
     this.shipEmoteDirector = new ShipEmoteDirector();
     this.spaceScene.scene.add(this.shipEmoteDirector.group);
@@ -222,7 +230,8 @@ export class DesktopApp {
       this.worldPosition,
       (targetSys) => {
         this.startInSpaceWarpCountdown(targetSys);
-      }
+      },
+      this.renderer
     );
     this.holographicNavModal.setOnCourseSet((targetSys) => {
       this.showHudNotice(`COURSE LOCKED // ${targetSys.name.toUpperCase()}`);
@@ -281,6 +290,27 @@ export class DesktopApp {
 
     const dt = Math.max(0.001, Math.min((time - this.lastTime) * 0.001, 0.05));
     this.lastTime = time;
+
+    // Single WebGL Renderer & Simulation Pause for Holographic Nav Modal
+    if (this.holographicNavModal && this.holographicNavModal.getIsOpen()) {
+      if (this.inputManager.consumeAction('map')) {
+        audio.playBlip();
+        this.holographicNavModal.toggle();
+      }
+      this.scheduler.addPauseReason('modal');
+      this.holographicNavModal.update(dt);
+      this.renderer.render(this.holographicNavModal.scene, this.holographicNavModal.camera);
+      this.debugOverlay.updateFrame();
+      requestAnimationFrame((t) => this.gameLoop(t));
+      return;
+    } else {
+      this.scheduler.removePauseReason('modal');
+    }
+
+    // Advance runtime scheduler and adaptive render quality controller
+    this.scheduler.setPhase(this.stateMachine.getPhase());
+    this.scheduler.advance(dt);
+    this.renderQualityController.update(dt);
 
     const input = this.inputManager.getNormalizedInput();
     const phase = this.stateMachine.getPhase();
@@ -455,8 +485,8 @@ export class DesktopApp {
 
       const scanReach = this.installedModules.has('mod_scanner_deep_ecology') ? 280 : 140;
 
-      // Forward vector for heading-weighted approach prioritization
-      const shipForward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.flightModel.quaternion);
+      // Forward vector for heading-weighted approach prioritization using module scratch vector
+      const shipForward = scratchShipForward.set(0, 0, -1).applyQuaternion(this.flightModel.quaternion);
 
       // Check Approach Controller for planets (strictly disabled while in deep cruise)
       const targetPlanet = (!this.deepCruiseController.state.isActive && phase !== FlightPhase.STELLAR_CRUISE)
@@ -783,13 +813,25 @@ export class DesktopApp {
       const isPortrait = window.innerHeight > window.innerWidth;
       if (isTouchDevice() && isPortrait) {
         blocker.style.display = 'flex';
+        this.scheduler.addPauseReason('orientation');
       } else if (!isPortrait) {
         blocker.style.display = 'none';
+        this.scheduler.removePauseReason('orientation');
       }
     };
     window.addEventListener('resize', checkOrientation);
     window.addEventListener('orientationchange', checkOrientation);
     checkOrientation();
+  }
+
+  private setupVisibilityListener(): void {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this.scheduler.addPauseReason('hidden');
+      } else {
+        this.scheduler.removePauseReason('hidden');
+      }
+    });
   }
 
   private updateControlContext(phase: FlightPhase): void {

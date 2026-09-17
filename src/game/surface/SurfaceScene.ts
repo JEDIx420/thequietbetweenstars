@@ -15,6 +15,8 @@ import { SentientSpeciesGenerator, type SentientSpeciesProfile, type NPCIdentity
 import { FaunaPopulationManager } from '../ecology/FaunaPopulationManager';
 import { ResourceNodeManager, type SampleNode } from './ResourceNodeManager';
 import { SurveyCreditPickupManager } from './SurveyCreditPickupManager';
+import { HeightfieldCache } from './HeightfieldCache';
+import { SpatialHash } from '../performance/SpatialHash';
 
 export class SurfaceScene {
   public scene: THREE.Scene;
@@ -90,6 +92,9 @@ export class SurfaceScene {
   private activeChunks: Map<string, THREE.Mesh> = new Map();
   private chunkSize = 200;
   private chunkSegments = 32;
+  private heightfieldCache: HeightfieldCache;
+  private lastChunkX: number | null = null;
+  private lastChunkZ: number | null = null;
 
   // Ocean / liquid plane
   private liquidGroup = new THREE.Group();
@@ -99,7 +104,9 @@ export class SurfaceScene {
   private propsGroup = new THREE.Group();
   private floraGroup = new THREE.Group();
   private activeFloraChunks: Map<string, THREE.InstancedMesh[]> = new Map();
+  private activePropChunks: Map<string, { meshes: THREE.Object3D[]; scannableIds: string[] }> = new Map();
   private scannableProps: Array<{ mesh: THREE.Object3D; name: string; info: string }> = [];
+  private spatialHash = new SpatialHash<{ mesh: THREE.Object3D; name: string; info: string }>(60);
 
   // Living Ecology, Sentient Species & Resource Nodes
   public ecologyProfile: PlanetEcologyProfile;
@@ -119,6 +126,12 @@ export class SurfaceScene {
 
     this.scene = new THREE.Scene();
     this.noise = new SimplexNoise2D(region.regionSeed || planet.seed);
+    this.heightfieldCache = new HeightfieldCache(
+      (x, z) => this.computeRawTerrainHeight(x, z),
+      this.chunkSize,
+      this.chunkSegments,
+      36
+    );
 
     // 1. Derive deterministic planetary ecology & sentient giants
     this.ecologyProfile = EcologyGenerator.deriveEcology(profile, planet.seed, planet.id);
@@ -458,12 +471,13 @@ export class SurfaceScene {
     let scanTarget: { name: string; info: string; isSentient?: boolean; npcData?: NPCIdentity } | null = null;
     let minDist = 65;
 
-    // Check props & landmarks
-    for (const prop of this.scannableProps) {
-      const dist = this.shipPosition.distanceTo(prop.mesh.position);
+    // Check props & landmarks via spatial hash
+    const nearbyProps = this.spatialHash.queryRadius(this.shipPosition.x, this.shipPosition.z, minDist);
+    for (const entry of nearbyProps) {
+      const dist = Math.sqrt(entry.distSq);
       if (dist < minDist) {
         minDist = dist;
-        scanTarget = { name: prop.name, info: prop.info };
+        scanTarget = { name: entry.data.name, info: entry.data.info };
       }
     }
 
@@ -531,6 +545,10 @@ export class SurfaceScene {
   }
 
   public getTerrainHeight(x: number, z: number): number {
+    return this.heightfieldCache.sample(x, z);
+  }
+
+  public computeRawTerrainHeight(x: number, z: number): number {
     const region = this.site.region;
     const morph = region.terrainMorphologyOverride;
     const hScale = region.heightScale * 32.0;
@@ -643,6 +661,14 @@ export class SurfaceScene {
   private updateTerrain(center: THREE.Vector3): void {
     const cx = Math.floor(center.x / this.chunkSize);
     const cz = Math.floor(center.z / this.chunkSize);
+
+    // Boundary check: skip re-evaluation if still inside current chunk
+    if (cx === this.lastChunkX && cz === this.lastChunkZ) {
+      return;
+    }
+    this.lastChunkX = cx;
+    this.lastChunkZ = cz;
+
     const radius = 1; // 3x3 chunks around ship
     const activeKeys = new Set<string>();
 
@@ -711,6 +737,30 @@ export class SurfaceScene {
           }
           this.activeFloraChunks.delete(key);
         }
+
+        // Unload distant landmark props and prevent memory / array leaks
+        const propData = this.activePropChunks.get(key);
+        if (propData) {
+          for (const pMesh of propData.meshes) {
+            this.propsGroup.remove(pMesh);
+            pMesh.traverse((obj) => {
+              if (obj instanceof THREE.Mesh) {
+                obj.geometry?.dispose();
+                if (Array.isArray(obj.material)) {
+                  obj.material.forEach((m) => m.dispose());
+                } else if (obj.material) {
+                  obj.material.dispose();
+                }
+              }
+            });
+          }
+          for (const sId of propData.scannableIds) {
+            this.spatialHash.remove(sId);
+          }
+          const removedMeshes = new Set(propData.meshes);
+          this.scannableProps = this.scannableProps.filter((p) => !removedMeshes.has(p.mesh));
+          this.activePropChunks.delete(key);
+        }
       }
     }
   }
@@ -737,12 +787,10 @@ export class SurfaceScene {
     const colPeak = new THREE.Color(palette.peak);
     const colRock = new THREE.Color(palette.rock);
 
-    // Calculate heights first
+    // Read heights directly from precomputed heightfield grid
+    const chunkData = this.heightfieldCache.getChunkHeightfield(cx, cz);
     for (let i = 0; i < pos.count; i++) {
-      const vx = pos.getX(i) + cx * this.chunkSize;
-      const vz = pos.getZ(i) + cz * this.chunkSize;
-      const vy = this.getTerrainHeight(vx, vz);
-      pos.setY(i, vy);
+      pos.setY(i, chunkData.heights[i]);
     }
     geo.computeVertexNormals();
     const normals = geo.attributes.normal;
@@ -807,10 +855,14 @@ export class SurfaceScene {
   }
 
   private spawnChunkProps(cx: number, cz: number): void {
+    const key = `${cx},${cz}`;
     const chunkSeed = SeededRandom.hashCoords(this.planet.seed, cx, 0, cz);
     const rng = new SeededRandom(chunkSeed);
     const profile = this.planet.profile;
     const region = this.site.region;
+
+    const meshes: THREE.Object3D[] = [];
+    const scannableIds: string[] = [];
 
     // Spawn 1-2 landmarks from planet's specific landmark family
     const count = rng.rangeInt(1, 2);
@@ -834,13 +886,20 @@ export class SurfaceScene {
 
       landmark.mesh.position.set(px, py, pz);
       this.propsGroup.add(landmark.mesh);
+      meshes.push(landmark.mesh);
 
-      this.scannableProps.push({
+      const propId = `landmark_${cx}_${cz}_${i}`;
+      const propEntry = {
         mesh: landmark.mesh,
         name: landmark.name,
         info: landmark.info,
-      });
+      };
+      this.scannableProps.push(propEntry);
+      this.spatialHash.insert(propId, px, pz, propEntry);
+      scannableIds.push(propId);
     }
+
+    this.activePropChunks.set(key, { meshes, scannableIds });
   }
 
   private createAtmosphericParticles(
@@ -917,20 +976,54 @@ export class SurfaceScene {
 
   public dispose(): void {
     this.proceduralSky.dispose();
+    this.faunaPopulationManager.dispose();
+    this.resourceManager.dispose();
+    this.creditPickupManager.dispose();
+
     for (const [, mesh] of this.activeChunks) {
       mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
     }
     for (const [, mesh] of this.activeLiquidChunks) {
       mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
     }
     for (const [, floraList] of this.activeFloraChunks) {
       for (const f of floraList) {
         f.geometry.dispose();
+        (f.material as THREE.Material).dispose();
       }
     }
+    for (const [, propData] of this.activePropChunks) {
+      for (const pMesh of propData.meshes) {
+        pMesh.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) {
+            obj.geometry?.dispose();
+            if (Array.isArray(obj.material)) {
+              obj.material.forEach((m) => m.dispose());
+            } else if (obj.material) {
+              obj.material.dispose();
+            }
+          }
+        });
+      }
+    }
+    this.activePropChunks.clear();
+    this.activeChunks.clear();
+    this.activeLiquidChunks.clear();
+    this.activeFloraChunks.clear();
+    this.scannableProps = [];
+    this.spatialHash.clear();
+
     if (this.distantHorizonRing) {
       this.distantHorizonRing.geometry.dispose();
+      (this.distantHorizonRing.material as THREE.Material).dispose();
     }
+    if (this.particlePoints) {
+      this.particlePoints.geometry.dispose();
+      (this.particlePoints.material as THREE.Material).dispose();
+    }
+
     this.terrainGroup.clear();
     this.liquidGroup.clear();
     this.propsGroup.clear();

@@ -8,6 +8,7 @@ import type {
   SpaceAnomalyType,
   ResonanceSignature,
 } from './PlanetDescriptor';
+import type { StarSystemSummary } from './StarSystemSummary';
 
 const GREEK_PREFIXES = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta', 'Eta', 'Theta', 'Sigma', 'Omicron'];
 const SYSTEM_NAMES = ['Aurelia', 'Solara', 'Cygnus', 'Vespera', 'Kaelum', 'Zephyria', 'Elysium', 'Nocturna', 'Nirvana', 'Orionis', 'Zenith', 'Astraea', 'Hyperion', 'Caelestis'];
@@ -16,6 +17,55 @@ const PLANET_SYLLABLES_2 = ['re', 'phy', 'lum', 'na', 'nor', 'ra', 'mi', 'lon', 
 const PLANET_SYLLABLES_3 = ['lia', 'ros', 'ia', 'tis', 'nus', 'dani', 'cron', 'va', 'ter', 'ion', 'ra', 'thea', 'gon'];
 
 export class StarSystemGenerator {
+  public static generateSystemSummary(universeSeed: string | number, sx: number, sy: number, sz: number): StarSystemSummary {
+    const sysSeed = SeededRandom.hashCoords(universeSeed, sx, sy, sz);
+    const rng = new SeededRandom(sysSeed);
+
+    const baseName = rng.pick(SYSTEM_NAMES);
+    const prefix = rng.chance(0.4) ? rng.pick(GREEK_PREFIXES) + ' ' : '';
+    const name = `${prefix}${baseName}`;
+    const id = `sys-${sx}_${sy}_${sz}`;
+
+    const isOrigin = sx === 0 && sy === 0 && sz === 0;
+    const star = this.generateStar(rng, isOrigin ? 'Solara' : name);
+
+    let numPlanets: number;
+    if (isOrigin) {
+      numPlanets = 2;
+    } else {
+      const roll = rng.next();
+      if (roll < 0.08) {
+        numPlanets = 0;
+      } else if (roll < 0.20) {
+        numPlanets = 1;
+      } else if (roll < 0.75) {
+        numPlanets = rng.rangeInt(2, 5);
+      } else if (roll < 0.92) {
+        numPlanets = rng.rangeInt(6, 7);
+      } else {
+        numPlanets = 8;
+      }
+    }
+
+    const isStartingNeighbor = sx === 0 && sy === 1 && sz === 0;
+    if (isStartingNeighbor && numPlanets === 0) {
+      numPlanets = 1;
+    }
+
+    const hasAnomaly = rng.chance(0.4) || isOrigin;
+
+    return {
+      id,
+      seed: sysSeed,
+      name: isOrigin ? 'Solara' : name,
+      sectorX: sx,
+      sectorY: sy,
+      sectorZ: sz,
+      star,
+      planetCount: numPlanets,
+      hasAnomalies: hasAnomaly,
+    };
+  }
   public static generateSystem(universeSeed: string | number, sx: number, sy: number, sz: number): StarSystemDescriptor {
     const sysSeed = SeededRandom.hashCoords(universeSeed, sx, sy, sz);
     const rng = new SeededRandom(sysSeed);

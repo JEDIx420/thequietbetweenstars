@@ -52,10 +52,18 @@ export class GameRenderer {
     });
   }
 
-  public render(scene: THREE.Scene): void {
+  public render(scene: THREE.Scene, camera?: THREE.PerspectiveCamera): void {
     if (!this.isPaused) {
-      this.renderer.render(scene, this.camera);
+      this.renderer.render(scene, camera || this.camera);
     }
+  }
+
+  public setPixelRatio(dpr: number): void {
+    this.renderer.setPixelRatio(dpr);
+  }
+
+  public getPixelRatio(): number {
+    return this.renderer.getPixelRatio();
   }
 
   public dispose(): void {

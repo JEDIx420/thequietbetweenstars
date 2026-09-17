@@ -50,6 +50,10 @@ export class TouchControls {
   private isHoldingTractor = false;
   private tractorTimer: number | null = null;
 
+  // Cached layout metrics to eliminate layout thrashing
+  private cachedThrottleTrackHeight = 136;
+  private cachedThrottleTrackBottom = 0;
+
   constructor(parent: HTMLElement, touchInput: TouchInput) {
     this.parent = parent;
     this.touchInput = touchInput;
@@ -662,6 +666,9 @@ export class TouchControls {
       if (this.throttlePointerId !== null) return;
       this.throttlePointerId = e.pointerId;
       track.setPointerCapture(e.pointerId);
+      const rect = this.throttleTrackEl.getBoundingClientRect();
+      this.cachedThrottleTrackHeight = rect.height || 136;
+      this.cachedThrottleTrackBottom = rect.bottom;
       this.updateThrottleFromPointer(e.clientY);
     };
 
@@ -694,10 +701,9 @@ export class TouchControls {
   }
 
   private updateThrottleFromPointer(clientY: number): void {
-    const rect = this.throttleTrackEl.getBoundingClientRect();
-    const trackHeight = rect.height || 136;
+    const trackHeight = this.cachedThrottleTrackHeight;
     // 0 is bottom, 1 is top
-    const relativeY = rect.bottom - clientY;
+    const relativeY = this.cachedThrottleTrackBottom - clientY;
     const norm = clamp(relativeY / trackHeight, 0, 1);
     this.setThrottle(norm);
   }
@@ -706,10 +712,9 @@ export class TouchControls {
     this.currentThrottle = clamp(val, 0, 1);
     const percent = Math.round(this.currentThrottle * 100);
 
-    // Update fill height & knob position
+    // Update fill height & knob position using cached track height to avoid layout thrashing
     this.throttleFillEl.style.height = `${percent}%`;
-    const rect = this.throttleTrackEl.getBoundingClientRect();
-    const trackHeight = rect.height || 136;
+    const trackHeight = this.cachedThrottleTrackHeight;
     const knobTravel = Math.max(50, trackHeight - 28);
     this.throttleKnobEl.style.bottom = `${(this.currentThrottle * knobTravel)}px`;
 
