@@ -190,9 +190,8 @@ export class SupplyModal {
 
     this.modalEl.innerHTML = `
       <div style="
-        width: 720px;
-        max-width: 90vw;
-        max-height: 85vh;
+        width: min(720px, 94vw);
+        max-height: min(88dvh, 720px);
         background: #090e1a;
         border: 1px solid rgba(56, 189, 248, 0.35);
         border-radius: 16px;
@@ -203,33 +202,35 @@ export class SupplyModal {
       ">
         <!-- Header -->
         <div style="
-          padding: 18px 24px;
+          padding: clamp(12px, 2.5vw, 18px) clamp(14px, 3vw, 24px);
           border-bottom: 1px solid rgba(56, 189, 248, 0.2);
           display: flex;
           justify-content: space-between;
           align-items: center;
           background: rgba(15, 23, 42, 0.6);
+          flex-wrap: wrap;
+          gap: 8px;
         ">
           <div>
             <div style="font-size: 10px; font-family: ui-monospace, monospace; color: #38bdf8; letter-spacing: 0.2em; text-transform: uppercase;">
               SUB-SPACE REQUISITION NETWORK
             </div>
-            <h2 style="font-size: 20px; font-weight: 600; margin: 2px 0 0 0; color: #f8fafc; letter-spacing: 0.05em;">
+            <h2 style="font-size: clamp(16px, 4vw, 20px); font-weight: 600; margin: 2px 0 0 0; color: #f8fafc; letter-spacing: 0.05em;">
               SURVEY SUPPLY & UPGRADES
             </h2>
           </div>
-          <div style="display: flex; align-items: center; gap: 16px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
             <div style="
               background: rgba(56, 189, 248, 0.12);
               border: 1px solid rgba(56, 189, 248, 0.35);
-              padding: 6px 14px;
+              padding: 5px 12px;
               border-radius: 8px;
               display: flex;
               align-items: baseline;
               gap: 6px;
             ">
-              <span style="font-size: 11px; color: #94a3b8;">CREDITS:</span>
-              <span style="font-size: 16px; font-weight: 800; color: #38bdf8; font-family: ui-monospace, monospace;">${credits}</span>
+              <span style="font-size: 10px; color: #94a3b8;">CREDITS:</span>
+              <span style="font-size: 15px; font-weight: 800; color: #38bdf8; font-family: ui-monospace, monospace;">${credits}</span>
             </div>
             <button id="close-supply-btn" style="
               background: none;
@@ -238,21 +239,22 @@ export class SupplyModal {
               font-size: 22px;
               cursor: pointer;
               padding: 4px 8px;
+              touch-action: manipulation;
             ">✕</button>
           </div>
         </div>
 
         <!-- Inventory Bar -->
         <div style="
-          padding: 12px 24px;
+          padding: 10px clamp(14px, 3vw, 24px);
           background: rgba(15, 23, 42, 0.4);
           border-bottom: 1px solid rgba(148, 163, 184, 0.15);
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 8px;
           flex-wrap: wrap;
         ">
-          <span style="font-size: 11px; font-family: ui-monospace, monospace; color: #94a3b8; letter-spacing: 0.05em;">
+          <span style="font-size: 10px; font-family: ui-monospace, monospace; color: #94a3b8; letter-spacing: 0.05em;">
             CATALOGUED SAMPLES:
           </span>
           ${inventoryChipsHtml}
@@ -260,11 +262,12 @@ export class SupplyModal {
 
         <!-- Catalog List -->
         <div style="
-          padding: 20px 24px;
+          padding: clamp(14px, 2.5vw, 20px) clamp(14px, 3vw, 24px);
           overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
           display: flex;
           flex-direction: column;
-          gap: 14px;
+          gap: 12px;
           flex: 1;
         ">
           ${modulesHtml}
@@ -272,7 +275,7 @@ export class SupplyModal {
 
         <!-- Footer -->
         <div style="
-          padding: 12px 24px;
+          padding: 10px clamp(14px, 3vw, 24px);
           background: rgba(15, 23, 42, 0.6);
           border-top: 1px solid rgba(56, 189, 248, 0.2);
           display: flex;
@@ -280,9 +283,11 @@ export class SupplyModal {
           align-items: center;
           font-size: 11px;
           color: #64748b;
+          flex-wrap: wrap;
+          gap: 8px;
         ">
-          <span>Courier delivery pods arrive in star system cruise space once requisition is confirmed.</span>
-          <span style="color: #94a3b8;">[ESC] / [U] to close</span>
+          <span style="font-size: 10px;">Courier pods arrive in star system cruise space once requisitioned.</span>
+          <span style="color: #94a3b8; font-size: 10px;">[ESC] / [U] to close</span>
         </div>
       </div>
     `;

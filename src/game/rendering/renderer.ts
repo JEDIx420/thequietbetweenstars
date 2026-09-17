@@ -16,8 +16,13 @@ export class GameRenderer {
       alpha: false,
     });
 
+    const isMobile =
+      typeof window !== 'undefined' &&
+      ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0) || window.innerWidth < 800);
+    const maxDpr = isMobile ? 1.5 : 2;
+
     this.renderer.setClearColor(0x030307, 1);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;

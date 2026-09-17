@@ -32,12 +32,14 @@ export class JournalModal {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 20px 32px;
+        padding: clamp(14px, 3vw, 20px) clamp(16px, 4vw, 32px);
         border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+        flex-wrap: wrap;
+        gap: 8px;
       ">
         <div>
-          <div style="font-size: 11px; letter-spacing: 0.25em; color: #38bdf8; text-transform: uppercase;">EXPEDITION LOG</div>
-          <h2 style="font-size: 22px; font-weight: 300; margin: 4px 0 0 0;">Ship Journal & Discoveries</h2>
+          <div style="font-size: 10px; letter-spacing: 0.25em; color: #38bdf8; text-transform: uppercase;">EXPEDITION LOG</div>
+          <h2 style="font-size: clamp(18px, 4vw, 22px); font-weight: 300; margin: 4px 0 0 0;">Ship Journal & Discoveries</h2>
         </div>
         <button id="btn-journal-close" style="
           background: rgba(30, 41, 59, 0.8);
@@ -47,37 +49,42 @@ export class JournalModal {
           border-radius: 6px;
           font-size: 12px;
           cursor: pointer;
+          touch-action: manipulation;
         ">CLOSE [J / ESC]</button>
       </div>
 
       <!-- Navigation Tabs -->
       <div style="
         display: flex;
-        gap: 10px;
-        padding: 14px 32px;
+        gap: 8px;
+        padding: 10px clamp(16px, 4vw, 32px);
         background: rgba(15, 23, 42, 0.6);
         border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
       ">
-        <button class="journal-tab-btn" data-tab="WORLDS">WORLDS</button>
-        <button class="journal-tab-btn" data-tab="LIFE">LIFE</button>
-        <button class="journal-tab-btn" data-tab="PEOPLES">PEOPLES</button>
-        <button class="journal-tab-btn" data-tab="LORE">LORE</button>
-        <button class="journal-tab-btn" data-tab="RESOURCES">RESOURCES</button>
-        <button class="journal-tab-btn" data-tab="SYSTEMS">STAR SYSTEMS</button>
-        <button class="journal-tab-btn" data-tab="ANOMALIES">ANOMALIES</button>
-        <button class="journal-tab-btn" data-tab="NOTES">FLIGHT LOG</button>
+        <button class="journal-tab-btn" data-tab="WORLDS" style="flex-shrink: 0;">WORLDS</button>
+        <button class="journal-tab-btn" data-tab="LIFE" style="flex-shrink: 0;">LIFE</button>
+        <button class="journal-tab-btn" data-tab="PEOPLES" style="flex-shrink: 0;">PEOPLES</button>
+        <button class="journal-tab-btn" data-tab="LORE" style="flex-shrink: 0;">LORE</button>
+        <button class="journal-tab-btn" data-tab="RESOURCES" style="flex-shrink: 0;">RESOURCES</button>
+        <button class="journal-tab-btn" data-tab="SYSTEMS" style="flex-shrink: 0;">STAR SYSTEMS</button>
+        <button class="journal-tab-btn" data-tab="ANOMALIES" style="flex-shrink: 0;">ANOMALIES</button>
+        <button class="journal-tab-btn" data-tab="NOTES" style="flex-shrink: 0;">FLIGHT LOG</button>
       </div>
 
       <!-- Main Content Area -->
       <div id="journal-content-list" style="
         flex: 1;
         overflow-y: auto;
-        padding: 28px 32px;
+        -webkit-overflow-scrolling: touch;
+        padding: clamp(16px, 3vw, 28px);
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-        gap: 18px;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+        gap: 14px;
         align-content: flex-start;
+        box-sizing: border-box;
       "></div>
     `;
 

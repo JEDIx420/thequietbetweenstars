@@ -27,12 +27,14 @@ export class HelpModal {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 20px 32px;
+        padding: clamp(14px, 3vw, 20px) clamp(16px, 4vw, 32px);
         border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+        flex-wrap: wrap;
+        gap: 8px;
       ">
         <div>
-          <div style="font-size: 11px; letter-spacing: 0.25em; color: #38bdf8; text-transform: uppercase;">SHIP'S MANUAL</div>
-          <h2 style="font-size: 22px; font-weight: 300; margin: 4px 0 0 0;">Flight Operations & Guide</h2>
+          <div style="font-size: 10px; letter-spacing: 0.25em; color: #38bdf8; text-transform: uppercase;">SHIP'S MANUAL</div>
+          <h2 style="font-size: clamp(18px, 4vw, 22px); font-weight: 300; margin: 4px 0 0 0;">Flight Operations & Guide</h2>
         </div>
         <button id="btn-help-close" style="
           background: rgba(30, 41, 59, 0.8);
@@ -42,31 +44,37 @@ export class HelpModal {
           border-radius: 6px;
           font-size: 12px;
           cursor: pointer;
+          touch-action: manipulation;
         ">CLOSE [H / ? / ESC]</button>
       </div>
 
       <!-- Navigation Tabs -->
       <div style="
         display: flex;
-        gap: 12px;
-        padding: 14px 32px;
+        gap: 8px;
+        padding: 10px clamp(16px, 4vw, 32px);
         background: rgba(15, 23, 42, 0.6);
         border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
       ">
-        <button class="help-tab-btn" data-tab="FLIGHT" style="padding: 6px 16px; background: #0284c7; border: none; border-radius: 6px; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;">FLIGHT CONTROLS</button>
-        <button class="help-tab-btn" data-tab="NAVIGATION" style="padding: 6px 16px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 12px; font-weight: 600; cursor: pointer;">NAVIGATION & WARP</button>
-        <button class="help-tab-btn" data-tab="EXPLORATION" style="padding: 6px 16px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 12px; font-weight: 600; cursor: pointer;">EXPLORATION & SCAN</button>
-        <button class="help-tab-btn" data-tab="COMPANION" style="padding: 6px 16px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 12px; font-weight: 600; cursor: pointer;">PHONE COMPANION</button>
-        <button class="help-tab-btn" data-tab="LOG" style="padding: 6px 16px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 12px; font-weight: 600; cursor: pointer;">SHIP LOG & SAVE</button>
+        <button class="help-tab-btn" data-tab="FLIGHT" style="padding: 6px 14px; background: #0284c7; border: none; border-radius: 6px; color: #fff; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">FLIGHT CONTROLS</button>
+        <button class="help-tab-btn" data-tab="NAVIGATION" style="padding: 6px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">NAVIGATION & WARP</button>
+        <button class="help-tab-btn" data-tab="EXPLORATION" style="padding: 6px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">EXPLORATION & SCAN</button>
+        <button class="help-tab-btn" data-tab="COMPANION" style="padding: 6px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">TOUCH CONTROLS</button>
+        <button class="help-tab-btn" data-tab="LOG" style="padding: 6px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">SHIP LOG & SAVE</button>
       </div>
 
       <!-- Content Area -->
       <div id="help-tab-content" style="
         flex: 1;
         overflow-y: auto;
-        padding: 32px;
+        -webkit-overflow-scrolling: touch;
+        padding: clamp(16px, 4vw, 32px);
         max-width: 800px;
         line-height: 1.6;
+        box-sizing: border-box;
       "></div>
     `;
 
@@ -205,16 +213,17 @@ export class HelpModal {
       case 'COMPANION':
         content.innerHTML = `
           <div style="font-size: 16px; font-weight: 600; color: #38bdf8; margin-bottom: 12px;">
-            Phone Companion Controller
+            Mobile & Tablet Touch Flight Deck
           </div>
           <p style="font-size: 13px; color: #cbd5e1;">
-            Scan the QR code on the desktop title screen with your phone camera to pair over a secure, low-latency WebRTC data channel.
+            The entire 3D game runs natively on modern smartphones and tablets with an ergonomic, tactile heads-up flight deck.
           </p>
           <ul style="color: #cbd5e1; font-size: 13px; line-height: 1.8;">
-            <li><b>Left Thumb:</b> Virtual floating joystick for pitch and yaw.</li>
-            <li><b>Right Thumb:</b> Vertical slider for continuous engine throttle.</li>
-            <li><b>Actions:</b> Dedicated touch buttons for <b>SCAN</b>, <b>MAP</b>, <b>AUTO</b>, <b>TARGET</b>, and <b>LOG</b>.</li>
-            <li><b>Ship Mirror:</b> Narrative dialogue and tutorial hints are mirrored directly onto the phone terminal.</li>
+            <li><b>Left Virtual Joystick:</b> Analog thumbstick for precision pitch and yaw orientation. Features spring-return centering and radial deadzone.</li>
+            <li><b>Right Throttle Lever:</b> Vertical slider for 0% to 100% continuous main engine thrust, complete with cruise lock and emergency <b>BRAKE</b> button.</li>
+            <li><b>SCAN / TRACTOR:</b> Tap once to fire a sensor resonance scan; tap and hold (>250ms) to lock the graviton tractor beam onto cargo pods and discovery motes.</li>
+            <li><b>MAP & FLIGHT:</b> Instant access buttons for <b>MAP</b> (Star Chart), <b>ORBIT / LAND</b> (dynamic descent and orbital exit), and <b>ALT ▲ / ▼</b> (surface flight).</li>
+            <li><b>RADIO EMOTES:</b> Dedicated in-flight buttons for <b>👋 Wave</b>, <b>💖 Heart</b>, and <b>✌️ Peace</b> to transmit radio hails to passing ships.</li>
           </ul>
         `;
         break;

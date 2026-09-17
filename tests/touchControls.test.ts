@@ -24,6 +24,12 @@ class MockHTMLElement {
     }
   }
 
+  click() {
+    if (this.listeners['click']) {
+      this.listeners['click'].forEach(cb => cb({ preventDefault: () => {} }));
+    }
+  }
+
   appendChild(child: MockHTMLElement) {
     child.parentElement = this;
     this.children.push(child);
@@ -142,6 +148,29 @@ describe('Touch Controls & Mobile Flight Deck', () => {
     controls.toggleVisibility();
     expect(mainControls.style.display).toBe('flex');
     expect(toggleBtn.textContent).toContain('ON');
+
+    controls.dispose();
+  });
+
+  it('triggers onEmote callback when touch emote buttons are clicked', () => {
+    const controls = new TouchControls(container, touchInput);
+    const emotesTriggered: string[] = [];
+    controls.setOnEmote((type) => {
+      emotesTriggered.push(type);
+    });
+
+    const waveBtn = container.querySelector('#touch-btn-emote-wave') as any;
+    const heartBtn = container.querySelector('#touch-btn-emote-heart') as any;
+    const peaceBtn = container.querySelector('#touch-btn-emote-peace') as any;
+
+    waveBtn.click();
+    expect(emotesTriggered).toContain('wave');
+
+    heartBtn.click();
+    expect(emotesTriggered).toContain('heart');
+
+    peaceBtn.click();
+    expect(emotesTriggered).toContain('peace');
 
     controls.dispose();
   });

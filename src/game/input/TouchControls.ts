@@ -42,6 +42,9 @@ export class TouchControls {
   private journalBtnEl!: HTMLElement;
   private toggleBtnEl!: HTMLElement;
 
+  // Radio emote callback
+  private onEmoteCallback: ((type: 'wave' | 'heart' | 'peace') => void) | null = null;
+
   // Tractor beam hold tracking
   private isHoldingTractor = false;
   private tractorTimer: number | null = null;
@@ -54,6 +57,10 @@ export class TouchControls {
     this.setupThrottleEvents();
     this.setupActionEvents();
     this.setupResizeListener();
+  }
+
+  public setOnEmote(cb: (type: 'wave' | 'heart' | 'peace') => void): void {
+    this.onEmoteCallback = cb;
   }
 
   private createDOM(): void {
@@ -151,14 +158,62 @@ export class TouchControls {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 10px;
+          gap: 8px;
           pointer-events: auto;
           margin-bottom: 6px;
         ">
+          <!-- In-Flight Radio Emote Deck -->
+          <div id="touch-emote-row" style="display: flex; gap: 6px; margin-bottom: 2px;">
+            <button id="touch-btn-emote-wave" style="
+              width: 42px;
+              height: 36px;
+              background: rgba(15, 23, 42, 0.85);
+              border: 1px solid rgba(250, 204, 21, 0.5);
+              border-radius: 10px;
+              font-size: 18px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              cursor: pointer;
+              touch-action: manipulation;
+              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+            " title="Wave">👋</button>
+
+            <button id="touch-btn-emote-heart" style="
+              width: 42px;
+              height: 36px;
+              background: rgba(15, 23, 42, 0.85);
+              border: 1px solid rgba(244, 63, 94, 0.5);
+              border-radius: 10px;
+              font-size: 18px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              cursor: pointer;
+              touch-action: manipulation;
+              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+            " title="Heart">💖</button>
+
+            <button id="touch-btn-emote-peace" style="
+              width: 42px;
+              height: 36px;
+              background: rgba(15, 23, 42, 0.85);
+              border: 1px solid rgba(56, 189, 248, 0.5);
+              border-radius: 10px;
+              font-size: 18px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              cursor: pointer;
+              touch-action: manipulation;
+              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+            " title="Peace">✌️</button>
+          </div>
+
           <!-- Primary Scan / Tractor Beam Button -->
           <button id="touch-btn-scan" style="
             width: 140px;
-            padding: 12px 0;
+            padding: 11px 0;
             background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(14, 165, 233, 0.15));
             border: 1.5px solid rgba(56, 189, 248, 0.6);
             border-radius: 12px;
@@ -583,6 +638,22 @@ export class TouchControls {
     // Toggle touch controls visibility
     this.toggleBtnEl.addEventListener('click', () => {
       this.toggleVisibility();
+    });
+
+    // In-Flight Radio Emote Actions
+    this.container.querySelector('#touch-btn-emote-wave')?.addEventListener('click', () => {
+      this.onEmoteCallback?.('wave');
+      navigator.vibrate?.(25);
+    });
+
+    this.container.querySelector('#touch-btn-emote-heart')?.addEventListener('click', () => {
+      this.onEmoteCallback?.('heart');
+      navigator.vibrate?.(25);
+    });
+
+    this.container.querySelector('#touch-btn-emote-peace')?.addEventListener('click', () => {
+      this.onEmoteCallback?.('peace');
+      navigator.vibrate?.(25);
     });
   }
 

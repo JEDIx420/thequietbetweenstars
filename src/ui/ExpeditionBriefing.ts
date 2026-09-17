@@ -134,8 +134,8 @@ export class ExpeditionBriefing {
             text: 'Review documented worlds in your Ship Log [J]. Order experimental ship equipment and surveyor modules through Supply [U].',
           },
           {
-            heading: 'AUTOSAVE & PHONE COMPANION',
-            text: 'Your progress autosaves continuously. Pair your phone at any time as an in-universe physical cockpit touch terminal.',
+            heading: 'AUTOSAVE & NATIVE FLIGHT DECK',
+            text: 'Your journey autosaves continuously. Play on desktop with keyboard & mouse or on mobile & tablet with intuitive on-screen flight stick, throttle, and sensor controls.',
           },
         ],
         closingQuote: 'Pick a star. See what’s there.',
@@ -145,21 +145,26 @@ export class ExpeditionBriefing {
     const current = screens[this.currentStep];
 
     this.container.innerHTML = `
-      <div style="
+      <div id="briefing-card" style="
         max-width: 680px;
         width: 100%;
-        background: rgba(10, 16, 28, 0.85);
+        max-height: min(88dvh, 720px);
+        background: rgba(10, 16, 28, 0.92);
         border: 1px solid rgba(56, 189, 248, 0.35);
-        border-radius: 12px;
-        box-shadow: 0 0 35px rgba(56, 189, 248, 0.15), 0 20px 40px rgba(0, 0, 0, 0.6);
-        padding: 36px 40px;
+        border-radius: 14px;
+        box-shadow: 0 0 35px rgba(56, 189, 248, 0.15), 0 20px 40px rgba(0, 0, 0, 0.7);
+        padding: clamp(16px, 3.5vw, 32px);
         box-sizing: border-box;
         display: flex;
         flex-direction: column;
         position: relative;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
       ">
         <!-- Top Bar with Step Indicators and Skip -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 8px;">
           <div style="display: flex; align-items: center; gap: 8px;">
             <div style="font-size: 10px; letter-spacing: 0.25em; color: #38bdf8; font-weight: 700;">
               ${current.badge}
@@ -172,34 +177,35 @@ export class ExpeditionBriefing {
           </div>
 
           <button id="btn-skip-briefing" style="
-            background: transparent;
-            border: 1px solid rgba(148, 163, 184, 0.25);
-            border-radius: 4px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            border-radius: 6px;
             color: #94a3b8;
             font-size: 11px;
-            letter-spacing: 0.1em;
-            padding: 4px 12px;
+            letter-spacing: 0.08em;
+            padding: 6px 14px;
             cursor: pointer;
             transition: all 0.15s ease;
-          ">SKIP BRIEFING [ESC]</button>
+            touch-action: manipulation;
+          ">SKIP [ESC]</button>
         </div>
 
         <!-- Main Title -->
-        <h2 style="font-size: 28px; font-weight: 300; margin: 0 0 10px 0; color: #f8fafc; letter-spacing: 0.04em;">
+        <h2 style="font-size: clamp(22px, 5vw, 28px); font-weight: 300; margin: 0 0 8px 0; color: #f8fafc; letter-spacing: 0.04em;">
           ${current.title}
         </h2>
-        <p style="font-size: 14px; line-height: 1.6; color: #94a3b8; margin: 0 0 24px 0;">
+        <p style="font-size: clamp(13px, 3.2vw, 14px); line-height: 1.6; color: #94a3b8; margin: 0 0 20px 0;">
           ${current.summary}
         </p>
 
         <!-- Feature Points -->
-        <div style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px;">
+        <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
           ${current.sections.map(s => `
-            <div style="padding: 12px 16px; background: rgba(15, 23, 42, 0.6); border-left: 2px solid #38bdf8; border-radius: 0 6px 6px 0;">
+            <div style="padding: 10px 14px; background: rgba(15, 23, 42, 0.65); border-left: 2px solid #38bdf8; border-radius: 0 6px 6px 0;">
               <div style="font-size: 11px; font-weight: 700; color: #38bdf8; letter-spacing: 0.1em; margin-bottom: 4px;">
                 ${s.heading}
               </div>
-              <div style="font-size: 13px; color: #cbd5e1; line-height: 1.5;">
+              <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5;">
                 ${s.text}
               </div>
             </div>
@@ -209,20 +215,20 @@ export class ExpeditionBriefing {
         <!-- Optional Controls Table (Screen 1) -->
         ${current.controls ? `
           <div style="
-            background: rgba(15, 23, 42, 0.4);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 6px;
-            padding: 12px 16px;
-            margin-bottom: 24px;
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-bottom: 20px;
           ">
             <div style="font-size: 10px; letter-spacing: 0.2em; color: #94a3b8; margin-bottom: 8px; font-weight: 600;">
-              CORE FLIGHT INPUTS
+              FLIGHT DECK & SENSOR CONTROLS
             </div>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px 16px; font-size: 12px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px 14px; font-size: 11px;">
               ${current.controls.map(c => `
-                <div style="display: flex; justify-content: space-between; font-family: ui-monospace, monospace;">
+                <div style="display: flex; justify-content: space-between; font-family: ui-monospace, monospace; gap: 8px;">
                   <span style="color: #38bdf8; font-weight: 600;">${c.key}</span>
-                  <span style="color: #94a3b8; font-family: ui-sans-serif, sans-serif;">${c.desc}</span>
+                  <span style="color: #94a3b8; font-family: ui-sans-serif, sans-serif; text-align: right;">${c.desc}</span>
                 </div>
               `).join('')}
             </div>
@@ -233,37 +239,47 @@ export class ExpeditionBriefing {
         ${current.closingQuote ? `
           <div style="
             text-align: center;
-            font-size: 16px;
+            font-size: 15px;
             font-style: italic;
             color: #38bdf8;
             letter-spacing: 0.08em;
-            margin: 8px 0 24px 0;
+            margin: 4px 0 20px 0;
             text-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
           ">
             "${current.closingQuote}"
           </div>
         ` : ''}
 
-        <!-- Bottom Action Bar -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+        <!-- Bottom Action Bar (Sticky at bottom of scroll container) -->
+        <div style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: auto;
+          padding-top: 14px;
+          border-top: 1px solid rgba(255, 255, 255, 0.1);
+          position: sticky;
+          bottom: 0;
+          background: rgba(10, 16, 28, 0.95);
+          backdrop-filter: blur(8px);
+          z-index: 10;
+        ">
           <div>
             ${this.currentStep > 0 ? `
               <button id="btn-briefing-prev" style="
-                background: rgba(15, 23, 42, 0.8);
+                background: rgba(15, 23, 42, 0.85);
                 border: 1px solid rgba(148, 163, 184, 0.3);
                 border-radius: 6px;
                 color: #cbd5e1;
                 font-size: 12px;
-                padding: 10px 20px;
+                padding: 10px 18px;
                 cursor: pointer;
-              ">← PREVIOUS</button>
+                touch-action: manipulation;
+              ">← PREV</button>
             ` : ''}
           </div>
 
-          <div style="display: flex; align-items: center; gap: 14px;">
-            <span style="font-size: 11px; color: #64748b; font-family: ui-monospace, monospace;">
-              [SPACE / ENTER]
-            </span>
+          <div style="display: flex; align-items: center; gap: 10px;">
             <button id="btn-briefing-next" style="
               background: linear-gradient(135deg, rgba(56, 189, 248, 0.35), rgba(14, 165, 233, 0.2));
               border: 1px solid #38bdf8;
@@ -271,10 +287,11 @@ export class ExpeditionBriefing {
               color: #f8fafc;
               font-size: 13px;
               font-weight: 600;
-              letter-spacing: 0.1em;
-              padding: 10px 28px;
+              letter-spacing: 0.08em;
+              padding: 10px 24px;
               cursor: pointer;
               box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+              touch-action: manipulation;
             ">
               ${this.currentStep === 2 ? 'BEGIN EXPEDITION →' : 'NEXT →'}
             </button>
@@ -295,6 +312,32 @@ export class ExpeditionBriefing {
     this.container.querySelector('#btn-briefing-next')?.addEventListener('click', () => {
       this.next();
     });
+
+    // Mobile touch swipe support
+    const card = this.container.querySelector('#briefing-card') as HTMLElement;
+    if (card) {
+      let touchStartX = 0;
+      let touchStartY = 0;
+      card.addEventListener('touchstart', (e: TouchEvent) => {
+        touchStartX = e.changedTouches[0].screenX;
+        touchStartY = e.changedTouches[0].screenY;
+      }, { passive: true });
+
+      card.addEventListener('touchend', (e: TouchEvent) => {
+        const touchEndX = e.changedTouches[0].screenX;
+        const touchEndY = e.changedTouches[0].screenY;
+        const dx = touchEndX - touchStartX;
+        const dy = touchEndY - touchStartY;
+        // Only swipe if horizontal movement is dominant
+        if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+          if (dx < 0) {
+            this.next();
+          } else {
+            this.prev();
+          }
+        }
+      }, { passive: true });
+    }
   }
 
   private finish(): void {

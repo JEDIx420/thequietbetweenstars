@@ -31,6 +31,7 @@ import { saveManager, type PlayerSaveSlot, type ShipModule } from '../persistenc
 import { TitleRevealSequence } from './TitleRevealSequence';
 import { NewJourneyCinematic } from './NewJourneyCinematic';
 import { ExpeditionBriefing } from './ExpeditionBriefing';
+import { ShipEmoteDirector, type EmoteType } from '../game/scenes/ShipEmoteDirector';
 import type { NPCIdentity } from '../game/ecology/SentientSpeciesProfile';
 import type { StarSystemDescriptor } from '../game/systems/PlanetDescriptor';
 
@@ -43,6 +44,7 @@ export class DesktopApp {
 
   private renderer!: GameRenderer;
   private spaceScene!: SpaceScene;
+  public shipEmoteDirector!: ShipEmoteDirector;
   private surfaceScene: SurfaceScene | null = null;
   private flightModel!: FlightModel;
   private inputManager!: InputManager;
@@ -147,6 +149,9 @@ export class DesktopApp {
   private initGameEngine(): void {
     this.renderer = new GameRenderer(this.canvasContainer);
     this.spaceScene = new SpaceScene();
+    this.shipEmoteDirector = new ShipEmoteDirector();
+    this.spaceScene.scene.add(this.shipEmoteDirector.group);
+
     this.flightModel = new FlightModel(this.spaceScene.shipGroup, this.spaceScene.physics, this.approachController);
     this.inputManager = new InputManager();
     this.debugOverlay = new DebugOverlay();
@@ -156,6 +161,7 @@ export class DesktopApp {
       onRebase: (offset) => {
         this.flightModel.onRebase(offset, this.renderer.camera);
         this.spaceScene.onRebase(offset);
+        this.shipEmoteDirector.onRebase(offset);
       },
     });
 
@@ -277,6 +283,7 @@ export class DesktopApp {
       this.tutorialDirector.onPlayerThrottle();
     }
     this.tutorialDirector.update();
+    this.shipEmoteDirector.update(dt);
 
     if (this.uiState === 'cinematic' && this.newJourneyCinematic.getIsPlaying()) {
       // Cinematic Intro Camera Directing
@@ -1273,6 +1280,7 @@ export class DesktopApp {
     if (isTouch) {
       if (!this.touchControls) {
         this.touchControls = new TouchControls(this.uiContainer, this.inputManager.getTouchSource());
+        this.touchControls.setOnEmote((type) => this.triggerShipEmote(type));
       }
       this.touchControls.show();
       const phase = this.stateMachine.getPhase();
@@ -1370,21 +1378,64 @@ export class DesktopApp {
 
         <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; align-self: center;">
           <!-- Telemetry readouts -->
-          <div id="hud-telemetry-bar" style="
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            background: rgba(15, 23, 42, 0.75);
-            border: 1px solid rgba(56, 189, 248, 0.25);
-            padding: 4px 14px;
-            border-radius: 12px;
-            font-family: ui-monospace, monospace;
-            font-size: 11px;
-            color: #94a3b8;
-          ">
-            <span>SPD: <strong id="telemetry-speed" style="color: #38bdf8;">0</strong> m/s</span>
-            <span>THR: <strong id="telemetry-throttle" style="color: #38bdf8;">0%</strong></span>
-            <span>CREDITS: <strong id="telemetry-credits" style="color: #34d399;">${this.credits}</strong></span>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;">
+            <div id="hud-telemetry-bar" style="
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              background: rgba(15, 23, 42, 0.75);
+              border: 1px solid rgba(56, 189, 248, 0.25);
+              padding: 4px 14px;
+              border-radius: 12px;
+              font-family: ui-monospace, monospace;
+              font-size: 11px;
+              color: #94a3b8;
+            ">
+              <span>SPD: <strong id="telemetry-speed" style="color: #38bdf8;">0</strong> m/s</span>
+              <span>THR: <strong id="telemetry-throttle" style="color: #38bdf8;">0%</strong></span>
+              <span>CREDITS: <strong id="telemetry-credits" style="color: #34d399;">${this.credits}</strong></span>
+            </div>
+
+            <!-- Desktop Radio Emote Dock -->
+            <div id="hud-emotes-bar" style="
+              display: ${isTouch ? 'none' : 'flex'};
+              align-items: center;
+              gap: 5px;
+              background: rgba(15, 23, 42, 0.75);
+              border: 1px solid rgba(56, 189, 248, 0.3);
+              padding: 3px 8px;
+              border-radius: 12px;
+              pointer-events: auto;
+            ">
+              <span style="font-size: 10px; font-family: ui-monospace, monospace; color: #94a3b8; margin-right: 2px;">RADIO:</span>
+              <button id="btn-desktop-emote-wave" style="
+                background: rgba(250, 204, 21, 0.15);
+                border: 1px solid rgba(250, 204, 21, 0.4);
+                border-radius: 6px;
+                color: #fde047;
+                padding: 2px 8px;
+                font-size: 11px;
+                cursor: pointer;
+              " title="Wave [1]">👋 [1]</button>
+              <button id="btn-desktop-emote-heart" style="
+                background: rgba(244, 63, 94, 0.15);
+                border: 1px solid rgba(244, 63, 94, 0.4);
+                border-radius: 6px;
+                color: #fda4af;
+                padding: 2px 8px;
+                font-size: 11px;
+                cursor: pointer;
+              " title="Heart [2]">💖 [2]</button>
+              <button id="btn-desktop-emote-peace" style="
+                background: rgba(56, 189, 248, 0.15);
+                border: 1px solid rgba(56, 189, 248, 0.4);
+                border-radius: 6px;
+                color: #7dd3fc;
+                padding: 2px 8px;
+                font-size: 11px;
+                cursor: pointer;
+              " title="Peace [3]">✌️ [3]</button>
+            </div>
           </div>
 
           <div id="proximity-indicator" style="
@@ -1406,13 +1457,16 @@ export class DesktopApp {
             font-size: 13px;
             letter-spacing: 0.12em;
             color: #38bdf8;
-            background: rgba(15, 23, 42, 0.8);
-            border: 1px solid rgba(56, 189, 248, 0.3);
-            padding: 6px 18px;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            padding: 7px 20px;
             border-radius: 20px;
             opacity: 0;
             transition: opacity 0.3s;
             pointer-events: none;
+            max-width: min(640px, 90vw);
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
           "></div>
         </div>
 
@@ -1422,8 +1476,9 @@ export class DesktopApp {
             color: #64748b;
             line-height: 1.6;
             font-family: ui-monospace, monospace;
+            display: ${isTouch ? 'none' : 'block'};
           ">
-            ${isTouch ? 'Steer with Left Joystick · Vertical Throttle · Tap SCAN or Hold TRACTOR' : 'W/S Pitch · A/D Yaw · Q/E Roll · Hold Shift Accelerate · Space Scan/Tractor · U Store · M Map'}
+            W/S Pitch · A/D Yaw · Q/E Roll · Hold Shift Accelerate · Space Scan/Tractor · 1, 2, 3 Radio Emotes · U Store · M Map
           </div>
 
           <div style="
@@ -1464,6 +1519,18 @@ export class DesktopApp {
     this.uiContainer.querySelector('#btn-open-help')?.addEventListener('click', () => {
       audio.playBlip();
       this.helpModal.toggle();
+    });
+
+    this.uiContainer.querySelector('#btn-desktop-emote-wave')?.addEventListener('click', () => {
+      this.triggerShipEmote('wave');
+    });
+
+    this.uiContainer.querySelector('#btn-desktop-emote-heart')?.addEventListener('click', () => {
+      this.triggerShipEmote('heart');
+    });
+
+    this.uiContainer.querySelector('#btn-desktop-emote-peace')?.addEventListener('click', () => {
+      this.triggerShipEmote('peace');
     });
 
     this.uiContainer.querySelector('#btn-audio-mute')?.addEventListener('click', () => {
@@ -1660,14 +1727,28 @@ export class DesktopApp {
     });
   }
 
-  private showHudNotice(text: string): void {
+  public showHudNotice(text: string, durationMs = 3200): void {
     const el = this.uiContainer.querySelector('#hud-notice') as HTMLElement;
     if (!el) return;
     el.textContent = text;
     el.style.opacity = '1';
     setTimeout(() => {
-      if (el) el.style.opacity = '0';
-    }, 3000);
+      if (el && el.textContent === text) el.style.opacity = '0';
+    }, durationMs);
+  }
+
+  public triggerShipEmote(type: EmoteType): void {
+    if (!this.shipEmoteDirector) return;
+    const playerPos = this.flightModel ? this.flightModel.position : new THREE.Vector3();
+    const result = this.shipEmoteDirector.broadcastPlayerEmote(
+      type,
+      playerPos,
+      this.spaceScene?.trafficDirector
+    );
+    this.showHudNotice(result.commNotice, result.responseReceived ? 5000 : 3500);
+    if (result.responseReceived) {
+      audio.playConnectChime();
+    }
   }
 
   public collectSurveySample(node: any): void {
@@ -1912,6 +1993,13 @@ export class DesktopApp {
         if (this.debugTelemetryVisible) {
           this.showHudNotice(`DEBUG TELEMETRY ${this.debugTelemetryVisible ? 'ACTIVE [F3]' : 'OFF'}`);
         }
+      }
+      if (e.key === '1' || e.code === 'Digit1') {
+        this.triggerShipEmote('wave');
+      } else if (e.key === '2' || e.code === 'Digit2') {
+        this.triggerShipEmote('heart');
+      } else if (e.key === '3' || e.code === 'Digit3') {
+        this.triggerShipEmote('peace');
       }
     });
   }
