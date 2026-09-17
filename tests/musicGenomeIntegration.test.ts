@@ -71,4 +71,30 @@ describe('ProceduralMusicGenome & HarmonyHelper Integration', () => {
       expect(notes[5]).toBe('C4');
     });
   });
+
+  describe('HarmonyHelper.transposeRoot & Uplifting Progressions', () => {
+    it('correctly transposes root notes diatonically and chromatically', () => {
+      expect(HarmonyHelper.transposeRoot('C', 5)).toBe('F');
+      expect(HarmonyHelper.transposeRoot('C', 7)).toBe('G');
+      expect(HarmonyHelper.transposeRoot('D', 5)).toBe('G');
+      expect(HarmonyHelper.transposeRoot('Eb', 5)).toBe('Ab');
+      expect(HarmonyHelper.transposeRoot('Eb', 7)).toBe('Bb');
+    });
+
+    it('guarantees all procedural progressions across varied seeds produce parseable uplifting chords', () => {
+      for (const seed of [1, 42, 100, 777, 1337, 42000, 99999]) {
+        const genome = ProceduralMusicGenome.generateGenome(seed);
+        expect(genome.progression.length).toBeGreaterThan(0);
+        for (const prog of genome.progression) {
+          expect(prog.length).toBe(4);
+          for (const chord of prog) {
+            const notes = HarmonyHelper.parseChordToNotes(chord, 3);
+            expect(notes.length).toBeGreaterThanOrEqual(3);
+            expect(notes[0]).toMatch(/^[A-G][#b]?\d$/);
+          }
+        }
+      }
+    });
+  });
 });
+

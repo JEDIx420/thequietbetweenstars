@@ -69,28 +69,31 @@ export class AudioDirector {
     Tone.getTransport().bpm.value = 84;
 
     if (!this.padSynth) {
-      this.reverb = new Tone.Reverb({ decay: 5.5, wet: 0.40 }).toDestination();
-      this.delay = new Tone.FeedbackDelay('8n', 0.28).connect(this.reverb);
-      this.filter = new Tone.Filter(2400, 'lowpass').connect(this.delay);
+      this.reverb = new Tone.Reverb({ decay: 5.0, wet: 0.36 }).toDestination();
+      this.delay = new Tone.FeedbackDelay('8n', 0.22).connect(this.reverb);
+      this.filter = new Tone.Filter(2800, 'lowpass').connect(this.delay);
 
+      // Lush warm analog poly-pad (fat triangle for rich, soft, shimmering warmth)
       this.padSynth = new Tone.PolySynth(Tone.Synth, {
-        oscillator: { type: 'sine' },
-        envelope: { attack: 2.2, decay: 3.0, sustain: 0.8, release: 3.5 },
+        oscillator: { type: 'fattriangle', count: 3, spread: 20 },
+        envelope: { attack: 1.2, decay: 2.5, sustain: 0.75, release: 2.8 },
       }).connect(this.filter);
-      this.padSynth.volume.value = -14;
+      this.padSynth.volume.value = -12;
 
+      // Warm round analog bass (deep, punchy sub-melodic presence)
       this.bassSynth = new Tone.MonoSynth({
         oscillator: { type: 'triangle' },
-        envelope: { attack: 0.2, decay: 0.6, sustain: 0.7, release: 1.4 },
-        filterEnvelope: { attack: 0.1, decay: 0.5, sustain: 0.5, baseFrequency: 65, octaves: 2.0 },
+        envelope: { attack: 0.06, decay: 0.45, sustain: 0.65, release: 1.0 },
+        filterEnvelope: { attack: 0.03, decay: 0.35, sustain: 0.45, baseFrequency: 75, octaves: 2.2 },
       }).connect(this.filter);
-      this.bassSynth.volume.value = -12;
+      this.bassSynth.volume.value = -10;
 
+      // Soft crystalline celestial lead / arpeggio
       this.leadSynth = new Tone.PolySynth(Tone.Synth, {
-        oscillator: { type: 'sine' },
-        envelope: { attack: 0.1, decay: 0.6, sustain: 0.4, release: 1.8 },
+        oscillator: { type: 'fattriangle', count: 2, spread: 12 },
+        envelope: { attack: 0.04, decay: 0.5, sustain: 0.25, release: 1.6 },
       }).connect(this.delay);
-      this.leadSynth.volume.value = -16;
+      this.leadSynth.volume.value = -15;
 
       this.ambientNoise = new Tone.Noise('pink');
       const noiseFilter = new Tone.Filter(350, 'lowpass').connect(this.reverb);
@@ -202,13 +205,19 @@ export class AudioDirector {
     this.currentGenome = ProceduralMusicGenome.generateGenome(systemSeed);
     Tone.getTransport().bpm.value = this.currentGenome.bpm;
 
-    const prog = this.currentGenome.progression[0] || [`${this.currentGenome.rootNote}maj7`, 'Gmaj7', 'Amaj7', `${this.currentGenome.rootNote}maj7`];
+    const root = this.currentGenome.rootNote;
+    const r5 = HarmonyHelper.transposeRoot(root, 5);
+    const r7 = HarmonyHelper.transposeRoot(root, 7);
+    const r9 = HarmonyHelper.transposeRoot(root, 9);
+    const defaultProg = [`${r5}maj9`, `${root}maj9`, `${r9}m9`, `${r7}add9`];
+
+    const prog = this.currentGenome.progression[0] || defaultProg;
     this.currentSystemChords = prog.map((c: string) => HarmonyHelper.parseChordToNotes(c, 3));
     this.currentSystemBass = prog.map((c: string) => HarmonyHelper.parseChordToNotes(c, 1)[0] || `${this.currentGenome!.rootNote}1`);
     this.currentSystemScaleNotes = HarmonyHelper.getScaleNotes(this.currentGenome.rootNote, this.currentGenome.scaleType, [4, 5]);
 
     if (this.filter) {
-      const baseCutoff = 1400 + this.currentGenome.brightness * 2200;
+      const baseCutoff = 1800 + this.currentGenome.brightness * 1800;
       this.filter.frequency.rampTo(baseCutoff, 2.0);
     }
   }
@@ -216,30 +225,28 @@ export class AudioDirector {
   public setPlanetGenome(planetSeed: number, _profile?: any): void {
     const surfaceSeed = (this.currentGenome ? this.currentGenome.seed : 42000) ^ (planetSeed * 37);
     const planetGenome = ProceduralMusicGenome.generateGenome(surfaceSeed);
-    const prog = planetGenome.progression[1] || planetGenome.progression[0];
+
+    const root = planetGenome.rootNote;
+    const r5 = HarmonyHelper.transposeRoot(root, 5);
+    const r7 = HarmonyHelper.transposeRoot(root, 7);
+    const r9 = HarmonyHelper.transposeRoot(root, 9);
+    const defaultProg = [`${r5}maj9`, `${root}maj9`, `${r9}m9`, `${r7}add9`];
+
+    const prog = planetGenome.progression[1] || planetGenome.progression[0] || defaultProg;
     this.currentSystemChords = prog.map((c: string) => HarmonyHelper.parseChordToNotes(c, 3));
     this.currentSystemBass = prog.map((c: string) => HarmonyHelper.parseChordToNotes(c, 1)[0] || `${planetGenome.rootNote}1`);
     this.currentSystemScaleNotes = HarmonyHelper.getScaleNotes(planetGenome.rootNote, planetGenome.scaleType, [3, 4]);
 
     if (this.filter) {
-      const surfaceCutoff = 1100 + planetGenome.brightness * 1600;
+      const surfaceCutoff = 1500 + planetGenome.brightness * 1500;
       this.filter.frequency.rampTo(surfaceCutoff, 2.0);
     }
   }
 
   /**
-   * Title Overture: 60-90s contemplative cinematic composition
-   * 5 distinct movements:
-   * 1. Void: Sub-bass fundamental and sparse celestial drone
-   * 2. Awakening: Warm fifths and gentle mid pads
-   * 3. Expansion: Full harmonic chord bed with stereo shimmer
-   * 4. Theme: Lydian melodic motif evoking quiet awe
-   * 5. Release: Tapering gentle resonance ready for flight
-   */
-  /**
-   * Title Overture: 114 BPM propulsive sci-fi space-opera overture
-   * Features rolling bass pulse, wide majestic synth pads, driving arpeggio motif,
-   * and soaring melodic lines evoking cosmic grandeur and momentum.
+   * Title Overture: 98 BPM uplifting, vibey chillwave & space-opera composition
+   * Features glowing analog pads, syncopated bounce bass, twinkling Lydian arpeggios,
+   * and soaring optimistic lead phrases that evoke pure celestial wonder.
    */
   public playTitleOverture(): void {
     if (this.isOverturePlaying) return;
@@ -256,36 +263,55 @@ export class AudioDirector {
       this.overtureTimerId = null;
     }
 
-    Tone.getTransport().bpm.value = 114;
+    Tone.getTransport().bpm.value = 98;
 
-    // Harmonic space-opera chord progression (4 bars)
+    // Euphoric, uplifting, sun-drenched chord progression (Gmaj9 -> Dmaj9 -> Bm9 -> Aadd9)
+    // Voiced with wide, warm open intervals
     const progression = [
-      { chord: ['C3', 'G3', 'Eb4', 'G4', 'Bb4'], root: 'C2', bassNotes: ['C2', 'C2', 'C3', 'C2'] },
-      { chord: ['Ab2', 'Eb3', 'Ab3', 'C4', 'Eb4'], root: 'Ab1', bassNotes: ['Ab1', 'Ab1', 'Ab2', 'Ab1'] },
-      { chord: ['Eb3', 'Bb3', 'Eb4', 'G4', 'Bb4'], root: 'Eb2', bassNotes: ['Eb2', 'Eb2', 'Eb3', 'Eb2'] },
-      { chord: ['Bb2', 'F3', 'Bb3', 'D4', 'F4'], root: 'Bb1', bassNotes: ['Bb1', 'Bb1', 'Bb2', 'Bb1'] },
+      {
+        chord: ['G2', 'D3', 'B3', 'F#4', 'A4', 'D5'], // Gmaj9 (IVmaj9: soaring celestial lift)
+        root: 'G1',
+        bassNotes: ['G1', 'G2', 'D2', 'G1'],
+      },
+      {
+        chord: ['D3', 'A3', 'F#4', 'C#5', 'E5'], // Dmaj9 (Imaj9: warm radiant home)
+        root: 'D2',
+        bassNotes: ['D2', 'D2', 'A2', 'D2'],
+      },
+      {
+        chord: ['B2', 'F#3', 'D4', 'A4', 'C#5'], // Bm9 (vi9: golden starlight)
+        root: 'B1',
+        bassNotes: ['B1', 'B2', 'F#2', 'B1'],
+      },
+      {
+        chord: ['A2', 'E3', 'A3', 'C#4', 'E4', 'B4'], // Aadd9 (Vadd9: bright upward resolution)
+        root: 'A1',
+        bassNotes: ['A1', 'A2', 'E2', 'A1'],
+      },
     ];
 
+    // Sparkling crystalline arpeggios that dance over the chords
     const arpeggioMap = [
-      ['C4', 'Eb4', 'G4', 'Bb4', 'C5', 'G4', 'Eb4', 'G4'],
-      ['Ab3', 'C4', 'Eb4', 'Ab4', 'C5', 'Eb4', 'C4', 'Eb4'],
-      ['Eb4', 'G4', 'Bb4', 'Eb5', 'G5', 'Eb5', 'Bb4', 'G4'],
-      ['Bb3', 'D4', 'F4', 'Bb4', 'D5', 'F5', 'D5', 'Bb4'],
+      ['G4', 'B4', 'D5', 'F#5', 'A5', 'F#5', 'D5', 'B4'],
+      ['D4', 'F#4', 'A4', 'C#5', 'E5', 'C#5', 'A4', 'F#4'],
+      ['B3', 'D4', 'F#4', 'A4', 'C#5', 'A4', 'F#4', 'D4'],
+      ['A3', 'C#4', 'E4', 'A4', 'B4', 'A4', 'E4', 'C#4'],
     ];
 
+    // Soaring, optimistic lead melodies (warm, uplifting phrases)
     const leadMotifs = [
-      ['Eb5', 'G5', 'F5', 'D5'],
-      ['C5', 'Eb5', 'Ab5', 'G5'],
-      ['Bb5', 'G5', 'Eb5', 'F5'],
-      ['D5', 'F5', 'G5', 'Bb5'],
+      ['F#5', 'A5', 'B5', 'D6'],
+      ['E5', 'F#5', 'A5', 'F#5'],
+      ['D5', 'F#5', 'A5', 'B5'],
+      ['C#5', 'E5', 'F#5', 'A5'],
     ];
 
     let step = 0;
-    // 114 BPM: 1 beat = 526ms, 8th note = 263ms
-    const stepIntervalMs = 263;
+    // 98 BPM: 1 beat = 612ms, 8th note = 306ms
+    const stepIntervalMs = 306;
 
     if (this.filter) {
-      this.filter.frequency.rampTo(2800, 1.5);
+      this.filter.frequency.rampTo(3000, 1.5);
     }
     if (this.padSynth) {
       this.padSynth.volume.rampTo(-11, 1.0);
@@ -305,28 +331,29 @@ export class AudioDirector {
       const currentBar = progression[barIndex];
       const now = Tone.now();
 
-      // Pad on downbeat of each bar
+      // Pad on downbeat of each bar (smooth sustained measure)
       if (isDownbeat && this.padSynth) {
-        this.padSynth.triggerAttackRelease(currentBar.chord, '1m', now, 0.75);
+        this.padSynth.triggerAttackRelease(currentBar.chord, '1m', now, 0.72);
       }
 
-      // Driving rolling bass on each 8th note
+      // Warm syncopated bass groove on 8th notes (downbeat and gentle upbeat pulse)
       if (this.bassSynth) {
         const bassNote = currentBar.bassNotes[step % 4];
-        this.bassSynth.triggerAttackRelease(bassNote, '8n', now, (step % 2 === 0) ? 0.85 : 0.65);
+        const vel = (step % 4 === 0) ? 0.85 : (step % 2 === 0 ? 0.65 : 0.45);
+        this.bassSynth.triggerAttackRelease(bassNote, '8n', now, vel);
       }
 
-      // Propulsive arpeggiation / lead
+      // Sparkling starlight arpeggios
       if (this.leadSynth) {
         const arpPatterns = arpeggioMap[barIndex];
         const note = arpPatterns[step % arpPatterns.length];
-        this.leadSynth.triggerAttackRelease(note, '16n', now + 0.05, 0.50);
+        this.leadSynth.triggerAttackRelease(note, '16n', now + 0.05, 0.42);
 
-        // Soaring lead phrase on later repetitions
+        // Soaring uplifting melody phrase on later repetitions
         if (step >= 16 && (step % 4 === 0)) {
           const leadPhrase = leadMotifs[barIndex];
           const leadNote = leadPhrase[(step / 4) % leadPhrase.length];
-          this.leadSynth.triggerAttackRelease(leadNote, '4n', now + 0.12, 0.70);
+          this.leadSynth.triggerAttackRelease(leadNote, '4n', now + 0.12, 0.65);
         }
       }
 
@@ -405,19 +432,19 @@ export class AudioDirector {
     const chords = (this.currentSystemChords && this.currentSystemChords.length > 0)
       ? this.currentSystemChords
       : [
-          ['Eb3', 'G3', 'Bb3', 'D4'],
-          ['C3', 'Eb3', 'G3', 'Bb3'],
-          ['Ab2', 'Eb3', 'Ab3', 'C4'],
-          ['Bb2', 'F3', 'Bb3', 'D4'],
+          ['G2', 'D3', 'B3', 'F#4', 'A4', 'D5'], // Gmaj9 (IVmaj9)
+          ['D3', 'A3', 'F#4', 'C#5', 'E5'],       // Dmaj9 (Imaj9)
+          ['B2', 'F#3', 'D4', 'A4', 'C#5'],       // Bm9 (vi9)
+          ['A2', 'E3', 'A3', 'C#4', 'E4'],        // Aadd9 (Vadd9)
         ];
 
     const bassNotes = (this.currentSystemBass && this.currentSystemBass.length > 0)
       ? this.currentSystemBass
-      : ['Eb1', 'C1', 'Ab0', 'Bb0'];
+      : ['G1', 'D1', 'B0', 'A0'];
 
     const scaleNotes = (this.currentSystemScaleNotes && this.currentSystemScaleNotes.length > 0)
       ? this.currentSystemScaleNotes
-      : ['Eb4', 'G4', 'Bb4', 'D5', 'C5', 'F5'];
+      : ['F#4', 'A4', 'B4', 'D5', 'E5', 'F#5', 'A5'];
 
     const playStep = () => {
       if (this.isMuted || !this.padSynth || this.isOverturePlaying) return;
@@ -425,19 +452,23 @@ export class AudioDirector {
       const chord = chords[this.stepIndex % chords.length];
       const time = Tone.now();
 
-      // Trigger chord pad
-      this.padSynth.triggerAttackRelease(chord, '2n', time);
+      // Trigger lush sustaining chord pad (1 full measure with warm natural decay)
+      this.padSynth.triggerAttackRelease(chord, '1m', time, 0.68);
 
-      // Trigger bass note
-      if (this.bassSynth && this.stepIndex % 2 === 0) {
+      // Trigger warm bass pulse
+      if (this.bassSynth) {
         const bass = bassNotes[this.stepIndex % bassNotes.length];
-        this.bassSynth.triggerAttackRelease(bass, '1n', time);
+        this.bassSynth.triggerAttackRelease(bass, '2n', time, 0.72);
       }
 
-      // Trigger generative melodic lead arpeggio
+      // Trigger sparkling generative melodic arpeggios (3 gentle staggered notes for lush vibes)
       if (this.leadSynth && this.currentContext !== 'entry') {
-        const note = scaleNotes[(this.stepIndex * 3) % scaleNotes.length];
-        this.leadSynth.triggerAttackRelease(note, '8n', time + 0.4);
+        const n1 = scaleNotes[(this.stepIndex * 2) % scaleNotes.length];
+        const n2 = scaleNotes[(this.stepIndex * 2 + 2) % scaleNotes.length];
+        const n3 = scaleNotes[(this.stepIndex * 2 + 4) % scaleNotes.length];
+        this.leadSynth.triggerAttackRelease(n1, '8n', time + 0.35, 0.40);
+        this.leadSynth.triggerAttackRelease(n2, '8n', time + 0.85, 0.36);
+        this.leadSynth.triggerAttackRelease(n3, '8n', time + 1.45, 0.42);
       }
 
       this.stepIndex++;

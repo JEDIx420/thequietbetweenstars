@@ -24,6 +24,9 @@ export class HarmonyHelper {
     'sus4': [0, 5, 7],
     'sus2': [0, 2, 7],
     'add9': [0, 4, 7, 14],
+    '6/9': [0, 4, 7, 9, 14],
+    '6': [0, 4, 7, 9],
+    '9': [0, 4, 7, 10, 14],
     'dim': [0, 3, 6],
     'aug': [0, 4, 8],
     '': [0, 4, 7], // Major triad
@@ -52,6 +55,14 @@ export class HarmonyHelper {
   public static indexToRoot(idx: number): string {
     const norm = ((idx % 12) + 12) % 12;
     return this.NOTE_NAMES[norm];
+  }
+
+  /**
+   * Returns root note transposed by a specified number of semitones
+   */
+  public static transposeRoot(root: string, semitones: number): string {
+    const idx = this.rootToIndex(root);
+    return this.indexToRoot(idx + semitones);
   }
 
   /**

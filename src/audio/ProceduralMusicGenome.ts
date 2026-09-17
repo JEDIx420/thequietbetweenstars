@@ -1,4 +1,5 @@
 import { SeededRandom } from '../game/universe/SeededRandom';
+import { HarmonyHelper } from './HarmonyHelper';
 
 export interface SystemMusicGenome {
   seed: number;
@@ -26,29 +27,46 @@ export class ProceduralMusicGenome {
 
     const root = rng.pick(this.ROOTS);
     const scaleType = rng.pick(this.SCALES);
-    const bpm = rng.rangeInt(84, 108);
+    const bpm = rng.rangeInt(88, 104);
 
-    // Chords families
+    // Diatonic transposed roots for pure in-key harmonic bliss
+    const r0 = root;
+    const r2 = HarmonyHelper.transposeRoot(root, 2);  // ii / 2nd
+    const r5 = HarmonyHelper.transposeRoot(root, 5);  // IV / 4th (the soaring lift)
+    const r7 = HarmonyHelper.transposeRoot(root, 7);  // V / 5th (bright energy)
+    const r9 = HarmonyHelper.transposeRoot(root, 9);  // vi / 6th (warm relative minor)
+
+    // Strictly uplifting, vibey, lush chord progressions for every scale type
     const progressions: Record<SystemMusicGenome['scaleType'], string[][]> = {
       lydian: [
-        [`${root}maj7`, `${root}maj9`, `Gmaj7`, `Amaj7`],
-        [`${root}maj7`, `B7`, `Emaj7`, `${root}maj7`],
-      ],
-      dorian: [
-        [`${root}m7`, `Fmaj7`, `G7`, `${root}m9`],
-        [`${root}m7`, `Bbmaj7`, `C7`, `${root}m7`],
-      ],
-      aeolian: [
-        [`${root}m7`, `Abmaj7`, `Ebmaj7`, `Bb7`],
-        [`${root}m`, `Fm`, `Dbmaj7`, `Eb`],
-      ],
-      mixolydian: [
-        [`${root}7`, `Fmaj7`, `Cmaj7`, `${root}sus4`],
-        [`${root}7`, `Bbmaj7`, `F`, `${root}`],
+        // The soaring celestial lift: IVmaj9 -> Imaj9 -> vi9 -> Vadd9
+        [`${r5}maj9`, `${r0}maj9`, `${r9}m9`, `${r7}add9`],
+        // Pure floating awe: Imaj7 -> IVmaj9 -> Iadd9 -> Vsus4
+        [`${r0}maj7`, `${r5}maj9`, `${r0}add9`, `${r7}sus4`],
       ],
       pentatonic: [
-        [`${root}sus2`, `${root}add9`, `Fsus2`, `Gsus4`],
-        [`${root}`, `C`, `D`, `${root}`],
+        // Sunny chillwave bliss: Iadd9 -> IVmaj7 -> vi7 -> Vsus4
+        [`${r0}add9`, `${r5}maj7`, `${r9}m7`, `${r7}sus4`],
+        // Golden-hour groove: IVmaj7 -> Imaj7 -> vi7 -> Iadd9
+        [`${r5}maj7`, `${r0}maj7`, `${r9}m7`, `${r0}add9`],
+      ],
+      mixolydian: [
+        // Energetic wonder: Imaj9 -> IVmaj7 -> Vadd9 -> Iadd9
+        [`${r0}maj9`, `${r5}maj7`, `${r7}add9`, `${r0}add9`],
+        // Soaring discovery: Iadd9 -> Vsus4 -> IVmaj7 -> Imaj9
+        [`${r0}add9`, `${r7}sus4`, `${r5}maj7`, `${r0}maj9`],
+      ],
+      dorian: [
+        // French-touch / chillout groove: IVmaj9 -> vi9 -> Imaj7 -> Vadd9
+        [`${r5}maj9`, `${r9}m9`, `${r0}maj7`, `${r7}add9`],
+        // Smooth space cruise: Imaj9 -> IVmaj7 -> ii7 -> Vsus4
+        [`${r0}maj9`, `${r5}maj7`, `${r2}m7`, `${r7}sus4`],
+      ],
+      aeolian: [
+        // Emotional sunrise (dream pop): IVmaj7 -> Vadd9 -> vi9 -> Imaj9
+        [`${r5}maj7`, `${r7}add9`, `${r9}m9`, `${r0}maj9`],
+        // Expansive horizon: vi9 -> IVmaj9 -> Imaj9 -> Vadd9
+        [`${r9}m9`, `${r5}maj9`, `${r0}maj9`, `${r7}add9`],
       ],
     };
 
@@ -66,8 +84,8 @@ export class ProceduralMusicGenome {
       bpm,
       progression: progressions[scaleType],
       arpPattern: rng.pick(arpPatterns),
-      ambientTension: rng.range(0.1, 0.6),
-      brightness: rng.range(0.3, 0.9),
+      ambientTension: rng.range(0.1, 0.35),
+      brightness: rng.range(0.55, 0.95),
     };
   }
 }
