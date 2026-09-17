@@ -50,26 +50,63 @@ export class CelestialPhysicsSystem {
       penetrationDepth: 0,
     };
 
+    const prevPos = shipPosition.clone().sub(shipVelocity.clone().multiplyScalar(dt));
+
     for (const body of this.bodies) {
       const delta = new THREE.Vector3().subVectors(shipPosition, body.position);
       const dist = delta.length();
+      const prevDelta = new THREE.Vector3().subVectors(prevPos, body.position);
+      const prevDist = prevDelta.length();
 
-      // Check collision with exclusion boundary
+      // Continuous swept collision detection: check if segment from prevPos to shipPosition intersects exclusion sphere
+      let sweptHit = false;
+      let hitNormal = new THREE.Vector3(0, 1, 0);
+
       if (dist < body.exclusionRadius) {
-        const penetration = body.exclusionRadius - dist;
-        const normal = dist > 0.0001 ? delta.clone().divideScalar(dist) : new THREE.Vector3(0, 1, 0);
+        // Direct penetration
+        sweptHit = true;
+        // Direction-safe normal: always face the approach vector (prevDelta) so we never clamp out the back side
+        if (prevDist > 0.001) {
+          hitNormal = prevDelta.clone().normalize();
+        } else if (dist > 0.001) {
+          hitNormal = delta.clone().normalize();
+        }
+      } else if (prevDist >= body.exclusionRadius) {
+        // Check swept segment intersection (anti-tunneling at high speeds)
+        const seg = new THREE.Vector3().subVectors(shipPosition, prevPos);
+        const segLenSq = seg.lengthSq();
+        if (segLenSq > 0.0001) {
+          const a = segLenSq;
+          const b = 2 * prevDelta.dot(seg);
+          const c = prevDist * prevDist - body.exclusionRadius * body.exclusionRadius;
+          const discriminant = b * b - 4 * a * c;
+          if (discriminant >= 0) {
+            const sqrtDisc = Math.sqrt(discriminant);
+            const tEntry = (-b - sqrtDisc) / (2 * a);
+            if (tEntry >= 0 && tEntry <= 1.0) {
+              sweptHit = true;
+              const hitPoint = prevPos.clone().addScaledVector(seg, tEntry);
+              hitNormal = hitPoint.sub(body.position).normalize();
+            }
+          }
+        }
+      }
 
-        // Clamp ship position strictly to exclusion radius
-        shipPosition.copy(body.position).addScaledVector(normal, body.exclusionRadius);
+      // Resolve collision with exclusion boundary
+      if (sweptHit) {
+        const penetration = Math.max(0, body.exclusionRadius - dist);
+
+        // Clamp ship position strictly to exclusion radius on the approach surface
+        shipPosition.copy(body.position).addScaledVector(hitNormal, body.exclusionRadius);
 
         // Project velocity onto tangent plane to allow smooth orbital gliding
-        const inwardSpeed = shipVelocity.dot(normal);
+        const inwardSpeed = shipVelocity.dot(hitNormal);
         if (inwardSpeed < 0) {
           // Cancel inward velocity and deflect along tangent
-          shipVelocity.addScaledVector(normal, -inwardSpeed);
+          shipVelocity.addScaledVector(hitNormal, -inwardSpeed);
           // Apply gentle outward deflection impulse (prevent sticking)
           const reboundSpeed = body.type === 'star' ? 18 : 6;
-          shipVelocity.addScaledVector(normal, reboundSpeed);
+          shipVelocity.addScaledVector(hitNormal, reboundSpeed);
         }
 
         result = {
@@ -77,10 +114,22 @@ export class CelestialPhysicsSystem {
           collidedBody: body,
           isDanger: body.type === 'star' || (body.dangerRadius !== undefined && dist < body.dangerRadius),
           penetrationDepth: penetration,
-          surfaceNormal: normal,
+          surfaceNormal: hitNormal,
         };
 
         break;
+      }
+
+      // Progressive soft atmospheric buffer (exclusionRadius to 1.4 * exclusionRadius)
+      const bufferOuter = body.exclusionRadius * 1.4;
+      if (dist < bufferOuter && dist >= body.exclusionRadius) {
+        const normal = dist > 0.001 ? delta.clone().normalize() : new THREE.Vector3(0, 1, 0);
+        const inwardSpeed = shipVelocity.dot(normal);
+        if (inwardSpeed < 0) {
+          // Progressively damp inward velocity as ship approaches exclusion boundary
+          const tBuffer = 1 - (dist - body.exclusionRadius) / (bufferOuter - body.exclusionRadius);
+          shipVelocity.addScaledVector(normal, -inwardSpeed * tBuffer * 0.75);
+        }
       }
 
       // Subtle gravitational assist in upper atmosphere envelope

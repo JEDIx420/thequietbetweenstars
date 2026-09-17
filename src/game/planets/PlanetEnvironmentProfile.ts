@@ -124,7 +124,8 @@ export class PlanetEnvironmentGenerator {
       ? rng.pick(outlierFamilies)
       : rng.pick(families));
 
-    const isLandable = family !== 'gas-giant';
+    // All celestial worlds, including gas giants with aerostat cloud platforms, are landable/explorable
+    const isLandable = true;
 
     // 3. Physical Parameters
     let temp = 288;

@@ -23,32 +23,54 @@ export class ApproachController {
 
   public update(
     shipPos: THREE.Vector3,
-    planets: Array<{ descriptor: PlanetDescriptor; position: THREE.Vector3 }>
+    planets: Array<{ descriptor: PlanetDescriptor; position: THREE.Vector3 }>,
+    shipForward?: THREE.Vector3
   ): TargetPlanetInfo | null {
     let nearest: TargetPlanetInfo | null = null;
-    let minDist = Infinity;
+    let minScore = Infinity;
 
     for (const item of planets) {
       const dist = shipPos.distanceTo(item.position);
       const approachDistance = item.descriptor.radius + ApproachController.APPROACH_TRIGGER_DIST;
 
-      if (dist < approachDistance && dist < minDist) {
-        minDist = dist;
-        const orbitDistance = item.descriptor.radius + ApproachController.ORBIT_INSPECT_DIST;
-        const ratio = Math.max(0, Math.min(1, 1 - (dist - item.descriptor.radius) / ApproachController.APPROACH_TRIGGER_DIST));
+      if (dist < approachDistance) {
+        // Prioritize planet ahead of the ship's forward vector over one behind
+        let score = dist;
+        if (shipForward && dist > 0.1) {
+          const dirToPlanet = item.position.clone().sub(shipPos).normalize();
+          const forwardDot = shipForward.dot(dirToPlanet); // +1.0 dead ahead, -1.0 behind
+          // Planets ahead get a score discount (0.65x), planets behind get a penalty (1.35x)
+          const headingFactor = 1.0 - (forwardDot * 0.35);
+          score = dist * headingFactor;
+        }
 
-        nearest = {
-          planet: item.descriptor,
-          position: item.position.clone(),
-          distance: dist,
-          approachRatio: ratio,
-          canInspect: dist <= orbitDistance,
-        };
+        if (score < minScore) {
+          minScore = score;
+          const orbitDistance = item.descriptor.radius + ApproachController.ORBIT_INSPECT_DIST;
+          const ratio = Math.max(0, Math.min(1, 1 - (dist - item.descriptor.radius) / ApproachController.APPROACH_TRIGGER_DIST));
+
+          nearest = {
+            planet: item.descriptor,
+            position: item.position.clone(),
+            distance: dist,
+            approachRatio: ratio,
+            canInspect: dist <= orbitDistance,
+          };
+        }
       }
     }
 
     this.activeTarget = nearest;
     return nearest;
+  }
+
+  /**
+   * Floating-origin offset rebase handler
+   */
+  public onRebase(offset: THREE.Vector3): void {
+    if (this.activeTarget) {
+      this.activeTarget.position.add(offset);
+    }
   }
 
   /**

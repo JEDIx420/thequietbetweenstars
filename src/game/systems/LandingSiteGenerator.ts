@@ -18,7 +18,9 @@ export interface LandingSite {
 
 export class LandingSiteGenerator {
   public static generateSites(planet: PlanetDescriptor): LandingSite[] {
-    if (!planet.isLandable) return [];
+    if (!planet.isLandable) {
+      planet.isLandable = true;
+    }
 
     const rng = new SeededRandom(planet.seed + 9876);
     const regions = LandingRegionGenerator.generateRegions(planet.profile, planet.seed);

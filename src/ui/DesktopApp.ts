@@ -162,6 +162,8 @@ export class DesktopApp {
         this.flightModel.onRebase(offset, this.renderer.camera);
         this.spaceScene.onRebase(offset);
         this.shipEmoteDirector.onRebase(offset);
+        this.approachController.onRebase(offset);
+        this.navRadar?.onRebase(offset);
       },
     });
 
@@ -445,9 +447,12 @@ export class DesktopApp {
 
       const scanReach = this.installedModules.has('mod_scanner_deep_ecology') ? 280 : 140;
 
+      // Forward vector for heading-weighted approach prioritization
+      const shipForward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.flightModel.quaternion);
+
       // Check Approach Controller for planets (strictly disabled while in deep cruise)
       const targetPlanet = (!this.deepCruiseController.state.isActive && phase !== FlightPhase.STELLAR_CRUISE)
-        ? this.approachController.update(shipPos, this.spaceScene.activePlanetList)
+        ? this.approachController.update(shipPos, this.spaceScene.activePlanetList, shipForward)
         : null;
       if (targetPlanet) {
         if (phase !== FlightPhase.PLANET_APPROACH) {
@@ -457,6 +462,14 @@ export class DesktopApp {
 
         // Contextual SPACE action: Inspect Planet when in orbital reach
         if (targetPlanet.canInspect && this.inputManager.consumeAction('scan')) {
+          this.engageOrbit(targetPlanet);
+        } else if (
+          targetPlanet.distance <= targetPlanet.planet.radius * 1.25 &&
+          phase !== FlightPhase.ENTRY &&
+          phase !== FlightPhase.SURFACE_FLIGHT
+        ) {
+          // Automatic atmospheric capture: flying directly into the upper atmosphere safely enters orbit
+          this.showHudNotice(`ATMOSPHERIC PENETRATION DETECTED // ORBITAL INSERTION SYNCHRONIZED`);
           this.engageOrbit(targetPlanet);
         }
       } else {
@@ -2163,6 +2176,18 @@ export class DesktopApp {
         this.triggerShipEmote('peace');
         const desktopDrawer = this.uiContainer.querySelector('#desktop-emote-drawer') as HTMLElement;
         if (desktopDrawer) desktopDrawer.style.display = 'none';
+      }
+      if (e.key === 't' || e.key === 'T') {
+        if (this.uiState === 'playing' && this.navRadar && this.stateMachine.getPhase() !== FlightPhase.SURFACE_FLIGHT) {
+          const locked = this.navRadar.selectTargetInForwardView(this.flightModel.position, this.flightModel.quaternion);
+          if (locked) {
+            audio.playBlip();
+            const target = this.navRadar.getSelectedTarget();
+            if (target) {
+              this.showHudNotice(`TARGET LOCKED // ${target.name.toUpperCase()}`);
+            }
+          }
+        }
       }
     });
   }

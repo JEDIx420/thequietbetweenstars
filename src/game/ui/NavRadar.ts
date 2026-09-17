@@ -240,6 +240,48 @@ export class NavRadar {
     }
   }
 
+  public hasTargetId(id: string): boolean {
+    return this.targets.some((t) => t.id === id);
+  }
+
+  public onRebase(offset: THREE.Vector3): void {
+    for (const t of this.targets) {
+      if (t.isAnomaly || t.id === 'courier_pod') {
+        t.position.add(offset);
+      }
+    }
+  }
+
+  public selectTargetInForwardView(shipPos: THREE.Vector3, shipQuat: THREE.Quaternion): boolean {
+    if (this.targets.length === 0) return false;
+
+    const shipForward = new THREE.Vector3(0, 0, -1).applyQuaternion(shipQuat);
+    const shipYaw = Math.atan2(shipForward.x, -shipForward.z);
+
+    let bestIndex = -1;
+    let minAngleDiff = 0.58; // within ~33° forward vision cone
+
+    for (let i = 0; i < this.targets.length; i++) {
+      const t = this.targets[i];
+      const dx = t.position.x - shipPos.x;
+      const dz = t.position.z - shipPos.z;
+      const targetYaw = Math.atan2(dx, -dz);
+      let diff = Math.abs(targetYaw - shipYaw);
+      while (diff > Math.PI) diff = Math.abs(diff - Math.PI * 2);
+
+      if (diff < minAngleDiff) {
+        minAngleDiff = diff;
+        bestIndex = i;
+      }
+    }
+
+    if (bestIndex !== -1) {
+      this.selectTargetIndex(bestIndex);
+      return true;
+    }
+    return false;
+  }
+
   public getSelectedTarget(): RadarTargetItem | null {
     if (this.targets.length === 0) return null;
     return this.targets[this.selectedIndex] || null;
@@ -257,35 +299,59 @@ export class NavRadar {
     shipPos: THREE.Vector3,
     shipQuat: THREE.Quaternion,
     sunPos: THREE.Vector3,
-    radarRange = 4000
+    _radarRange = 25000
   ): void {
     const ctx = this.ctx;
     const w = this.canvas.width;
     const h = this.canvas.height;
     const cx = w / 2;
     const cy = h / 2;
-    const scale = this.radarRadius / radarRange;
+    const rMax = this.radarRadius - 4;
 
     ctx.clearRect(0, 0, w, h);
 
-    // 1. Concentric Holographic Range Rings
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
+    // 1. Forward Vision Cone (Frustum Wedge ±32° matching cockpit chase camera FOV)
+    ctx.save();
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.07)';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, this.radarRadius, -Math.PI / 2 - 0.56, -Math.PI / 2 + 0.56);
+    ctx.closePath();
+    ctx.fill();
+
+    // Vision cone radial dashed edges
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.22)';
     ctx.lineWidth = 1;
+    ctx.setLineDash([2, 4]);
     ctx.beginPath();
-    ctx.arc(cx, cy, this.radarRadius * 0.33, 0, Math.PI * 2);
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(-Math.PI / 2 - 0.56) * this.radarRadius, cy + Math.sin(-Math.PI / 2 - 0.56) * this.radarRadius);
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(-Math.PI / 2 + 0.56) * this.radarRadius, cy + Math.sin(-Math.PI / 2 + 0.56) * this.radarRadius);
     ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
 
-    ctx.beginPath();
-    ctx.arc(cx, cy, this.radarRadius * 0.66, 0, Math.PI * 2);
-    ctx.stroke();
+    // 2. Concentric Holographic Range Rings & Scale Markers
+    const ringRadii = [rMax * 0.33, rMax * 0.66, rMax];
+    const ringLabels = ['1.2k', '5.5k', '25k'];
 
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.3)';
-    ctx.beginPath();
-    ctx.arc(cx, cy, this.radarRadius, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.lineWidth = 1;
+    for (let i = 0; i < ringRadii.length; i++) {
+      const rad = ringRadii[i];
+      ctx.strokeStyle = i === ringRadii.length - 1 ? 'rgba(56, 189, 248, 0.35)' : 'rgba(56, 189, 248, 0.15)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Subtle range markings
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.45)';
+      ctx.font = '7.5px ui-monospace, SFMono-Regular, monospace';
+      ctx.fillText(ringLabels[i], cx + 4, cy - rad + 8);
+    }
 
     // Crosshairs
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.1)';
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
     ctx.beginPath();
     ctx.moveTo(cx, cy - this.radarRadius);
     ctx.lineTo(cx, cy + this.radarRadius);
@@ -293,100 +359,173 @@ export class NavRadar {
     ctx.lineTo(cx + this.radarRadius, cy);
     ctx.stroke();
 
-    // Transform from world to ship-relative top-down (XZ) coordinates
-    const invShipQuat = shipQuat.clone().invert();
+    // 3. Stabilized Horizontal Heading Calculation (Invariant to pitch and roll)
+    const shipForward = new THREE.Vector3(0, 0, -1).applyQuaternion(shipQuat);
+    const shipYaw = Math.atan2(shipForward.x, -shipForward.z);
 
-    // 2. Draw Sun / Primary Star
-    const sunRel = sunPos.clone().sub(shipPos).applyQuaternion(invShipQuat);
-    const sunDist = Math.sqrt(sunRel.x * sunRel.x + sunRel.z * sunRel.z);
-    const sunR = Math.min(this.radarRadius - 3, sunDist * scale);
-    const sunAngle = Math.atan2(sunRel.x, -sunRel.z);
-    const sunPx = cx + Math.sin(sunAngle) * sunR;
-    const sunPy = cy - Math.cos(sunAngle) * sunR;
+    // Smooth logarithmic distance projection mapping 0 to 25,000 units
+    const maxSystemRange = 25000;
+    const logMax = Math.log10(1 + maxSystemRange / 250);
+    const computeRadarPos = (targetPos: THREE.Vector3) => {
+      const dx = targetPos.x - shipPos.x;
+      const dy = targetPos.y - shipPos.y;
+      const dz = targetPos.z - shipPos.z;
+      const dist3D = Math.hypot(dx, dy, dz);
+      const targetYaw = Math.atan2(dx, -dz);
+      let relAngle = targetYaw - shipYaw;
+      while (relAngle > Math.PI) relAngle -= Math.PI * 2;
+      while (relAngle < -Math.PI) relAngle += Math.PI * 2;
 
-    ctx.fillStyle = '#fef08a';
+      // Logarithmic radial scale
+      const r = Math.min(rMax, (Math.log10(1 + dist3D / 250) / logMax) * rMax);
+      const px = cx + Math.sin(relAngle) * r;
+      const py = cy - Math.cos(relAngle) * r;
+      const inForwardCone = Math.abs(relAngle) <= 0.56;
+
+      return { px, py, r, dist3D, dy, relAngle, inForwardCone };
+    };
+
+    // 4. Draw Sun / Primary Star
+    const sunData = computeRadarPos(sunPos);
+    ctx.save();
+    // Sun corona glow
+    const sunGrad = ctx.createRadialGradient(sunData.px, sunData.py, 1, sunData.px, sunData.py, 8);
+    sunGrad.addColorStop(0, '#fef08a');
+    sunGrad.addColorStop(0.5, 'rgba(245, 158, 11, 0.5)');
+    sunGrad.addColorStop(1, 'rgba(245, 158, 11, 0)');
+    ctx.fillStyle = sunGrad;
     ctx.beginPath();
-    ctx.arc(sunPx, sunPy, 3.5, 0, Math.PI * 2);
+    ctx.arc(sunData.px, sunData.py, 8, 0, Math.PI * 2);
     ctx.fill();
+    // Sun core
+    ctx.fillStyle = '#fffbeb';
+    ctx.beginPath();
+    ctx.arc(sunData.px, sunData.py, 3.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
 
-    // 3. Draw Radar Targets (Planets & Space Anomalies)
+    // 5. Draw Radar Targets (Planets, Anomalies, Courier Pod)
     for (let i = 0; i < this.targets.length; i++) {
       const t = this.targets[i];
-      const rel = t.position.clone().sub(shipPos).applyQuaternion(invShipQuat);
-      const dist = Math.sqrt(rel.x * rel.x + rel.z * rel.z);
+      const data = computeRadarPos(t.position);
       const isSelected = i === this.selectedIndex;
 
-      const isOffscreen = dist * scale > this.radarRadius - 4;
-      const r = Math.min(this.radarRadius - 4, dist * scale);
-      const angle = Math.atan2(rel.x, -rel.z);
-      const px = cx + Math.sin(angle) * r;
-      const py = cy - Math.cos(angle) * r;
+      ctx.save();
 
-      if (isOffscreen && isSelected) {
-        // Offscreen chevron pointer
+      if (t.type === 'credit_pickup') {
+        // Diamond credit mote
         ctx.fillStyle = '#38bdf8';
         ctx.beginPath();
-        ctx.arc(px, py, 3, 0, Math.PI * 2);
+        ctx.moveTo(data.px, data.py - 3.5);
+        ctx.lineTo(data.px + 3, data.py);
+        ctx.lineTo(data.px, data.py + 3.5);
+        ctx.lineTo(data.px - 3, data.py);
+        ctx.closePath();
         ctx.fill();
-      } else {
-        // Node
-        ctx.fillStyle = t.color;
+      } else if (t.type === 'cultural_beacon') {
+        // Cultural Beacon: violet ring with bright core
+        ctx.strokeStyle = '#c084fc';
+        ctx.lineWidth = 1.2;
         ctx.beginPath();
-        if (t.type === 'credit_pickup') {
-          // Diamond mote
-          ctx.moveTo(px, py - 3.5);
-          ctx.lineTo(px + 3, py);
-          ctx.lineTo(px, py + 3.5);
-          ctx.lineTo(px - 3, py);
-          ctx.closePath();
-        } else if (t.type === 'cultural_beacon') {
-          // Cultural beacon ring
-          ctx.arc(px, py, 4.5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = '#c084fc';
-          ctx.lineWidth = 1.2;
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(px, py, 2, 0, Math.PI * 2);
-        } else if (t.isAnomaly) {
-          ctx.rect(px - 3, py - 3, 6, 6);
-        } else {
-          ctx.arc(px, py, isSelected ? 4.2 : 2.6, 0, Math.PI * 2);
-        }
+        ctx.arc(data.px, data.py, 4.5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = '#f3e8ff';
+        ctx.beginPath();
+        ctx.arc(data.px, data.py, 2, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (t.isAnomaly) {
+        // Space Anomaly: amber diamond with glow
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath();
+        ctx.moveTo(data.px, data.py - 4);
+        ctx.lineTo(data.px + 4, data.py);
+        ctx.lineTo(data.px, data.py + 4);
+        ctx.lineTo(data.px - 4, data.py);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(245, 158, 11, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      } else if (t.type === 'gas-giant') {
+        // Gas giant: larger sphere with horizontal ring slash
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.3)';
+        ctx.beginPath();
+        ctx.arc(data.px, data.py, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = t.color || '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(data.px, data.py, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#e0f2fe';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(data.px - 6, data.py);
+        ctx.lineTo(data.px + 6, data.py);
+        ctx.stroke();
+      } else {
+        // Terrestrial / Moon / Ice / Volcanic Planet: crisp glowing celestial node
+        // High-contrast outer halo ensuring dark basalt/hematite planets are always clearly visible
+        ctx.strokeStyle = isSelected ? '#38bdf8' : 'rgba(255, 255, 255, 0.55)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(data.px, data.py, isSelected ? 4.8 : 3.6, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Planet core
+        ctx.fillStyle = t.color || '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(data.px, data.py, isSelected ? 3.6 : 2.5, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // Selected Reticle
+      // Elevation Indicator Stalk / Marker (above/below current plane)
+      if (Math.abs(data.dy) > 180) {
+        ctx.fillStyle = data.dy > 0 ? '#4ade80' : '#f87171';
+        ctx.font = '8px ui-monospace, monospace';
+        const glyph = data.dy > 0 ? '▲' : '▼';
+        ctx.fillText(glyph, data.px - 3, data.dy > 0 ? data.py - 6 : data.py + 11);
+      }
+
+      // Selected Target Reticle with Animated Corner Brackets
       if (isSelected) {
         ctx.strokeStyle = '#38bdf8';
         ctx.lineWidth = 1.5;
-        ctx.strokeRect(px - 6, py - 6, 12, 12);
+        const boxSize = 7;
+        ctx.strokeRect(data.px - boxSize, data.py - boxSize, boxSize * 2, boxSize * 2);
+
+        // Forward indicator tick
+        ctx.beginPath();
+        ctx.moveTo(data.px, data.py - boxSize - 3);
+        ctx.lineTo(data.px, data.py - boxSize);
+        ctx.stroke();
       }
+
+      ctx.restore();
     }
 
-    // 4. Ship Center Chevron (Pointing Up)
+    // 6. Ship Center Chevron (Pointing Up along heading)
     ctx.fillStyle = '#38bdf8';
     ctx.beginPath();
-    ctx.moveTo(cx, cy - 5);
-    ctx.lineTo(cx - 4, cy + 4);
-    ctx.lineTo(cx, cy + 2);
-    ctx.lineTo(cx + 4, cy + 4);
+    ctx.moveTo(cx, cy - 6);
+    ctx.lineTo(cx - 4.5, cy + 4.5);
+    ctx.lineTo(cx, cy + 2.5);
+    ctx.lineTo(cx + 4.5, cy + 4.5);
     ctx.closePath();
     ctx.fill();
 
-    // 5. Update Target Information Chip
+    // 7. Update Target Information Chip
     const active = this.getSelectedTarget();
     if (active) {
       const d = active.position.distanceTo(shipPos);
       const autoText = this.autopilotController.isActive
-        ? '<span style="color:#4ade80;">[AUTOPILOT ON]</span>'
-        : '<span style="color:#94a3b8;">[TAB: Cycle]</span>';
+        ? '<span style="color:#4ade80; font-weight: 700;">[AUTOPILOT ON]</span>'
+        : '<span style="color:#94a3b8;">[TAB: Cycle · T: Target Ahead]</span>';
 
       const typeLabel = active.isAnomaly ? `⚡ ${active.type}` : active.type;
       this.targetInfoEl.innerHTML = `
-        <div style="color: #38bdf8; font-weight: 600;">${active.name}</div>
-        <div style="font-size: 9px; color: #94a3b8;">${typeLabel} · ${d.toFixed(0)}u</div>
-        <div style="font-size: 9px; margin-top: 2px;">${autoText}</div>
+        <div style="color: #38bdf8; font-weight: 600; font-size: 11px;">${active.name}</div>
+        <div style="font-size: 9px; color: #cbd5e1; margin-top: 1px;">${typeLabel} · ${Math.round(d)}u</div>
+        <div style="font-size: 9px; margin-top: 3px;">${autoText}</div>
       `;
     } else {
       this.targetInfoEl.innerHTML = '<div style="color: #64748b;">NO TARGET SELECTED</div>';
