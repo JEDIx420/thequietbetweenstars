@@ -11,9 +11,6 @@ export default defineConfig({
           if (id.includes('three')) {
             return 'three-bundle';
           }
-          if (id.includes('qrcode')) {
-            return 'qrcode-bundle';
-          }
           return undefined;
         },
       },

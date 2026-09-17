@@ -1,6 +1,4 @@
-import type { ConnectionMetrics } from '../../connection/connectionState';
 import type { NormalizedInputState } from '../input/InputSource';
-import { getSignalingUrl } from '../../connection/config';
 
 export class DebugOverlay {
   private container: HTMLElement;
@@ -10,13 +8,6 @@ export class DebugOverlay {
   private lastFpsUpdate = performance.now();
 
   private inputSource = 'keyboard';
-  private metrics: ConnectionMetrics = {
-    state: 'idle',
-    rttMs: 0,
-    realtimePacketRateHz: 0,
-    packetsReceived: 0,
-    packetsSent: 0,
-  };
   private inputState: NormalizedInputState = {
     axes: { x: 0, y: 0 },
     roll: 0,
@@ -27,7 +18,6 @@ export class DebugOverlay {
   private flightPhase = 'CRUISE';
   private worldPosInfo = 'Sector [0,0,0]';
   private rebaseCount = 0;
-  private signalingUrl = getSignalingUrl() || 'UNCONFIGURED';
 
   constructor() {
     this.container = document.createElement('div');
@@ -69,11 +59,6 @@ export class DebugOverlay {
     return this.isVisible;
   }
 
-  public updateMetrics(metrics: ConnectionMetrics): void {
-    this.metrics = metrics;
-    if (this.isVisible) this.render();
-  }
-
   public setInputSource(source: string): void {
     this.inputSource = source;
     if (this.isVisible) this.render();
@@ -113,13 +98,7 @@ export class DebugOverlay {
   }
 
   private render(): void {
-    const { state, rttMs, realtimePacketRateHz, packetsReceived, lastAction } = this.metrics;
     const { axes, roll, throttle } = this.inputState;
-
-    let stateColor = '#94a3b8';
-    if (state === 'connected') stateColor = '#4ade80';
-    else if (state === 'connecting' || state === 'signaling' || state === 'waiting') stateColor = '#facc15';
-    else if (state === 'reconnecting' || state === 'failed') stateColor = '#f87171';
 
     this.container.innerHTML = `
       <div style="font-weight: 700; color: #38bdf8; margin-bottom: 6px; letter-spacing: 0.05em;">
@@ -128,20 +107,13 @@ export class DebugOverlay {
       <div>Flight Phase: <span style="color: #38bdf8; font-weight: 600;">${this.flightPhase}</span></div>
       <div>Coordinates: <span style="color: #cbd5e1;">${this.worldPosInfo}</span></div>
       <div>Rebase Count: <span style="color: #a78bfa; font-weight: 600;">${this.rebaseCount}</span></div>
-      <div>Input Source: <span style="color: #fbbf24; font-weight: 600;">${this.inputSource.toUpperCase()}</span></div>
-      <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1);">
-        <div>Signaling Server: <span style="color: ${this.signalingUrl === 'UNCONFIGURED' ? '#f87171' : '#4ade80'};">${this.signalingUrl}</span></div>
-        <div>Peer Connection: <span style="color: ${stateColor}; font-weight: 600;">${state.toUpperCase()}</span></div>
-        <div>RTT Latency: <span style="color: ${rttMs < 60 ? '#4ade80' : '#facc15'};">${rttMs} ms</span></div>
-        <div>Packet Rate: <span>${realtimePacketRateHz} Hz</span> (total: ${packetsReceived})</div>
-      </div>
+      <div>Input Mode: <span style="color: #fbbf24; font-weight: 600;">${this.inputSource.toUpperCase()}</span></div>
       <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1);">
         <div>Steering (Yaw/Pitch): [${axes.x.toFixed(2)}, ${axes.y.toFixed(2)}]</div>
         <div>Roll: ${roll.toFixed(2)}</div>
         <div>Throttle: ${(throttle * 100).toFixed(0)}%</div>
         <div>Velocity: ${this.speed.toFixed(1)} u/s</div>
       </div>
-      <div style="margin-top: 4px;">Last Action: <span style="color: #a7f3d0;">${lastAction || 'none'}</span></div>
       <div style="margin-top: 6px; font-size: 10px; color: #64748b;">Toggle with \` or F3</div>
     `;
   }

@@ -1,5 +1,4 @@
 import { storage } from './persistence/StorageManager';
-import { isExplicitCompanionMode, isMobileOrPhoneDevice } from './companion/deviceDetection';
 
 async function bootstrap() {
   const appContainer = document.getElementById('app');
@@ -8,7 +7,7 @@ async function bootstrap() {
   // Initialize persistence layer
   await storage.init();
 
-  // Route between Developer World Lab, Planet Gallery, Companion Controller, and Desktop 3D Experience
+  // Route between Developer World Lab, Planet Gallery, and Full 3D Space Flight Experience
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('debug') === 'world-lab') {
     const { WorldLabApp } = await import('./ui/WorldLabApp');
@@ -16,13 +15,8 @@ async function bootstrap() {
   } else if (urlParams.get('debug') === 'planet-gallery') {
     const { PlanetGalleryApp } = await import('./ui/PlanetGalleryApp');
     new PlanetGalleryApp(appContainer);
-  } else if (isExplicitCompanionMode() || isMobileOrPhoneDevice()) {
-    // Dynamic code splitting: Companion controller doesn't load Three.js
-    const { CompanionApp } = await import('./companion/companionApp');
-    const companion = new CompanionApp(appContainer);
-    companion.start();
   } else {
-    // Desktop 3D Space Flight Experience
+    // Full 3D Space Flight Experience across Mobile, Tablet, and Desktop
     const { DesktopApp } = await import('./ui/DesktopApp');
     new DesktopApp(appContainer);
   }

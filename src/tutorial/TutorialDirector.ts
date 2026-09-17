@@ -36,7 +36,7 @@ export class TutorialDirector {
   private onPromptChangeCallback: ((prompt: string | null) => void) | null = null;
   private onCompanionHintCallback: ((action: string, prompt: string) => void) | null = null;
   private getContextFn: () => NarrativeContext;
-  private inputMode: 'keyboard' | 'companion' = 'keyboard';
+  private inputMode: 'keyboard' | 'companion' | 'touch' = 'keyboard';
   private stepTimer = 0;
 
   constructor(narrative: NarrativeDirector, getContextFn: () => NarrativeContext) {
@@ -52,7 +52,7 @@ export class TutorialDirector {
     if (onCompanionHint) this.onCompanionHintCallback = onCompanionHint;
   }
 
-  public setInputMode(mode: 'keyboard' | 'companion'): void {
+  public setInputMode(mode: 'keyboard' | 'companion' | 'touch'): void {
     this.inputMode = mode;
     if (this.state.started && !this.state.completed && !this.state.skipped) {
       this.updatePromptForCurrentStep();

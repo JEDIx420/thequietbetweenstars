@@ -1,13 +1,8 @@
 import * as THREE from 'three';
-import QRCode from 'qrcode';
 import { audio } from '../audio/AudioEngine';
 import { storage } from '../persistence/StorageManager';
-import { generateSessionCode, generateSecureToken } from '../connection/token';
-import { SignalingClient } from '../connection/signalingClient';
-import { PeerConnectionManager } from '../connection/peerConnection';
-import { getSignalingUrl } from '../connection/config';
-import { buildCompanionUrl } from '../connection/url';
 import { InputManager } from '../game/input/InputManager';
+import { TouchControls, isTouchDevice } from '../game/input/TouchControls';
 import { GameRenderer } from '../game/rendering/renderer';
 import { SpaceScene } from '../game/scenes/spaceScene';
 import { SurfaceScene } from '../game/surface/SurfaceScene';
@@ -20,7 +15,6 @@ import { WorldPosition } from '../game/universe/WorldPosition';
 import { FloatingOrigin } from '../game/universe/FloatingOrigin';
 import { SectorManager } from '../game/universe/SectorManager';
 import { LandingSiteGenerator, type LandingSite } from '../game/systems/LandingSiteGenerator';
-import { CompanionDiagnosticsModal } from './CompanionDiagnosticsModal';
 import { HolographicNavModal } from './HolographicNavModal';
 import { JournalModal } from './JournalModal';
 import { HelpModal } from './HelpModal';
@@ -38,10 +32,9 @@ import { TitleRevealSequence } from './TitleRevealSequence';
 import { NewJourneyCinematic } from './NewJourneyCinematic';
 import { ExpeditionBriefing } from './ExpeditionBriefing';
 import type { NPCIdentity } from '../game/ecology/SentientSpeciesProfile';
-import type { ConnectionState } from '../connection/connectionState';
 import type { StarSystemDescriptor } from '../game/systems/PlanetDescriptor';
 
-export type UIState = 'title' | 'mode_select' | 'pairing' | 'playing' | 'cinematic';
+export type UIState = 'title' | 'playing' | 'cinematic';
 
 export class DesktopApp {
   private container: HTMLElement;
@@ -103,17 +96,14 @@ export class DesktopApp {
   private hasSavedJourney = false;
   private lastAutosaveTime = 0;
 
-  private signaling: SignalingClient | null = null;
-  private peer: PeerConnectionManager | null = null;
-  private sessionCode = '';
-  private sessionToken = '';
+  private touchControls: TouchControls | null = null;
 
   private uiState: UIState = 'title';
   private lastTime = performance.now();
   private isRunning = false;
   private isTitleRevealActive = true;
   private lastDeflectionSoundTime = 0;
-  private currentControlMode: 'companion' | 'keyboard' = 'keyboard';
+  private currentControlMode: 'keyboard' | 'touch' = 'keyboard';
   private newJourneyCinematic!: NewJourneyCinematic;
   private audioUnlocked = false;
 
@@ -173,32 +163,7 @@ export class DesktopApp {
     this.dialoguePresenter = new DialoguePresenter(this.canvasContainer);
     this.narrativeDirector = new NarrativeDirector(this.dialoguePresenter);
     this.tutorialDirector = new TutorialDirector(this.narrativeDirector, () => this.getNarrativeContext());
-    this.tutorialDirector.setCallbacks(
-      (prompt) => this.updateContextPrompt(prompt || ''),
-      (action, prompt) => {
-        if (this.peer) {
-          this.peer.sendReliable({
-            type: 'tutorial_hint',
-            action,
-            prompt,
-            timestamp: Date.now(),
-          } as any);
-        }
-      }
-    );
-
-    // Mirror ship computer dialogue to phone companion
-    this.dialoguePresenter.setMirrorCallback((line) => {
-      if (this.peer) {
-        this.peer.sendReliable({
-          type: 'dialogue_line',
-          speaker: line.speaker,
-          text: line.text,
-          durationMs: line.durationMs,
-          timestamp: Date.now(),
-        } as any);
-      }
-    });
+    this.tutorialDirector.setCallbacks((prompt) => this.updateContextPrompt(prompt || ''));
 
     // Wire interactive conversation choices
     this.dialoguePresenter.setChoiceCallback((topic: string) => {
@@ -280,8 +245,8 @@ export class DesktopApp {
         audio.setContext('surface');
       }
 
-      // Notify companion of context change
-      this.notifyCompanionContext(to);
+      // Update controls context
+      this.updateControlContext(to);
     });
 
     this.isRunning = true;
@@ -344,16 +309,6 @@ export class DesktopApp {
           this.collectedCreditIds.add(pickup.id);
           audio.playBlip();
           this.showHudNotice(`+${pickup.amount} SC // SURVEY DATA MOTE DIGITIZED`);
-
-          // Sync credit update to mobile companion if connected
-          if (this.peer) {
-            this.peer.sendReliable({
-              type: 'credit_collected',
-              amount: pickup.amount,
-              totalCredits: this.credits,
-              timestamp: Date.now(),
-            } as any);
-          }
         }
         if (crEl) crEl.textContent = `${this.credits}`;
         this.saveCurrentJourney();
@@ -780,20 +735,12 @@ export class DesktopApp {
     if (el) el.textContent = text;
   }
 
-  private notifyCompanionContext(phase: FlightPhase): void {
-    if (!this.peer) return;
-    let layout = 'flight-v1';
-    let context = 'space-flight';
-
-    if (phase === FlightPhase.ORBIT) {
-      context = 'dialogue';
-      layout = 'dialogue-v1';
-    } else if (phase === FlightPhase.SURFACE_FLIGHT) {
-      context = 'planet-exploration';
-      layout = 'flight-v1';
+  private updateControlContext(phase: FlightPhase): void {
+    if (phase === FlightPhase.SURFACE_FLIGHT) {
+      this.touchControls?.setContext('surface');
+    } else {
+      this.touchControls?.setContext('space');
     }
-
-    this.peer.sendContextChange(context as any, layout as any);
   }
 
   private setupAudioUnlockListeners(): void {
@@ -937,7 +884,7 @@ export class DesktopApp {
       audio.playBlip();
       await audio.start();
       await this.loadSavedJourney();
-      this.renderModeSelectScreen();
+      this.enterFlightMode();
     });
 
     const btnBegin = this.uiContainer.querySelector('#btn-begin') as HTMLElement;
@@ -966,7 +913,7 @@ export class DesktopApp {
         () => {
           const briefing = new ExpeditionBriefing(this.container);
           briefing.show(() => {
-            this.renderModeSelectScreen();
+            this.enterFlightMode();
           });
         },
         this.spaceScene.scene
@@ -1304,316 +1251,37 @@ export class DesktopApp {
     }
   }
 
-  private renderModeSelectScreen(): void {
-    this.uiState = 'mode_select';
-    this.uiContainer.innerHTML = `
-      <div style="
-        position: absolute;
-        inset: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        font-family: ui-sans-serif, system-ui, sans-serif;
-        color: #f8fafc;
-        pointer-events: auto;
-        background: rgba(3, 3, 7, 0.65);
-        backdrop-filter: blur(8px);
-      ">
-        <div style="
-          font-size: 11px;
-          letter-spacing: 0.3em;
-          color: #38bdf8;
-          text-transform: uppercase;
-          margin-bottom: 12px;
-          font-weight: 600;
-        ">CONTROLLER SELECTION</div>
-
-        <h2 style="
-          font-size: 28px;
-          font-weight: 300;
-          letter-spacing: 0.08em;
-          margin: 0 0 36px 0;
-        ">Choose Your Flight Terminal</h2>
-
-        <div style="display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; max-width: 720px; padding: 0 20px;">
-          <div id="card-companion" style="
-            flex: 1;
-            min-width: 260px;
-            max-width: 320px;
-            padding: 32px 24px;
-            background: rgba(15, 23, 42, 0.7);
-            border: 1px solid rgba(56, 189, 248, 0.4);
-            border-radius: 16px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-          ">
-            <div style="font-size: 34px; margin-bottom: 16px;">📱</div>
-            <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 10px 0; color: #38bdf8;">PAIR COMPANION</h3>
-            <p style="font-size: 13px; color: #94a3b8; line-height: 1.6; margin: 0 0 20px 0;">
-              Turn your smartphone into an in-universe flight terminal with virtual touch joystick, throttle, and scanner.
-            </p>
-            <span style="font-size: 12px; color: #38bdf8; letter-spacing: 0.1em; font-weight: 600;">RECOMMENDED →</span>
-          </div>
-
-          <div id="card-keyboard" style="
-            flex: 1;
-            min-width: 260px;
-            max-width: 320px;
-            padding: 32px 24px;
-            background: rgba(15, 23, 42, 0.5);
-            border: 1px solid rgba(148, 163, 184, 0.25);
-            border-radius: 16px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-          ">
-            <div style="font-size: 34px; margin-bottom: 16px;">⌨️</div>
-            <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 10px 0; color: #e2e8f0;">KEYBOARD & MOUSE</h3>
-            <p style="font-size: 13px; color: #94a3b8; line-height: 1.6; margin: 0 0 20px 0;">
-              Fly directly on your computer using W/S pitch, A/D yaw, Shift accelerator, and Space scan.
-            </p>
-            <span style="font-size: 12px; color: #94a3b8; letter-spacing: 0.1em; font-weight: 600;">PLAY NOW →</span>
-          </div>
-        </div>
-      </div>
-    `;
-
-    this.uiContainer.querySelector('#card-companion')?.addEventListener('click', () => {
-      audio.playBlip();
-      this.renderPairingScreen();
-    });
-
-    this.uiContainer.querySelector('#card-keyboard')?.addEventListener('click', () => {
-      audio.playBlip();
-      this.inputManager.setMode('keyboard');
-      this.debugOverlay.setInputSource('keyboard');
-      this.currentControlMode = 'keyboard';
-      this.enterFlightMode('keyboard');
-    });
-  }
-
-  private async renderPairingScreen(): Promise<void> {
-    this.uiState = 'pairing';
-    this.sessionCode = generateSessionCode();
-    this.sessionToken = generateSecureToken();
-
-    const signalingUrl = getSignalingUrl();
-    const companionUrl = buildCompanionUrl({
-      origin: window.location.origin,
-      pathname: window.location.pathname,
-      basePath: import.meta.env.BASE_URL,
-      session: this.sessionCode,
-      token: this.sessionToken,
-      signalingUrl,
-    });
-
-    this.uiContainer.innerHTML = `
-      <div style="
-        position: absolute;
-        inset: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        font-family: ui-sans-serif, system-ui, sans-serif;
-        color: #f8fafc;
-        pointer-events: auto;
-        background: rgba(3, 3, 7, 0.7);
-        backdrop-filter: blur(10px);
-        padding: 24px;
-        box-sizing: border-box;
-      ">
-        <div style="font-size: 11px; letter-spacing: 0.25em; color: #38bdf8; text-transform: uppercase; margin-bottom: 8px;">PAIRING TERMINAL</div>
-        <h2 style="font-size: 26px; font-weight: 300; margin: 0 0 24px 0;">Scan with your Phone</h2>
-
-        <div style="
-          background: #ffffff;
-          padding: 16px;
-          border-radius: 16px;
-          box-shadow: 0 0 40px rgba(56, 189, 248, 0.35);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin-bottom: 24px;
-        ">
-          <canvas id="qr-canvas"></canvas>
-        </div>
-
-        <div style="margin-bottom: 20px; text-align: center;">
-          <div style="font-size: 12px; color: #94a3b8; margin-bottom: 4px;">OR ENTER SESSION CODE ON PHONE:</div>
-          <div style="font-family: ui-monospace, monospace; font-size: 28px; letter-spacing: 0.2em; color: #38bdf8; font-weight: 700;">
-            ${this.sessionCode}
-          </div>
-        </div>
-
-        ${!signalingUrl ? `
-          <div style="
-            background: rgba(239, 68, 68, 0.15);
-            border: 1px solid rgba(239, 68, 68, 0.4);
-            border-radius: 8px;
-            padding: 10px 16px;
-            margin-bottom: 20px;
-            font-size: 12px;
-            color: #fca5a5;
-            text-align: center;
-            max-width: 440px;
-          ">
-            <b>Signaling Server Unconfigured</b><br/>
-            Live GitHub Pages requires a deployed Cloudflare Worker or custom WebSocket endpoint.
-            <button id="btn-banner-diag" style="
-              margin-top: 6px;
-              background: #0284c7;
-              border: none;
-              color: white;
-              padding: 4px 12px;
-              border-radius: 4px;
-              font-size: 11px;
-              cursor: pointer;
-            ">Open Diagnostics & Setup</button>
-          </div>
-        ` : `
-          <div id="pairing-status-text" style="font-size: 13px; color: #cbd5e1; margin-bottom: 20px;">
-            Waiting for phone connection...
-          </div>
-        `}
-
-        <div style="display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;">
-          <button id="btn-open-diagnostics" style="
-            padding: 10px 18px;
-            background: rgba(56, 189, 248, 0.15);
-            border: 1px solid rgba(56, 189, 248, 0.4);
-            border-radius: 8px;
-            color: #38bdf8;
-            font-size: 13px;
-            cursor: pointer;
-          ">⚙️ DIAGNOSTICS</button>
-
-          <button id="btn-cancel-pairing" style="
-            padding: 10px 18px;
-            background: rgba(30, 41, 59, 0.6);
-            border: 1px solid rgba(148, 163, 184, 0.3);
-            border-radius: 8px;
-            color: #cbd5e1;
-            font-size: 13px;
-            cursor: pointer;
-          ">CANCEL</button>
-
-          <button id="btn-play-keyboard-fallback" style="
-            padding: 10px 18px;
-            background: rgba(14, 165, 233, 0.2);
-            border: 1px solid rgba(56, 189, 248, 0.4);
-            border-radius: 8px;
-            color: #f8fafc;
-            font-size: 13px;
-            cursor: pointer;
-          ">KEYBOARD INSTEAD</button>
-        </div>
-      </div>
-    `;
-
-    const canvas = this.uiContainer.querySelector('#qr-canvas') as HTMLCanvasElement;
-    if (canvas) {
-      await QRCode.toCanvas(canvas, companionUrl, { width: 200, margin: 1 });
-    }
-
-    const openDiag = () => {
-      new CompanionDiagnosticsModal({
-        signalingClient: this.signaling,
-        peerManager: this.peer,
-        onReconnect: () => {
-          this.cancelPairing();
-          this.renderPairingScreen();
-        },
-        onClose: () => {},
-      });
-    };
-
-    this.uiContainer.querySelector('#btn-banner-diag')?.addEventListener('click', openDiag);
-    this.uiContainer.querySelector('#btn-open-diagnostics')?.addEventListener('click', openDiag);
-
-    this.uiContainer.querySelector('#btn-play-keyboard-fallback')?.addEventListener('click', () => {
-      this.cancelPairing();
-      this.inputManager.setMode('keyboard');
-      this.debugOverlay.setInputSource('keyboard');
-      this.currentControlMode = 'keyboard';
-      this.enterFlightMode('keyboard');
-    });
-
-    this.uiContainer.querySelector('#btn-cancel-pairing')?.addEventListener('click', () => {
-      this.cancelPairing();
-      this.renderModeSelectScreen();
-    });
-
-    if (signalingUrl) {
-      this.signaling = new SignalingClient(signalingUrl, this.sessionCode, this.sessionToken, 'desktop');
-      this.peer = new PeerConnectionManager('desktop', this.signaling, {
-        onStateChange: (state) => this.handleConnectionStateChange(state),
-        onRealtimeInput: (input) => {
-          this.inputManager.getCompanionSource().handleRealtimeInput(input);
-        },
-        onAction: (action) => {
-          this.inputManager.getCompanionSource().handleAction(action);
-        },
-        onMetrics: (metrics) => {
-          this.debugOverlay.updateMetrics(metrics);
-        },
-      });
-
-      this.peer.start().catch((err) => {
-        console.warn('[Pairing] Signaling server connection failed:', err);
-      });
-    }
-  }
-
-  private handleConnectionStateChange(state: ConnectionState): void {
-    const statusText = this.uiContainer.querySelector('#pairing-status-text');
-
-    if (state === 'connected') {
-      audio.playConnectChime();
-      this.inputManager.setMode('companion');
-      this.debugOverlay.setInputSource('companion');
-      this.currentControlMode = 'companion';
-      this.enterFlightMode('companion');
-    } else if (statusText) {
-      if (state === 'connecting') statusText.textContent = 'Companion detected! Negotiating WebRTC...';
-      else if (state === 'waiting') statusText.textContent = 'Waiting for phone connection...';
-      else if (state === 'failed') statusText.textContent = 'Pairing failed. Re-trying...';
-    }
-  }
-
-  private cancelPairing(): void {
-    if (this.peer) {
-      this.peer.dispose();
-      this.peer = null;
-    }
-    this.signaling = null;
-  }
-
-  private async enterFlightMode(mode: 'companion' | 'keyboard'): Promise<void> {
+  private async enterFlightMode(mode: 'keyboard' | 'touch' = 'keyboard'): Promise<void> {
     this.uiState = 'playing';
     try {
       await audio.start();
     } catch {}
     audio.stopTitleOverture();
     audio.setContext('cruise');
-    this.tutorialDirector.setInputMode(mode);
+
+    const isTouch = isTouchDevice() || (typeof window !== 'undefined' && window.innerWidth <= 1024);
+    const activeMode = isTouch ? 'touch' : mode;
+    this.currentControlMode = activeMode;
+
+    this.tutorialDirector.setInputMode(activeMode);
     if (!this.tutorialDirector.isComplete()) {
       this.tutorialDirector.start();
     }
-    this.renderFlightHUD(mode);
+    this.renderFlightHUD(activeMode);
+
+    // Initialize & display on-screen touch controls if on mobile, tablet, or touch screen
+    if (isTouch) {
+      if (!this.touchControls) {
+        this.touchControls = new TouchControls(this.uiContainer, this.inputManager.getTouchSource());
+      }
+      this.touchControls.show();
+      const phase = this.stateMachine.getPhase();
+      this.touchControls.setContext(phase === FlightPhase.SURFACE_FLIGHT ? 'surface' : 'space');
+    }
   }
 
-  private renderFlightHUD(mode: 'companion' | 'keyboard'): void {
+  private renderFlightHUD(mode: 'keyboard' | 'touch' = 'keyboard'): void {
+    const isTouch = mode === 'touch' || isTouchDevice();
     this.uiContainer.innerHTML = `
       <div style="
         position: absolute;
@@ -1621,17 +1289,17 @@ export class DesktopApp {
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        padding: 22px 28px;
+        padding: max(16px, env(safe-area-inset-top, 16px)) max(18px, env(safe-area-inset-right, 18px)) max(16px, env(safe-area-inset-bottom, 16px)) max(18px, env(safe-area-inset-left, 18px));
         box-sizing: border-box;
         pointer-events: none;
         font-family: ui-sans-serif, system-ui, sans-serif;
       ">
-        <div style="display: flex; justify-content: space-between; align-items: center; pointer-events: auto;">
-          <div style="font-size: 11px; letter-spacing: 0.3em; color: #38bdf8; font-weight: 600;">
+        <div style="display: flex; justify-content: space-between; align-items: center; pointer-events: auto; flex-wrap: wrap; gap: 8px;">
+          <div style="font-size: 11px; letter-spacing: 0.25em; color: #38bdf8; font-weight: 600;">
             THE QUIET BETWEEN STARS
           </div>
 
-          <div style="display: flex; gap: 10px; align-items: center;">
+          <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
             <div id="hud-save-indicator" style="
               font-family: ui-monospace, monospace;
               font-size: 10px;
@@ -1646,10 +1314,11 @@ export class DesktopApp {
               border: 1px solid rgba(56, 189, 248, 0.35);
               border-radius: 8px;
               color: #38bdf8;
-              padding: 7px 14px;
+              padding: 6px 12px;
               font-size: 11px;
               font-weight: 600;
               cursor: pointer;
+              touch-action: manipulation;
             ">MAP [M]</button>
 
             <button id="btn-open-supply" style="
@@ -1657,20 +1326,22 @@ export class DesktopApp {
               border: 1px solid rgba(52, 211, 153, 0.4);
               border-radius: 8px;
               color: #34d399;
-              padding: 7px 14px;
+              padding: 6px 12px;
               font-size: 11px;
               font-weight: 700;
               cursor: pointer;
-            ">SUPPLY [U]</button>
+              touch-action: manipulation;
+            ">STORE [U]</button>
 
             <button id="btn-open-journal" style="
               background: rgba(15, 23, 42, 0.75);
               border: 1px solid rgba(148, 163, 184, 0.25);
               border-radius: 8px;
               color: #cbd5e1;
-              padding: 7px 14px;
+              padding: 6px 12px;
               font-size: 11px;
               cursor: pointer;
+              touch-action: manipulation;
             ">LOG [J]</button>
 
             <button id="btn-open-help" style="
@@ -1678,9 +1349,10 @@ export class DesktopApp {
               border: 1px solid rgba(148, 163, 184, 0.25);
               border-radius: 8px;
               color: #cbd5e1;
-              padding: 7px 14px;
+              padding: 6px 12px;
               font-size: 11px;
               cursor: pointer;
+              touch-action: manipulation;
             ">HELP [H]</button>
 
             <button id="btn-audio-mute" style="
@@ -1688,9 +1360,10 @@ export class DesktopApp {
               border: 1px solid rgba(148, 163, 184, 0.25);
               border-radius: 8px;
               color: #cbd5e1;
-              padding: 7px 14px;
-              font-size: 12px;
+              padding: 6px 12px;
+              font-size: 11px;
               cursor: pointer;
+              touch-action: manipulation;
             ">${audio.getIsMuted() ? '🔇 MUTED' : '🔊 SOUND'}</button>
           </div>
         </div>
@@ -1743,14 +1416,14 @@ export class DesktopApp {
           "></div>
         </div>
 
-        <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 8px;">
           <div id="hud-controls-hint" style="
             font-size: 11px;
             color: #64748b;
             line-height: 1.6;
             font-family: ui-monospace, monospace;
           ">
-            ${mode === 'keyboard' ? 'W/S Pitch · A/D Yaw · Q/E Roll · Hold Shift Accelerate · Space Scan · U Supply' : 'Steer with Companion Joystick · Throttle Accelerator · Press SCAN · Tap SUPPLY'}
+            ${isTouch ? 'Steer with Left Joystick · Vertical Throttle · Tap SCAN or Hold TRACTOR' : 'W/S Pitch · A/D Yaw · Q/E Roll · Hold Shift Accelerate · Space Scan/Tractor · U Store · M Map'}
           </div>
 
           <div style="
@@ -1765,8 +1438,8 @@ export class DesktopApp {
             color: #cbd5e1;
             font-family: ui-monospace, monospace;
           ">
-            <span style="width: 6px; height: 6px; border-radius: 50%; background: ${mode === 'companion' ? '#4ade80' : '#38bdf8'};"></span>
-            <span>${mode === 'companion' ? 'COMPANION ACTIVE' : 'KEYBOARD & MOUSE'}</span>
+            <span style="width: 6px; height: 6px; border-radius: 50%; background: #38bdf8;"></span>
+            <span>${isTouch ? 'TOUCH & FLIGHT ACTIVE' : 'KEYBOARD & FLIGHT ACTIVE'}</span>
             <span style="color: #64748b; margin-left: 6px;">[ \` Telemetry ]</span>
           </div>
         </div>
@@ -2197,8 +1870,8 @@ export class DesktopApp {
         // Auto-dock & integrate
         this.dockCourierPod(pod);
       } else if (dist < 140) {
-        this.updateContextPrompt(`COURIER POD LOCKED [${Math.round(dist)}m] // HOLD SPACE FOR TRACTOR BEAM (PULL CAPSULE)`);
-        if (this.inputManager.isActionPressed('scan') || this.inputManager.isActionPressed('confirm') || this.inputManager.isActionPressed('interact')) {
+        this.updateContextPrompt(`COURIER POD LOCKED [${Math.round(dist)}m] // HOLD SPACE OR TRACTOR BUTTON (PULL CAPSULE)`);
+        if (this.inputManager.isActionPressed('scan') || this.inputManager.isActionPressed('confirm') || this.inputManager.isActionPressed('interact') || this.inputManager.isActionPressed('tractor')) {
           pod.applyTractorPull(shipPos, dt);
         }
       } else {
@@ -2314,7 +1987,7 @@ export class DesktopApp {
     this.isRunning = false;
     this.abortInSpaceWarpCountdown();
     if (this.inSpaceWarpCountdownEl) this.inSpaceWarpCountdownEl.remove();
-    if (this.peer) this.peer.dispose();
+    if (this.touchControls) this.touchControls.dispose();
     if (this.debugTelemetryEl) this.debugTelemetryEl.remove();
   }
 }

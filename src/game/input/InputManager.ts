@@ -1,27 +1,28 @@
 import type { GameAction } from '../../protocol';
 import type { NormalizedInputState } from './InputSource';
 import { KeyboardInput } from './KeyboardInput';
-import { CompanionInput } from './CompanionInput';
+import { TouchInput } from './TouchInput';
+import { clamp } from '../../protocol';
 
-export type ActiveInputMode = 'companion' | 'keyboard';
+export type ActiveInputMode = 'keyboard' | 'touch' | 'hybrid';
 
 export class InputManager {
   private keyboard: KeyboardInput;
-  private companion: CompanionInput;
-  private mode: ActiveInputMode = 'keyboard';
+  private touch: TouchInput;
+  private mode: ActiveInputMode = 'hybrid';
   private onModeChangeCallbacks: Array<(mode: ActiveInputMode) => void> = [];
 
   constructor() {
     this.keyboard = new KeyboardInput();
-    this.companion = new CompanionInput();
+    this.touch = new TouchInput();
   }
 
   public getKeyboardSource(): KeyboardInput {
     return this.keyboard;
   }
 
-  public getCompanionSource(): CompanionInput {
-    return this.companion;
+  public getTouchSource(): TouchInput {
+    return this.touch;
   }
 
   public setMode(mode: ActiveInputMode): void {
@@ -45,29 +46,40 @@ export class InputManager {
   }
 
   public getNormalizedInput(): NormalizedInputState {
-    if (this.mode === 'companion' && this.companion.isConnected) {
-      return this.companion.getInputState();
+    const kb = this.keyboard.getInputState();
+    const tc = this.touch.getInputState();
+
+    if (this.mode === 'keyboard') {
+      return kb;
     }
-    return this.keyboard.getInputState();
+    if (this.mode === 'touch') {
+      return tc;
+    }
+
+    // Hybrid mode: combine inputs seamlessly so touch and keyboard both work instantly
+    const blendedThrottle = Math.abs(tc.throttle) > 0.001 ? tc.throttle : kb.throttle;
+
+    return {
+      axes: {
+        x: clamp(kb.axes.x + tc.axes.x, -1, 1),
+        y: clamp(kb.axes.y + tc.axes.y, -1, 1),
+      },
+      roll: clamp(kb.roll + tc.roll, -1, 1),
+      throttle: blendedThrottle,
+    };
   }
 
   public consumeAction(action: GameAction): boolean {
-    if (this.mode === 'companion' && this.companion.isConnected) {
-      return this.companion.consumeAction(action) || this.keyboard.consumeAction(action);
-    }
-    return this.keyboard.consumeAction(action);
+    return this.keyboard.consumeAction(action) || this.touch.consumeAction(action);
   }
 
   public isActionPressed(action: GameAction): boolean {
-    if (this.mode === 'companion' && this.companion.isConnected) {
-      return this.companion.isActionPressed(action) || this.keyboard.isActionPressed(action);
-    }
-    return this.keyboard.isActionPressed(action);
+    return this.keyboard.isActionPressed(action) || this.touch.isActionPressed(action);
   }
 
   public dispose(): void {
     this.keyboard.dispose();
-    this.companion.dispose();
+    this.touch.dispose();
     this.onModeChangeCallbacks = [];
   }
 }

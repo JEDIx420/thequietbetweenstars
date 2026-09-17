@@ -133,6 +133,28 @@ export class HolographicNavModal {
         </div>
       </div>
 
+      <!-- Responsive Style for Mobile & Tablet -->
+      <style>
+        @media (max-width: 768px) {
+          #holo-destinations-sidebar {
+            flex: 0 0 140px !important;
+            width: 140px !important;
+          }
+          #holo-destinations-sidebar .dest-card-name {
+            font-size: 11px !important;
+          }
+          #holo-details-panel {
+            position: absolute !important;
+            right: 0 !important;
+            top: 0 !important;
+            bottom: 0 !important;
+            width: min(300px, 82vw) !important;
+            background: rgba(8, 13, 22, 0.98) !important;
+            box-shadow: -10px 0 30px rgba(0,0,0,0.8) !important;
+          }
+        }
+      </style>
+
       <!-- Main Body: Sidebar + 3D Viewport + Inspector -->
       <div style="display: flex; flex: 1; min-height: 0; position: relative;">
         <!-- Left Destinations Sidebar -->
@@ -720,18 +742,27 @@ export class HolographicNavModal {
       if (this.isVisible) this.resize();
     });
 
-    // Mouse drag for 3D Camera Orbit
-    this.canvasContainer.addEventListener('mousedown', (e) => {
+    // Pointer drag for 3D Camera Orbit (Mouse & Touch)
+    let pointerDragDist = 0;
+    let initialPinchDist = 0;
+    let initialCamDist = this.camDistance;
+
+    this.canvasContainer.addEventListener('pointerdown', (e) => {
       this.isDragging = true;
+      pointerDragDist = 0;
       this.prevMouseX = e.clientX;
       this.prevMouseY = e.clientY;
       this.canvasContainer.style.cursor = 'grabbing';
+      try {
+        this.canvasContainer.setPointerCapture(e.pointerId);
+      } catch {}
     });
 
-    window.addEventListener('mousemove', (e) => {
+    this.canvasContainer.addEventListener('pointermove', (e) => {
       if (!this.isDragging || !this.isVisible) return;
       const dx = e.clientX - this.prevMouseX;
       const dy = e.clientY - this.prevMouseY;
+      pointerDragDist += Math.abs(dx) + Math.abs(dy);
       this.prevMouseX = e.clientX;
       this.prevMouseY = e.clientY;
 
@@ -740,9 +771,37 @@ export class HolographicNavModal {
       this.updateCameraOrbit();
     });
 
-    window.addEventListener('mouseup', () => {
+    const endPointerDrag = (e: PointerEvent) => {
       this.isDragging = false;
       this.canvasContainer.style.cursor = 'grab';
+      try {
+        this.canvasContainer.releasePointerCapture(e.pointerId);
+      } catch {}
+    };
+
+    this.canvasContainer.addEventListener('pointerup', endPointerDrag);
+    this.canvasContainer.addEventListener('pointercancel', endPointerDrag);
+
+    // Multi-touch pinch-to-zoom
+    this.canvasContainer.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (initialPinchDist > 0) {
+          const delta = initialPinchDist - dist;
+          this.camDistance = THREE.MathUtils.clamp(initialCamDist + delta * 0.4, 45, 320);
+          this.updateCameraOrbit();
+        } else {
+          initialPinchDist = dist;
+          initialCamDist = this.camDistance;
+        }
+      }
+    }, { passive: false });
+
+    this.canvasContainer.addEventListener('touchend', () => {
+      initialPinchDist = 0;
     });
 
     // Scroll to zoom
@@ -754,7 +813,7 @@ export class HolographicNavModal {
 
     // Click on 3D Destination Star Hitbox
     this.canvasContainer.addEventListener('click', (e) => {
-      if (this.isDragging) return;
+      if (pointerDragDist > 8) return;
 
       const rect = this.canvasContainer.getBoundingClientRect();
       this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
