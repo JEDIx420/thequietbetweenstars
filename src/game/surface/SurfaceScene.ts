@@ -477,10 +477,18 @@ export class SurfaceScene {
     const maxCameraBankRad = 0.10;
     const targetCameraBank = THREE.MathUtils.clamp(this.shipRoll * 0.25, -maxCameraBankRad, maxCameraBankRad);
 
-    this.scratchCamOffset.set(0, 1.8, 8.2).applyAxisAngle(SurfaceScene.WORLD_UP, this.shipYaw);
+    const isMobile = typeof window !== 'undefined' &&
+      ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0) || window.innerWidth < 850);
+    const camDist = isMobile ? 9.5 : 8.2;
+    const camHeight = isMobile ? 2.1 : 1.8;
+    const lookDist = isMobile ? 5.5 : 14.0;
+    const lookHeight = isMobile ? 0.1 : 0.6;
+
+    this.scratchCamOffset.set(0, camHeight, camDist).applyAxisAngle(SurfaceScene.WORLD_UP, this.shipYaw);
     this.scratchTargetCamPos.copy(this.shipPosition).add(this.scratchCamOffset);
+    this.scratchLookOffset.set(0, lookHeight, 0);
     this.scratchTargetCamLook.copy(this.shipPosition)
-      .addScaledVector(this.scratchForward, 14.0)
+      .addScaledVector(this.scratchForward, lookDist)
       .add(this.scratchLookOffset);
 
     if (!this.isCamInitialized) {

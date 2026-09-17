@@ -256,8 +256,7 @@ export class DesktopApp {
       this.worldPosition,
       (targetSys) => {
         this.startInSpaceWarpCountdown(targetSys);
-      },
-      this.renderer
+      }
     );
     this.holographicNavModal.setOnCourseSet((targetSys) => {
       this.showHudNotice(`COURSE LOCKED // ${targetSys.name.toUpperCase()}`);
@@ -334,7 +333,7 @@ export class DesktopApp {
       }
       this.scheduler.addPauseReason('modal');
       this.holographicNavModal.update(dt);
-      this.renderer.render(this.holographicNavModal.scene, this.holographicNavModal.camera);
+      this.holographicNavModal.render();
       this.debugOverlay.updateFrame();
       requestAnimationFrame((t) => this.gameLoop(t));
       return;

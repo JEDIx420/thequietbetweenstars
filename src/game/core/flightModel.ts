@@ -269,17 +269,20 @@ export class FlightModel {
   ): void {
     FlightModel.scratchUp.set(0, 1, 0).applyQuaternion(this.quaternion);
 
+    const isMobile = typeof window !== 'undefined' &&
+      ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0) || window.innerWidth < 850);
+
     const speedRatio = Math.min(1, speed / this.maxCruiseSpeed);
-    const distanceBehind = 6.5 + speedRatio * 1.8;
-    const heightAbove = 1.15 + speedRatio * 0.4;
+    const distanceBehind = isMobile ? 8.4 + speedRatio * 2.2 : 6.8 + speedRatio * 1.8;
+    const heightAbove = isMobile ? 1.75 + speedRatio * 0.4 : 1.25 + speedRatio * 0.4;
 
     FlightModel.scratchDesiredCamPos
       .copy(this.position)
       .addScaledVector(forward, -distanceBehind)
       .addScaledVector(FlightModel.scratchUp, heightAbove);
 
-    const lookAheadDist = 16.0 + speedRatio * 8.0;
-    const lookHeight = 0.35 + speedRatio * 0.25;
+    const lookAheadDist = isMobile ? 5.5 + speedRatio * 3.5 : 12.0 + speedRatio * 6.0;
+    const lookHeight = isMobile ? 0.15 + speedRatio * 0.2 : 0.45 + speedRatio * 0.25;
     FlightModel.scratchDesiredLookTarget
       .copy(this.position)
       .addScaledVector(forward, lookAheadDist)

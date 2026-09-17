@@ -3,7 +3,6 @@ import type { StarSystemDescriptor } from '../game/systems/PlanetDescriptor';
 import type { WorldPosition } from '../game/universe/WorldPosition';
 import type { SectorManager } from '../game/universe/SectorManager';
 import type { StarSystemSummary } from '../game/systems/StarSystemSummary';
-import type { GameRenderer } from '../game/rendering/renderer';
 import { audio } from '../audio/AudioEngine';
 
 export type HolographicScale = 'GALACTIC' | 'STELLAR' | 'SYSTEM';
@@ -27,7 +26,6 @@ export class HolographicNavModal {
   public scene: THREE.Scene;
   public camera: THREE.PerspectiveCamera;
   private renderer: THREE.WebGLRenderer | null = null;
-  private gameRenderer?: GameRenderer;
 
   private sectorManager: SectorManager;
   private playerWorldPos: WorldPosition;
@@ -111,12 +109,11 @@ export class HolographicNavModal {
     sectorManager: SectorManager,
     playerWorldPos: WorldPosition,
     onSelectDestination: (system: StarSystemDescriptor) => void,
-    gameRenderer?: GameRenderer
+    _deprecatedRenderer?: unknown
   ) {
     this.sectorManager = sectorManager;
     this.playerWorldPos = playerWorldPos;
     this.onSelectDestination = onSelectDestination;
-    this.gameRenderer = gameRenderer;
 
     this.container = document.createElement('div');
     this.container.id = 'holographic-nav-modal';
@@ -124,8 +121,7 @@ export class HolographicNavModal {
       position: fixed;
       inset: 0;
       z-index: 2000;
-      background: ${this.gameRenderer ? 'rgba(3, 5, 10, 0.45)' : 'radial-gradient(circle at 50% 50%, rgba(5, 9, 18, 0.96) 0%, rgba(2, 3, 6, 0.99) 100%)'};
-      backdrop-filter: blur(12px);
+      background: radial-gradient(circle at 50% 50%, rgba(5, 9, 18, 0.98) 0%, rgba(2, 3, 6, 0.99) 100%);
       display: none;
       flex-direction: column;
       color: #f8fafc;
@@ -361,12 +357,16 @@ export class HolographicNavModal {
     this.camera = new THREE.PerspectiveCamera(45, 1, 1, 2000);
     this.updateCameraOrbit();
 
-    if (!this.gameRenderer) {
-      this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      const isMobile = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0) || window.innerWidth < 800);
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2));
-      this.canvasContainer.appendChild(this.renderer.domElement);
-    }
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      powerPreference: 'high-performance',
+    });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.domElement.style.display = 'block';
+    this.renderer.domElement.style.width = '100%';
+    this.renderer.domElement.style.height = '100%';
+    this.canvasContainer.appendChild(this.renderer.domElement);
 
     // Add Scene Layers
     this.scene.add(this.gridGroup);
@@ -496,20 +496,12 @@ export class HolographicNavModal {
     this.resize();
     this.rebuildStarsAndDestinations();
     this.renderDetailsPanel();
-
-    if (!this.gameRenderer && !this.animId) {
-      this.animate();
-    }
   }
 
   public close(): void {
     this.abortCountdown();
     this.isVisible = false;
     this.container.style.display = 'none';
-    if (this.animId) {
-      cancelAnimationFrame(this.animId);
-      this.animId = null;
-    }
   }
 
   public getIsOpen(): boolean {
@@ -988,7 +980,7 @@ export class HolographicNavModal {
     this.camera.lookAt(this.currentCamLook);
   }
 
-  private resize(): void {
+  public resize(): void {
     const w = this.canvasContainer.clientWidth;
     const h = this.canvasContainer.clientHeight;
     if (w > 0 && h > 0) {
@@ -998,6 +990,11 @@ export class HolographicNavModal {
         this.renderer.setSize(w, h);
       }
     }
+  }
+
+  public render(): void {
+    if (!this.isVisible || this.isDisposed || !this.renderer) return;
+    this.renderer.render(this.scene, this.camera);
   }
 
   public update(dt: number = 0.016): void {
@@ -1014,17 +1011,6 @@ export class HolographicNavModal {
     if (this.highlightHaloMesh) {
       const pulse = 1.0 + Math.sin(performance.now() * 0.005) * 0.12;
       this.highlightHaloMesh.scale.set(pulse, pulse, pulse);
-    }
-  }
-
-  private animate(): void {
-    if (!this.isVisible || this.isDisposed) return;
-    if (this.gameRenderer) return;
-    this.animId = requestAnimationFrame(() => this.animate());
-
-    this.update(0.016);
-    if (this.renderer) {
-      this.renderer.render(this.scene, this.camera);
     }
   }
 
