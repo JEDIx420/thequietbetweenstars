@@ -99,6 +99,7 @@ export class DesktopApp {
   private lastAutosaveTime = 0;
 
   private touchControls: TouchControls | null = null;
+  private touchLayer!: HTMLElement;
 
   private uiState: UIState = 'title';
   private lastTime = performance.now();
@@ -127,12 +128,19 @@ export class DesktopApp {
     this.uiContainer.id = 'ui-container';
     this.uiContainer.style.cssText = 'position: fixed; inset: 0; z-index: 10; pointer-events: none;';
 
+    this.touchLayer = document.createElement('div');
+    this.touchLayer.id = 'touch-controls-layer';
+    this.touchLayer.style.cssText = 'position: fixed; inset: 0; z-index: 40; pointer-events: none;';
+
     this.container.appendChild(this.canvasContainer);
     this.container.appendChild(this.uiContainer);
+    this.container.appendChild(this.touchLayer);
 
     this.initGameEngine();
     this.setupDebugKeyListeners();
     this.setupAudioUnlockListeners();
+    this.setupOrientationHandler();
+    this.initTouchControls();
 
     // 3-Second Live Title Reveal Sequence on page load
     const titleSequence = new TitleRevealSequence(this.container);
@@ -385,7 +393,7 @@ export class DesktopApp {
         }
       }
 
-      if (this.inputManager.consumeAction('confirm') || this.inputManager.consumeAction('autopilot')) {
+      if (this.inputManager.consumeAction('confirm') || this.inputManager.consumeAction('cancel') || this.inputManager.consumeAction('autopilot')) {
         this.returnToOrbitFromSurface();
       }
 
@@ -461,7 +469,7 @@ export class DesktopApp {
         this.updateApproachHUD(targetPlanet);
 
         // Contextual SPACE action: Inspect Planet when in orbital reach
-        if (targetPlanet.canInspect && this.inputManager.consumeAction('scan')) {
+        if (targetPlanet.canInspect && (this.inputManager.consumeAction('scan') || this.inputManager.consumeAction('confirm'))) {
           this.engageOrbit(targetPlanet);
         } else if (
           targetPlanet.distance <= targetPlanet.planet.radius * 1.25 &&
@@ -669,6 +677,7 @@ export class DesktopApp {
     this.activeOrbitSites = LandingSiteGenerator.generateSites(target.planet);
     this.selectedSiteIndex = 0;
 
+    this.updateControlContext(FlightPhase.ORBIT);
     this.showHudNotice(`ORBITAL INSERTION // SYNCHRONIZING WITH ${target.planet.name.toUpperCase()}`);
     this.renderOrbitInspectionHUD();
   }
@@ -693,6 +702,7 @@ export class DesktopApp {
       this.stateMachine.transitionTo(FlightPhase.SURFACE_FLIGHT);
       audio.setPlanetGenome(this.orbitController.planet!.seed, this.orbitController.planet);
       this.renderSurfaceHUD();
+      this.updateControlContext(FlightPhase.SURFACE_FLIGHT);
       this.showHudNotice(`ATMOSPHERIC PENETRATION COMPLETE // COMMENCING HOVER RECONNAISSANCE`);
     }, 2200);
   }
@@ -712,6 +722,7 @@ export class DesktopApp {
       this.stateMachine.transitionTo(FlightPhase.ORBIT);
       audio.setSystemGenome(this.spaceScene.currentSystem?.seed || 42000);
       this.renderOrbitInspectionHUD();
+      this.updateControlContext(FlightPhase.ORBIT);
       this.showHudNotice('ORBITAL ALTITUDE RESTORED');
     }, 1800);
   }
@@ -721,6 +732,7 @@ export class DesktopApp {
     this.stateMachine.transitionTo(FlightPhase.SYSTEM_CRUISE);
     audio.setSystemGenome(this.spaceScene.currentSystem?.seed || 42000);
     this.renderFlightHUD(this.currentControlMode);
+    this.updateControlContext(FlightPhase.SYSTEM_CRUISE);
     this.showHudNotice('ORBIT DISENGAGED // CRUISE FLIGHT RESTORED');
   }
 
@@ -743,11 +755,13 @@ export class DesktopApp {
         <span style="color: #94a3b8;">DECELERATING</span>
       `;
     }
+    this.touchControls?.setOrbitAvailable(target.canInspect, target.planet.name);
   }
 
   private clearApproachHUD(): void {
     const el = this.uiContainer.querySelector('#proximity-indicator') as HTMLElement;
     if (el) el.style.display = 'none';
+    this.touchControls?.setOrbitAvailable(false);
   }
 
   private updateContextPrompt(text: string): void {
@@ -755,11 +769,45 @@ export class DesktopApp {
     if (el) el.textContent = text;
   }
 
+  private initTouchControls(): void {
+    if (this.touchControls) return;
+    this.touchControls = new TouchControls(this.touchLayer, this.inputManager.getTouchSource());
+    this.touchControls.setOnEmote((type) => this.triggerShipEmote(type));
+    this.touchControls.hide();
+  }
+
+  private setupOrientationHandler(): void {
+    const checkOrientation = () => {
+      const blocker = document.getElementById('portrait-orientation-blocker');
+      if (!blocker) return;
+      const isPortrait = window.innerHeight > window.innerWidth;
+      if (isTouchDevice() && isPortrait) {
+        blocker.style.display = 'flex';
+      } else if (!isPortrait) {
+        blocker.style.display = 'none';
+      }
+    };
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', checkOrientation);
+    checkOrientation();
+  }
+
   private updateControlContext(phase: FlightPhase): void {
+    const isTouch = this.currentControlMode === 'touch' || isTouchDevice();
+    if (!this.touchControls || !isTouch) return;
+
     if (phase === FlightPhase.SURFACE_FLIGHT) {
-      this.touchControls?.setContext('surface');
+      this.touchControls.show();
+      this.touchControls.setContext('surface');
+    } else if (phase === FlightPhase.ORBIT) {
+      // In orbital reconnaissance survey, hide sticks so landing site picker is unobstructed
+      this.touchControls.hide();
+    } else if (phase === FlightPhase.ENTRY || phase === FlightPhase.ASCENT) {
+      this.touchControls.show();
     } else {
-      this.touchControls?.setContext('space');
+      // Space cruise / approach / deep space
+      this.touchControls.show();
+      this.touchControls.setContext('space');
     }
   }
 
@@ -785,6 +833,7 @@ export class DesktopApp {
 
   private async renderTitleScreen(): Promise<void> {
     this.uiState = 'title';
+    this.touchControls?.hide();
     this.hasSavedJourney = await saveManager.hasSavedJourney();
 
     this.uiContainer.innerHTML = `
@@ -1318,12 +1367,10 @@ export class DesktopApp {
     // Initialize & display on-screen touch controls if on mobile, tablet, or touch screen
     if (isTouch) {
       if (!this.touchControls) {
-        this.touchControls = new TouchControls(this.uiContainer, this.inputManager.getTouchSource());
-        this.touchControls.setOnEmote((type) => this.triggerShipEmote(type));
+        this.initTouchControls();
       }
-      this.touchControls.show();
       const phase = this.stateMachine.getPhase();
-      this.touchControls.setContext(phase === FlightPhase.SURFACE_FLIGHT ? 'surface' : 'space');
+      this.updateControlContext(phase);
     }
   }
 
@@ -1704,6 +1751,7 @@ export class DesktopApp {
   }
 
   private renderOrbitInspectionHUD(): void {
+    this.touchControls?.hide();
     const planet = this.orbitController.planet;
     if (!planet) return;
 
@@ -1832,8 +1880,27 @@ export class DesktopApp {
   }
 
   private renderSurfaceHUD(): void {
+    this.updateControlContext(FlightPhase.SURFACE_FLIGHT);
+
     this.uiContainer.innerHTML = `
-      <div style="
+      <style>
+        @media (max-height: 520px), (max-width: 850px) {
+          #surface-hud-container {
+            padding: 10px 14px !important;
+          }
+          #surface-hud-title {
+            font-size: 9px !important;
+          }
+          #btn-return-orbit {
+            padding: 5px 12px !important;
+            font-size: 10px !important;
+          }
+          #hud-controls-hint {
+            font-size: 9px !important;
+          }
+        }
+      </style>
+      <div id="surface-hud-container" style="
         position: absolute;
         inset: 0;
         display: flex;
@@ -1845,7 +1912,7 @@ export class DesktopApp {
         font-family: ui-sans-serif, system-ui, sans-serif;
       ">
         <div style="display: flex; justify-content: space-between; align-items: center; pointer-events: auto;">
-          <div style="font-size: 11px; letter-spacing: 0.25em; color: #38bdf8; font-weight: 600;">
+          <div id="surface-hud-title" style="font-size: 11px; letter-spacing: 0.25em; color: #38bdf8; font-weight: 600;">
             ${this.orbitController.planet?.name.toUpperCase()} SURFACE // LOW-ALTITUDE HOVER
           </div>
 

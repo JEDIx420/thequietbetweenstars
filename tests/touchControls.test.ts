@@ -193,5 +193,43 @@ describe('Touch Controls & Mobile Flight Deck', () => {
 
     controls.dispose();
   });
+
+  it('provides target lock button for left thumb navigation', () => {
+    const controls = new TouchControls(container, touchInput);
+    const targetBtn = container.querySelector('#touch-btn-target') as any;
+    expect(targetBtn).toBeDefined();
+
+    targetBtn.click();
+    expect(touchInput.consumeAction('cycle_target')).toBe(true);
+
+    controls.dispose();
+  });
+
+  it('updates orbit button when in orbital approach vicinity', () => {
+    const controls = new TouchControls(container, touchInput);
+    const orbitBtn = container.querySelector('#touch-btn-orbit') as HTMLElement;
+
+    controls.setContext('space');
+    expect(orbitBtn.textContent).toBe('LAND');
+
+    controls.setOrbitAvailable(true, 'Aethelgard');
+    expect(orbitBtn.textContent).toBe('ORBIT');
+
+    controls.setOrbitAvailable(false);
+    expect(orbitBtn.textContent).toBe('LAND');
+
+    controls.dispose();
+  });
+
+  it('clears screen center and organizes controls into left and right thumb zones', () => {
+    const controls = new TouchControls(container, touchInput);
+    const leftZone = container.querySelector('#touch-left-zone');
+    const rightZone = container.querySelector('#touch-right-zone');
+
+    expect(leftZone).toBeDefined();
+    expect(rightZone).toBeDefined();
+
+    controls.dispose();
+  });
 });
 

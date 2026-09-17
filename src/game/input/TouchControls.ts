@@ -35,6 +35,7 @@ export class TouchControls {
   // Action buttons
   private scanBtnEl!: HTMLElement;
   private mapBtnEl!: HTMLElement;
+  private targetBtnEl!: HTMLElement;
   private orbitBtnEl!: HTMLElement;
   private altUpBtnEl!: HTMLElement;
   private altDownBtnEl!: HTMLElement;
@@ -77,424 +78,477 @@ export class TouchControls {
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      padding: env(safe-area-inset-top, 16px) env(safe-area-inset-right, 16px) env(safe-area-inset-bottom, 16px) env(safe-area-inset-left, 16px);
+      padding: env(safe-area-inset-top, 10px) env(safe-area-inset-right, 12px) env(safe-area-inset-bottom, 10px) env(safe-area-inset-left, 12px);
       box-sizing: border-box;
       transition: opacity 0.2s ease;
     `;
 
     this.container.innerHTML = `
       <style>
+        #touch-controls-overlay button:active {
+          transform: scale(0.94);
+        }
         @media (max-height: 520px), (max-width: 850px) {
           #touch-joystick-zone {
-            width: 105px !important;
-            height: 105px !important;
+            width: 110px !important;
+            height: 110px !important;
           }
           #touch-joystick-base {
-            width: 92px !important;
-            height: 92px !important;
-            left: 6px !important;
-            top: 6px !important;
+            width: 96px !important;
+            height: 96px !important;
+            left: 7px !important;
+            top: 7px !important;
           }
           #touch-joystick-knob {
-            width: 34px !important;
-            height: 34px !important;
-          }
-          #touch-throttle-zone {
-            margin-right: 2px !important;
+            width: 36px !important;
+            height: 36px !important;
           }
           #touch-throttle-track {
             width: 36px !important;
             height: 110px !important;
           }
+          #touch-throttle-knob {
+            width: 28px !important;
+            height: 24px !important;
+          }
           #touch-throttle-label {
-            font-size: 8.5px !important;
+            font-size: 8px !important;
             margin-bottom: 2px !important;
           }
           #touch-btn-brake {
             width: 36px !important;
             padding: 4px 0 !important;
-            font-size: 8.5px !important;
+            font-size: 8px !important;
             margin-top: 3px !important;
           }
           #touch-actions-cluster {
             gap: 4px !important;
-            margin-bottom: 2px !important;
+            margin-bottom: 0px !important;
           }
           #touch-btn-scan {
-            width: 115px !important;
-            padding: 7px 0 !important;
-            font-size: 11px !important;
+            width: 116px !important;
+            padding: 6px 0 !important;
+            font-size: 10.5px !important;
           }
-          #touch-actions-cluster button {
+          .touch-compact-btn {
+            padding: 5px 0 !important;
             font-size: 9.5px !important;
+            width: 56px !important;
+          }
+          .touch-util-btn {
+            padding: 4px 0 !important;
+            font-size: 8.5px !important;
+            width: 56px !important;
+          }
+          #touch-left-pills button {
+            padding: 4px 8px !important;
+            font-size: 9px !important;
           }
         }
       </style>
 
-      <!-- Top Toggle & Status Bar -->
+      <!-- Top Status & Toggle Bar -->
       <div style="display: flex; justify-content: flex-end; align-items: center; width: 100%; pointer-events: auto;">
         <button id="touch-toggle-btn" style="
           background: rgba(15, 23, 42, 0.75);
           border: 1px solid rgba(56, 189, 248, 0.35);
           color: #38bdf8;
-          padding: 5px 12px;
+          padding: 4px 10px;
           border-radius: 9999px;
           font-family: ui-monospace, SFMono-Regular, monospace;
-          font-size: 10px;
+          font-size: 9.5px;
           font-weight: 600;
           letter-spacing: 0.05em;
           cursor: pointer;
           touch-action: manipulation;
           backdrop-filter: blur(6px);
-          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
         ">TOUCH: ON</button>
       </div>
 
-      <!-- Controls Zone: Left Joystick, Center Actions, Right Throttle -->
+      <!-- Controls Zone: Left Thumb (Stick + Nav) | Completely Clear Center | Right Thumb (Actions + Throttle) -->
       <div id="touch-controls-main" style="
         display: flex;
         justify-content: space-between;
         align-items: flex-end;
         width: 100%;
         pointer-events: none;
-        padding-bottom: 4px;
+        padding-bottom: 2px;
       ">
-        <!-- Left Zone: Virtual Analog Flight Stick -->
-        <div id="touch-joystick-zone" style="
-          width: 150px;
-          height: 150px;
-          position: relative;
-          pointer-events: auto;
-          touch-action: none;
-        ">
-          <div id="touch-joystick-base" style="
-            position: absolute;
-            width: 130px;
-            height: 130px;
-            left: 10px;
-            top: 10px;
-            border-radius: 50%;
-            background: radial-gradient(circle, rgba(30, 41, 59, 0.5) 0%, rgba(15, 23, 42, 0.8) 100%);
-            border: 2px solid rgba(56, 189, 248, 0.3);
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.6), inset 0 0 15px rgba(56, 189, 248, 0.1);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          ">
-            <!-- Reticle Crosshairs -->
-            <div style="position: absolute; width: 100%; height: 1px; background: rgba(255, 255, 255, 0.1);"></div>
-            <div style="position: absolute; height: 100%; width: 1px; background: rgba(255, 255, 255, 0.1);"></div>
-            <div style="position: absolute; width: 60px; height: 60px; border-radius: 50%; border: 1px dashed rgba(56, 189, 248, 0.2);"></div>
-
-            <!-- Joystick Knob -->
-            <div id="touch-joystick-knob" style="
-              width: 50px;
-              height: 50px;
-              border-radius: 50%;
-              background: radial-gradient(circle, #38bdf8 0%, #0284c7 100%);
-              border: 2px solid rgba(255, 255, 255, 0.8);
-              box-shadow: 0 4px 14px rgba(56, 189, 248, 0.4);
-              transform: translate(0px, 0px);
-              transition: transform 0.05s ease-out;
-              pointer-events: none;
-            "></div>
-          </div>
-        </div>
-
-        <!-- Center Actions Cluster -->
-        <div id="touch-actions-cluster" style="
+        <!-- LEFT THUMB ZONE: Stick & Quick Nav -->
+        <div id="touch-left-zone" style="
           display: flex;
           flex-direction: column;
-          align-items: center;
+          align-items: flex-start;
           gap: 6px;
-          pointer-events: auto;
-          margin-bottom: 4px;
-          position: relative;
+          pointer-events: none;
         ">
-          <!-- In-Flight Radio Emote Popout Drawer -->
-          <div id="touch-emote-drawer" style="
-            display: none;
-            position: absolute;
-            bottom: calc(100% + 8px);
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(10, 16, 28, 0.95);
-            border: 1px solid rgba(56, 189, 248, 0.45);
-            border-radius: 14px;
-            padding: 6px 10px;
-            gap: 8px;
-            align-items: center;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8), 0 0 16px rgba(56, 189, 248, 0.25);
-            backdrop-filter: blur(12px);
-            z-index: 300;
-            white-space: nowrap;
-          ">
-            <span style="font-size: 9px; font-family: ui-monospace, monospace; color: #94a3b8; margin-right: 2px;">RADIO:</span>
-            <button id="touch-btn-emote-wave" style="
-              width: 38px;
-              height: 34px;
-              background: rgba(15, 23, 42, 0.85);
-              border: 1px solid rgba(250, 204, 21, 0.5);
-              border-radius: 8px;
-              font-size: 16px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              cursor: pointer;
-              touch-action: manipulation;
-              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-            " title="Wave">👋</button>
-
-            <button id="touch-btn-emote-heart" style="
-              width: 38px;
-              height: 34px;
-              background: rgba(15, 23, 42, 0.85);
-              border: 1px solid rgba(244, 63, 94, 0.5);
-              border-radius: 8px;
-              font-size: 16px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              cursor: pointer;
-              touch-action: manipulation;
-              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-            " title="Heart">💖</button>
-
-            <button id="touch-btn-emote-peace" style="
-              width: 38px;
-              height: 34px;
-              background: rgba(15, 23, 42, 0.85);
-              border: 1px solid rgba(56, 189, 248, 0.5);
-              border-radius: 8px;
-              font-size: 16px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              cursor: pointer;
-              touch-action: manipulation;
-              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-            " title="Peace">✌️</button>
-
-            <button id="touch-btn-emote-close" style="
-              background: transparent;
-              border: none;
-              color: #94a3b8;
-              font-size: 13px;
-              padding: 2px 6px;
-              cursor: pointer;
-            ">✕</button>
-          </div>
-
-          <!-- Primary Scan / Tractor Beam Button -->
-          <button id="touch-btn-scan" style="
-            width: 136px;
-            padding: 9px 0;
-            background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(14, 165, 233, 0.15));
-            border: 1.5px solid rgba(56, 189, 248, 0.6);
-            border-radius: 12px;
-            color: #f8fafc;
-            font-family: ui-sans-serif, system-ui, sans-serif;
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            cursor: pointer;
-            touch-action: manipulation;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-            backdrop-filter: blur(8px);
-            transition: transform 0.08s, background 0.08s;
-          ">
-            SCAN / TRACTOR
-          </button>
-
-          <!-- Navigation & Flight Operations -->
-          <div style="display: flex; gap: 6px;">
+          <!-- Left Thumb Quick Navigation Pills -->
+          <div id="touch-left-pills" style="display: flex; gap: 6px; pointer-events: auto;">
             <button id="touch-btn-map" style="
-              width: 65px;
-              padding: 7px 0;
-              background: rgba(30, 41, 59, 0.7);
-              border: 1px solid rgba(148, 163, 184, 0.3);
+              padding: 5px 10px;
+              background: rgba(15, 23, 42, 0.82);
+              border: 1px solid rgba(148, 163, 184, 0.35);
               border-radius: 8px;
               color: #cbd5e1;
-              font-size: 11px;
+              font-family: ui-monospace, monospace;
+              font-size: 10px;
               font-weight: 600;
-              letter-spacing: 0.05em;
+              letter-spacing: 0.04em;
               cursor: pointer;
               touch-action: manipulation;
+              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+              backdrop-filter: blur(6px);
             ">MAP</button>
 
-            <button id="touch-btn-orbit" style="
-              width: 66px;
-              padding: 9px 0;
-              background: rgba(30, 41, 59, 0.7);
+            <button id="touch-btn-target" style="
+              padding: 5px 10px;
+              background: rgba(15, 23, 42, 0.82);
               border: 1px solid rgba(56, 189, 248, 0.35);
               border-radius: 8px;
               color: #38bdf8;
-              font-size: 11px;
-              font-weight: 600;
-              letter-spacing: 0.05em;
-              cursor: pointer;
-              touch-action: manipulation;
-            ">ORBIT</button>
-          </div>
-
-          <!-- Surface Altitude Controls (shown on surface) -->
-          <div id="touch-altitude-row" style="display: none; gap: 8px;">
-            <button id="touch-btn-alt-up" style="
-              width: 66px;
-              padding: 8px 0;
-              background: rgba(15, 23, 42, 0.8);
-              border: 1px solid rgba(56, 189, 248, 0.4);
-              border-radius: 8px;
-              color: #38bdf8;
-              font-size: 11px;
-              font-weight: 700;
-              cursor: pointer;
-              touch-action: manipulation;
-            ">ALT ▲</button>
-
-            <button id="touch-btn-alt-down" style="
-              width: 66px;
-              padding: 8px 0;
-              background: rgba(15, 23, 42, 0.8);
-              border: 1px solid rgba(56, 189, 248, 0.4);
-              border-radius: 8px;
-              color: #38bdf8;
-              font-size: 11px;
-              font-weight: 700;
-              cursor: pointer;
-              touch-action: manipulation;
-            ">ALT ▼</button>
-          </div>
-
-          <!-- Modules & Journal -->
-          <div style="display: flex; gap: 6px;">
-            <button id="touch-btn-upgrade" style="
-              width: 65px;
-              padding: 6px 0;
-              background: rgba(15, 23, 42, 0.8);
-              border: 1px solid rgba(148, 163, 184, 0.3);
-              border-radius: 8px;
-              color: #94a3b8;
+              font-family: ui-monospace, monospace;
               font-size: 10px;
               font-weight: 600;
-              letter-spacing: 0.05em;
+              letter-spacing: 0.04em;
               cursor: pointer;
               touch-action: manipulation;
-            ">STORE</button>
-
-            <button id="touch-btn-journal" style="
-              width: 65px;
-              padding: 6px 0;
-              background: rgba(15, 23, 42, 0.8);
-              border: 1px solid rgba(148, 163, 184, 0.3);
-              border-radius: 8px;
-              color: #94a3b8;
-              font-size: 10px;
-              font-weight: 600;
-              letter-spacing: 0.05em;
-              cursor: pointer;
-              touch-action: manipulation;
-            ">LOGS</button>
+              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+              backdrop-filter: blur(6px);
+            ">TARGET</button>
           </div>
 
-          <!-- Radio Emote Drawer Trigger Button -->
-          <button id="touch-btn-emote-toggle" style="
-            background: rgba(15, 23, 42, 0.85);
-            border: 1px solid rgba(56, 189, 248, 0.4);
-            color: #38bdf8;
-            padding: 4px 14px;
-            border-radius: 9999px;
-            font-family: ui-monospace, SFMono-Regular, monospace;
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 0.05em;
-            cursor: pointer;
-            touch-action: manipulation;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-          ">
-            <span>📡 COMMS ▾</span>
-          </button>
-        </div>
-
-        <!-- Right Zone: Vertical Throttle Lever & Brake -->
-        <div id="touch-throttle-zone" style="
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          pointer-events: auto;
-          touch-action: none;
-        ">
-          <!-- Throttle Readout -->
-          <div id="touch-throttle-label" style="
-            font-family: ui-monospace, SFMono-Regular, monospace;
-            font-size: 10px;
-            font-weight: 700;
-            color: #38bdf8;
-            letter-spacing: 0.05em;
-            margin-bottom: 6px;
-            text-align: center;
-          ">IDLE 0%</div>
-
-          <!-- Vertical Throttle Track -->
-          <div id="touch-throttle-track" style="
-            width: 44px;
-            height: 160px;
-            background: rgba(15, 23, 42, 0.85);
-            border: 2px solid rgba(56, 189, 248, 0.3);
-            border-radius: 22px;
+          <!-- Virtual Analog Flight Stick -->
+          <div id="touch-joystick-zone" style="
+            width: 130px;
+            height: 130px;
             position: relative;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), inset 0 0 10px rgba(0, 0, 0, 0.8);
-            overflow: hidden;
-            cursor: pointer;
+            pointer-events: auto;
             touch-action: none;
           ">
-            <!-- Fill Gradient -->
-            <div id="touch-throttle-fill" style="
+            <div id="touch-joystick-base" style="
               position: absolute;
-              bottom: 0;
-              left: 0;
-              right: 0;
-              height: 0%;
-              background: linear-gradient(to top, rgba(56, 189, 248, 0.2) 0%, rgba(56, 189, 248, 0.7) 100%);
-              border-radius: 0 0 20px 20px;
-              pointer-events: none;
-              transition: height 0.04s ease-out;
-            "></div>
+              width: 114px;
+              height: 114px;
+              left: 8px;
+              top: 8px;
+              border-radius: 50%;
+              background: radial-gradient(circle, rgba(30, 41, 59, 0.55) 0%, rgba(15, 23, 42, 0.85) 100%);
+              border: 2px solid rgba(56, 189, 248, 0.35);
+              box-shadow: 0 0 20px rgba(0, 0, 0, 0.65), inset 0 0 15px rgba(56, 189, 248, 0.12);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            ">
+              <!-- Reticle Crosshairs -->
+              <div style="position: absolute; width: 100%; height: 1px; background: rgba(255, 255, 255, 0.1);"></div>
+              <div style="position: absolute; height: 100%; width: 1px; background: rgba(255, 255, 255, 0.1);"></div>
+              <div style="position: absolute; width: 50px; height: 50px; border-radius: 50%; border: 1px dashed rgba(56, 189, 248, 0.22);"></div>
 
-            <!-- Throttle Dragger Knob -->
-            <div id="touch-throttle-knob" style="
+              <!-- Joystick Knob -->
+              <div id="touch-joystick-knob" style="
+                width: 44px;
+                height: 44px;
+                border-radius: 50%;
+                background: radial-gradient(circle, #38bdf8 0%, #0284c7 100%);
+                border: 2px solid rgba(255, 255, 255, 0.85);
+                box-shadow: 0 3px 12px rgba(56, 189, 248, 0.5);
+                transform: translate(0px, 0px);
+                transition: transform 0.04s ease-out;
+                pointer-events: none;
+              "></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CENTER VIEW: COMPLETELY EMPTY & UNOBSTRUCTED -->
+
+        <!-- RIGHT THUMB ZONE: Inward Actions Cluster + Outward Throttle Slider -->
+        <div id="touch-right-zone" style="
+          display: flex;
+          align-items: flex-end;
+          gap: 10px;
+          pointer-events: none;
+        ">
+          <!-- Action Buttons Cluster (Within Natural Right-Thumb Arc) -->
+          <div id="touch-actions-cluster" style="
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 5px;
+            pointer-events: auto;
+            margin-bottom: 2px;
+            position: relative;
+          ">
+            <!-- In-Flight Radio Emote Popout Drawer (Pops out above the cluster) -->
+            <div id="touch-emote-drawer" style="
+              display: none;
               position: absolute;
-              bottom: 0px;
-              left: 3px;
-              width: 34px;
-              height: 28px;
-              border-radius: 14px;
-              background: radial-gradient(circle, #38bdf8 0%, #0284c7 100%);
-              border: 1.5px solid #ffffff;
-              box-shadow: 0 2px 8px rgba(56, 189, 248, 0.5);
-              pointer-events: none;
-              transition: bottom 0.04s ease-out;
-            "></div>
+              bottom: calc(100% + 8px);
+              right: 0;
+              background: rgba(10, 16, 28, 0.95);
+              border: 1px solid rgba(56, 189, 248, 0.45);
+              border-radius: 12px;
+              padding: 5px 8px;
+              gap: 6px;
+              align-items: center;
+              box-shadow: 0 8px 30px rgba(0, 0, 0, 0.8), 0 0 16px rgba(56, 189, 248, 0.25);
+              backdrop-filter: blur(12px);
+              z-index: 300;
+              white-space: nowrap;
+            ">
+              <span style="font-size: 8.5px; font-family: ui-monospace, monospace; color: #94a3b8; margin-right: 2px;">COMMS:</span>
+              <button id="touch-btn-emote-wave" style="
+                width: 34px;
+                height: 30px;
+                background: rgba(15, 23, 42, 0.85);
+                border: 1px solid rgba(250, 204, 21, 0.5);
+                border-radius: 6px;
+                font-size: 14px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                touch-action: manipulation;
+              " title="Wave">👋</button>
+
+              <button id="touch-btn-emote-heart" style="
+                width: 34px;
+                height: 30px;
+                background: rgba(15, 23, 42, 0.85);
+                border: 1px solid rgba(244, 63, 94, 0.5);
+                border-radius: 6px;
+                font-size: 14px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                touch-action: manipulation;
+              " title="Heart">💖</button>
+
+              <button id="touch-btn-emote-peace" style="
+                width: 34px;
+                height: 30px;
+                background: rgba(15, 23, 42, 0.85);
+                border: 1px solid rgba(56, 189, 248, 0.5);
+                border-radius: 6px;
+                font-size: 14px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                touch-action: manipulation;
+              " title="Peace">✌️</button>
+
+              <button id="touch-btn-emote-close" style="
+                background: transparent;
+                border: none;
+                color: #94a3b8;
+                font-size: 12px;
+                padding: 2px 4px;
+                cursor: pointer;
+              ">✕</button>
+            </div>
+
+            <!-- Primary Action Button: SCAN / TRACTOR (space) or SCAN / SAMPLE (surface) -->
+            <button id="touch-btn-scan" style="
+              width: 126px;
+              padding: 8px 0;
+              background: linear-gradient(135deg, rgba(56, 189, 248, 0.28), rgba(14, 165, 233, 0.16));
+              border: 1.5px solid rgba(56, 189, 248, 0.65);
+              border-radius: 10px;
+              color: #f8fafc;
+              font-family: ui-sans-serif, system-ui, sans-serif;
+              font-size: 11.5px;
+              font-weight: 700;
+              letter-spacing: 0.06em;
+              cursor: pointer;
+              touch-action: manipulation;
+              box-shadow: 0 3px 12px rgba(0, 0, 0, 0.4);
+              backdrop-filter: blur(8px);
+              transition: transform 0.08s, background 0.08s, border-color 0.08s;
+            ">
+              SCAN / TRACTOR
+            </button>
+
+            <!-- Surface Altitude Controls Row (Visible exclusively in surface flight) -->
+            <div id="touch-altitude-row" style="display: none; gap: 5px;">
+              <button id="touch-btn-alt-up" class="touch-compact-btn" style="
+                width: 60px;
+                padding: 6px 0;
+                background: rgba(15, 23, 42, 0.85);
+                border: 1px solid rgba(56, 189, 248, 0.45);
+                border-radius: 8px;
+                color: #38bdf8;
+                font-size: 10px;
+                font-weight: 700;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">ALT ▲</button>
+
+              <button id="touch-btn-alt-down" class="touch-compact-btn" style="
+                width: 60px;
+                padding: 6px 0;
+                background: rgba(15, 23, 42, 0.85);
+                border: 1px solid rgba(56, 189, 248, 0.45);
+                border-radius: 8px;
+                color: #38bdf8;
+                font-size: 10px;
+                font-weight: 700;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">ALT ▼</button>
+            </div>
+
+            <!-- Orbit / Land + Comms Row -->
+            <div style="display: flex; gap: 5px;">
+              <button id="touch-btn-orbit" class="touch-compact-btn" style="
+                width: 60px;
+                padding: 7px 0;
+                background: rgba(30, 41, 59, 0.75);
+                border: 1px solid rgba(56, 189, 248, 0.4);
+                border-radius: 8px;
+                color: #38bdf8;
+                font-size: 10.5px;
+                font-weight: 600;
+                letter-spacing: 0.04em;
+                cursor: pointer;
+                touch-action: manipulation;
+                transition: all 0.15s ease;
+              ">LAND</button>
+
+              <button id="touch-btn-emote-toggle" class="touch-compact-btn" style="
+                width: 60px;
+                padding: 7px 0;
+                background: rgba(15, 23, 42, 0.85);
+                border: 1px solid rgba(56, 189, 248, 0.4);
+                border-radius: 8px;
+                color: #38bdf8;
+                font-family: ui-monospace, monospace;
+                font-size: 9.5px;
+                font-weight: 600;
+                letter-spacing: 0.04em;
+                cursor: pointer;
+                touch-action: manipulation;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 2px;
+              ">
+                <span>📡 COMMS</span>
+              </button>
+            </div>
+
+            <!-- Modules Store + Journey Logs Row -->
+            <div style="display: flex; gap: 5px;">
+              <button id="touch-btn-upgrade" class="touch-util-btn" style="
+                width: 60px;
+                padding: 5px 0;
+                background: rgba(15, 23, 42, 0.8);
+                border: 1px solid rgba(148, 163, 184, 0.3);
+                border-radius: 6px;
+                color: #94a3b8;
+                font-size: 9.5px;
+                font-weight: 600;
+                letter-spacing: 0.04em;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">STORE</button>
+
+              <button id="touch-btn-journal" class="touch-util-btn" style="
+                width: 60px;
+                padding: 5px 0;
+                background: rgba(15, 23, 42, 0.8);
+                border: 1px solid rgba(148, 163, 184, 0.3);
+                border-radius: 6px;
+                color: #94a3b8;
+                font-size: 9.5px;
+                font-weight: 600;
+                letter-spacing: 0.04em;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">LOGS</button>
+            </div>
           </div>
 
-          <!-- Emergency Retro-Thruster Brake Button -->
-          <button id="touch-btn-brake" style="
-            margin-top: 8px;
-            width: 48px;
-            padding: 5px 0;
-            background: rgba(239, 68, 68, 0.2);
-            border: 1px solid rgba(239, 68, 68, 0.5);
-            border-radius: 8px;
-            color: #fca5a5;
-            font-family: ui-monospace, monospace;
-            font-size: 9px;
-            font-weight: 700;
-            cursor: pointer;
-            touch-action: manipulation;
-          ">BRAKE</button>
+          <!-- Vertical Throttle Lever & Brake Zone (Far Right Edge) -->
+          <div id="touch-throttle-zone" style="
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            pointer-events: auto;
+            touch-action: none;
+          ">
+            <!-- Throttle Readout -->
+            <div id="touch-throttle-label" style="
+              font-family: ui-monospace, SFMono-Regular, monospace;
+              font-size: 9px;
+              font-weight: 700;
+              color: #38bdf8;
+              letter-spacing: 0.04em;
+              margin-bottom: 4px;
+              text-align: center;
+              white-space: nowrap;
+            ">IDLE 0%</div>
+
+            <!-- Vertical Throttle Track -->
+            <div id="touch-throttle-track" style="
+              width: 40px;
+              height: 136px;
+              background: rgba(15, 23, 42, 0.88);
+              border: 2px solid rgba(56, 189, 248, 0.35);
+              border-radius: 20px;
+              position: relative;
+              box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55), inset 0 0 10px rgba(0, 0, 0, 0.8);
+              overflow: hidden;
+              cursor: pointer;
+              touch-action: none;
+            ">
+              <!-- Fill Gradient -->
+              <div id="touch-throttle-fill" style="
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 0%;
+                background: linear-gradient(to top, rgba(56, 189, 248, 0.2) 0%, rgba(56, 189, 248, 0.75) 100%);
+                border-radius: 0 0 18px 18px;
+                pointer-events: none;
+                transition: height 0.04s ease-out;
+              "></div>
+
+              <!-- Throttle Dragger Knob -->
+              <div id="touch-throttle-knob" style="
+                position: absolute;
+                bottom: 0px;
+                left: 3px;
+                width: 30px;
+                height: 26px;
+                border-radius: 13px;
+                background: radial-gradient(circle, #38bdf8 0%, #0284c7 100%);
+                border: 1.5px solid #ffffff;
+                box-shadow: 0 2px 8px rgba(56, 189, 248, 0.55);
+                pointer-events: none;
+                transition: bottom 0.04s ease-out;
+              "></div>
+            </div>
+
+            <!-- Emergency Retro-Thruster Brake Button -->
+            <button id="touch-btn-brake" style="
+              margin-top: 6px;
+              width: 40px;
+              padding: 5px 0;
+              background: rgba(239, 68, 68, 0.22);
+              border: 1px solid rgba(239, 68, 68, 0.55);
+              border-radius: 8px;
+              color: #fca5a5;
+              font-family: ui-monospace, monospace;
+              font-size: 8.5px;
+              font-weight: 700;
+              cursor: pointer;
+              touch-action: manipulation;
+            ">BRAKE</button>
+          </div>
         </div>
       </div>
     `;
@@ -511,6 +565,7 @@ export class TouchControls {
 
     this.scanBtnEl = this.container.querySelector('#touch-btn-scan')!;
     this.mapBtnEl = this.container.querySelector('#touch-btn-map')!;
+    this.targetBtnEl = this.container.querySelector('#touch-btn-target')!;
     this.orbitBtnEl = this.container.querySelector('#touch-btn-orbit')!;
     this.altUpBtnEl = this.container.querySelector('#touch-btn-alt-up')!;
     this.altDownBtnEl = this.container.querySelector('#touch-btn-alt-down')!;
@@ -624,7 +679,7 @@ export class TouchControls {
 
   private updateThrottleFromPointer(clientY: number): void {
     const rect = this.throttleTrackEl.getBoundingClientRect();
-    const trackHeight = rect.height || 160;
+    const trackHeight = rect.height || 136;
     // 0 is bottom, 1 is top
     const relativeY = rect.bottom - clientY;
     const norm = clamp(relativeY / trackHeight, 0, 1);
@@ -638,8 +693,8 @@ export class TouchControls {
     // Update fill height & knob position
     this.throttleFillEl.style.height = `${percent}%`;
     const rect = this.throttleTrackEl.getBoundingClientRect();
-    const trackHeight = rect.height || 160;
-    const knobTravel = Math.max(50, trackHeight - 32);
+    const trackHeight = rect.height || 136;
+    const knobTravel = Math.max(50, trackHeight - 28);
     this.throttleKnobEl.style.bottom = `${(this.currentThrottle * knobTravel)}px`;
 
     // Update readout
@@ -683,13 +738,13 @@ export class TouchControls {
 
       if (this.isHoldingTractor) {
         this.isHoldingTractor = false;
-        this.scanBtnEl.textContent = 'SCAN / TRACTOR';
-        this.scanBtnEl.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(14, 165, 233, 0.15))';
-        this.scanBtnEl.style.borderColor = 'rgba(56, 189, 248, 0.6)';
+        this.scanBtnEl.textContent = this.currentContext === 'surface' ? 'SCAN / SAMPLE' : 'SCAN / TRACTOR';
+        this.scanBtnEl.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.28), rgba(14, 165, 233, 0.16))';
+        this.scanBtnEl.style.borderColor = 'rgba(56, 189, 248, 0.65)';
         this.touchInput.setActionState('tractor', false);
         this.touchInput.setActionState('interact', false);
       } else {
-        // Tap: Trigger pulse scan
+        // Tap: Trigger pulse scan or sample collect
         this.touchInput.triggerAction('scan');
         navigator.vibrate?.(20);
       }
@@ -698,9 +753,15 @@ export class TouchControls {
     this.scanBtnEl.addEventListener('pointerup', releaseScan);
     this.scanBtnEl.addEventListener('pointercancel', releaseScan);
 
-    // Map button
+    // Map button (Left Thumb)
     this.mapBtnEl.addEventListener('click', () => {
       this.touchInput.triggerAction('map');
+      navigator.vibrate?.(15);
+    });
+
+    // Target button (Left Thumb: cycle lock on nav radar)
+    this.targetBtnEl?.addEventListener('click', () => {
+      this.touchInput.triggerAction('cycle_target');
       navigator.vibrate?.(15);
     });
 
@@ -709,12 +770,12 @@ export class TouchControls {
       if (this.currentContext === 'surface') {
         this.touchInput.triggerAction('cancel'); // Return to orbit
       } else {
-        this.touchInput.triggerAction('confirm'); // Land / engage
+        this.touchInput.triggerAction('confirm'); // Land / engage orbit
       }
       navigator.vibrate?.(15);
     });
 
-    // Altitude controls
+    // Altitude controls (surface hover)
     this.altUpBtnEl.addEventListener('click', () => {
       this.touchInput.triggerAction('altitude_up');
       navigator.vibrate?.(10);
@@ -800,10 +861,45 @@ export class TouchControls {
     const altRow = this.container.querySelector('#touch-altitude-row') as HTMLElement;
     if (context === 'surface') {
       if (altRow) altRow.style.display = 'flex';
-      if (this.orbitBtnEl) this.orbitBtnEl.textContent = 'ORBIT';
+      if (this.orbitBtnEl) {
+        this.orbitBtnEl.textContent = 'ORBIT';
+        this.orbitBtnEl.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+        this.orbitBtnEl.style.color = '#38bdf8';
+        this.orbitBtnEl.style.background = 'rgba(30, 41, 59, 0.75)';
+        this.orbitBtnEl.style.boxShadow = 'none';
+      }
+      if (this.scanBtnEl) {
+        this.scanBtnEl.textContent = 'SCAN / SAMPLE';
+      }
     } else {
       if (altRow) altRow.style.display = 'none';
-      if (this.orbitBtnEl) this.orbitBtnEl.textContent = 'LAND';
+      if (this.orbitBtnEl) {
+        this.orbitBtnEl.textContent = 'LAND';
+      }
+      if (this.scanBtnEl) {
+        this.scanBtnEl.textContent = 'SCAN / TRACTOR';
+      }
+    }
+  }
+
+  public setOrbitAvailable(available: boolean, _planetName?: string): void {
+    if (this.currentContext === 'surface') return;
+    if (available) {
+      if (this.orbitBtnEl) {
+        this.orbitBtnEl.textContent = 'ORBIT';
+        this.orbitBtnEl.style.borderColor = '#38bdf8';
+        this.orbitBtnEl.style.color = '#ffffff';
+        this.orbitBtnEl.style.background = 'linear-gradient(135deg, rgba(14, 165, 233, 0.7), rgba(56, 189, 248, 0.5))';
+        this.orbitBtnEl.style.boxShadow = '0 0 14px rgba(56, 189, 248, 0.6)';
+      }
+    } else {
+      if (this.orbitBtnEl) {
+        this.orbitBtnEl.textContent = 'LAND';
+        this.orbitBtnEl.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+        this.orbitBtnEl.style.color = '#38bdf8';
+        this.orbitBtnEl.style.background = 'rgba(30, 41, 59, 0.75)';
+        this.orbitBtnEl.style.boxShadow = 'none';
+      }
     }
   }
 

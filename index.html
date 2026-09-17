@@ -29,9 +29,99 @@
         height: 100%;
         position: relative;
       }
+
+      /* Strict Portrait Orientation Blocker */
+      #portrait-orientation-blocker {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        background: radial-gradient(circle at 50% 40%, rgba(15, 23, 42, 0.98) 0%, rgba(3, 3, 7, 1) 100%);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        text-align: center;
+        padding: 32px 24px;
+        box-sizing: border-box;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      @media screen and (orientation: portrait), screen and (max-aspect-ratio: 13/14) {
+        #portrait-orientation-blocker {
+          display: flex !important;
+        }
+      }
+
+      @media screen and (orientation: landscape) and (min-aspect-ratio: 1/1) {
+        #portrait-orientation-blocker {
+          display: none !important;
+        }
+      }
+
+      @keyframes rotateDeviceIcon {
+        0%, 15% { transform: rotate(0deg); }
+        45%, 70% { transform: rotate(-90deg); }
+        85%, 100% { transform: rotate(0deg); }
+      }
+
+      .rotate-device-anim {
+        animation: rotateDeviceIcon 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        margin-bottom: 24px;
+      }
     </style>
   </head>
   <body>
+    <!-- Orientation Lock Blocker (Strictly Landscape Only) -->
+    <div id="portrait-orientation-blocker">
+      <div class="rotate-device-anim">
+        <svg viewBox="0 0 52 52" width="64" height="64" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <!-- Smartphone body -->
+          <rect x="15" y="6" width="22" height="40" rx="4" ry="4" stroke="rgba(56, 189, 248, 0.9)" />
+          <!-- Screen inner indicator -->
+          <rect x="18" y="11" width="16" height="28" rx="1.5" stroke="rgba(56, 189, 248, 0.3)" fill="rgba(56, 189, 248, 0.05)" />
+          <!-- Home button/speaker indicator -->
+          <line x1="24" y1="42" x2="28" y2="42" stroke="rgba(56, 189, 248, 0.7)" />
+          <!-- Rotation arc & arrow -->
+          <path d="M 8 20 A 20 20 0 0 1 24 6" stroke-dasharray="2 3" stroke="#94a3b8" />
+          <polygon points="24,3 29,6 24,9" fill="#38bdf8" stroke="none" />
+        </svg>
+      </div>
+      <div style="
+        font-family: ui-monospace, SFMono-Regular, monospace;
+        font-size: 11px;
+        letter-spacing: 0.25em;
+        color: #38bdf8;
+        font-weight: 700;
+        margin-bottom: 12px;
+      ">NAVIGATION SYSTEM LOCKED</div>
+      <h2 style="
+        font-size: clamp(20px, 4.8vw, 28px);
+        font-weight: 300;
+        letter-spacing: 0.12em;
+        color: #f8fafc;
+        margin-bottom: 12px;
+        text-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+      ">ROTATE TO LANDSCAPE</h2>
+      <p style="
+        font-size: 13px;
+        color: #94a3b8;
+        line-height: 1.6;
+        max-width: 320px;
+        margin-bottom: 16px;
+      ">
+        Flight telemetry and two-thumb piloting require horizontal display. Please rotate your device to engage flight controls.
+      </p>
+      <div style="
+        font-family: ui-monospace, monospace;
+        font-size: 9.5px;
+        color: #64748b;
+        letter-spacing: 0.08em;
+      ">THE QUIET BETWEEN STARS // MOBILE FLIGHT DECK</div>
+    </div>
+
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
