@@ -96,28 +96,28 @@ export class HolographicNavModal {
 
     this.container.innerHTML = `
       <!-- Header -->
-      <div style="
+      <div class="holo-header" style="
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 12px 28px;
+        padding: 10px 24px;
         border-bottom: 1px solid rgba(56, 189, 248, 0.25);
         background: rgba(10, 16, 28, 0.85);
       ">
-        <div style="display: flex; align-items: center; gap: 24px;">
+        <div style="display: flex; align-items: center; gap: 16px;">
           <div>
-            <div style="font-size: 10px; letter-spacing: 0.25em; color: #38bdf8; text-transform: uppercase;">INTERSTELLAR CARTOGRAPHY</div>
-            <h2 style="font-size: 18px; font-weight: 400; margin: 2px 0 0 0; letter-spacing: 0.05em;">Star Chart & Warp Navigation</h2>
+            <div class="holo-kicker" style="font-size: 10px; letter-spacing: 0.25em; color: #38bdf8; text-transform: uppercase;">INTERSTELLAR CARTOGRAPHY</div>
+            <h2 class="holo-title" style="font-size: 17px; font-weight: 400; margin: 2px 0 0 0; letter-spacing: 0.05em;">Star Chart & Warp Navigation</h2>
           </div>
 
           <div style="display: flex; background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 6px; padding: 2px;">
-            <button id="holo-btn-stellar" style="padding: 5px 14px; background: #0284c7; border: none; border-radius: 4px; color: white; font-size: 11px; cursor: pointer; font-weight: 500;">STELLAR CHART</button>
-            <button id="holo-btn-system" style="padding: 5px 14px; background: transparent; border: none; border-radius: 4px; color: #94a3b8; font-size: 11px; cursor: pointer;">ORBITAL SYSTEM</button>
+            <button id="holo-btn-stellar" style="padding: 4px 12px; background: #0284c7; border: none; border-radius: 4px; color: white; font-size: 10.5px; cursor: pointer; font-weight: 500;">STELLAR CHART</button>
+            <button id="holo-btn-system" style="padding: 4px 12px; background: transparent; border: none; border-radius: 4px; color: #94a3b8; font-size: 10.5px; cursor: pointer;">ORBITAL SYSTEM</button>
           </div>
         </div>
 
-        <div style="display: flex; align-items: center; gap: 14px;">
-          <div style="font-size: 11px; color: #64748b; font-family: ui-monospace, monospace;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div class="holo-help-text" style="font-size: 11px; color: #64748b; font-family: ui-monospace, monospace;">
             DRAG TO ROTATE // SCROLL TO ZOOM
           </div>
           <button id="holo-btn-close" style="
@@ -125,8 +125,8 @@ export class HolographicNavModal {
             border: 1px solid rgba(148, 163, 184, 0.3);
             border-radius: 6px;
             color: #e2e8f0;
-            padding: 6px 16px;
-            font-size: 12px;
+            padding: 5px 14px;
+            font-size: 11px;
             cursor: pointer;
             transition: all 0.15s ease;
           ">CLOSE [M]</button>
@@ -135,28 +135,64 @@ export class HolographicNavModal {
 
       <!-- Responsive Style for Mobile & Tablet -->
       <style>
-        @media (max-width: 768px) {
-          #holo-destinations-sidebar {
-            flex: 0 0 140px !important;
-            width: 140px !important;
+        @media (max-width: 850px), (max-height: 520px) {
+          .holo-header {
+            padding: 6px 12px !important;
           }
-          #holo-destinations-sidebar .dest-card-name {
-            font-size: 11px !important;
+          .holo-kicker {
+            display: none !important;
+          }
+          .holo-title {
+            font-size: 13px !important;
+          }
+          .holo-help-text {
+            display: none !important;
+          }
+          #holo-btn-stellar, #holo-btn-system {
+            padding: 3px 8px !important;
+            font-size: 9.5px !important;
+          }
+          #holo-destinations-sidebar {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            bottom: 0 !important;
+            width: min(280px, 78vw) !important;
+            flex: none !important;
+            z-index: 50 !important;
+            transform: translateX(-100%);
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            background: rgba(8, 13, 22, 0.98) !important;
+            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.85) !important;
+          }
+          #holo-destinations-sidebar.drawer-open {
+            transform: translateX(0) !important;
+          }
+          #holo-dest-toggle-btn {
+            display: flex !important;
           }
           #holo-details-panel {
             position: absolute !important;
             right: 0 !important;
             top: 0 !important;
             bottom: 0 !important;
-            width: min(300px, 82vw) !important;
+            width: min(300px, 80vw) !important;
+            flex: none !important;
+            z-index: 60 !important;
+            transform: translateX(100%);
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
             background: rgba(8, 13, 22, 0.98) !important;
-            box-shadow: -10px 0 30px rgba(0,0,0,0.8) !important;
+            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.85) !important;
+            padding: 14px !important;
+          }
+          #holo-details-panel.drawer-open {
+            transform: translateX(0) !important;
           }
         }
       </style>
 
       <!-- Main Body: Sidebar + 3D Viewport + Inspector -->
-      <div style="display: flex; flex: 1; min-height: 0; position: relative;">
+      <div style="display: flex; flex: 1; min-height: 0; position: relative; overflow: hidden;">
         <!-- Left Destinations Sidebar -->
         <div id="holo-destinations-sidebar" style="
           flex: 0 0 280px;
@@ -168,8 +204,9 @@ export class HolographicNavModal {
           box-sizing: border-box;
           z-index: 10;
         ">
-          <div style="padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 11px; letter-spacing: 0.15em; color: #38bdf8; font-weight: 600;">
-            REACHABLE DESTINATIONS
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);">
+            <span style="font-size: 11px; letter-spacing: 0.15em; color: #38bdf8; font-weight: 600;">REACHABLE DESTINATIONS</span>
+            <button id="holo-dest-close-btn" style="background: none; border: none; color: #94a3b8; font-size: 14px; cursor: pointer; padding: 2px 6px;">✕</button>
           </div>
           <div id="holo-destinations-list" style="flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
             <!-- Populated dynamically -->
@@ -178,6 +215,27 @@ export class HolographicNavModal {
 
         <!-- Center 3D Holographic Canvas -->
         <div id="holo-canvas-container" style="flex: 1; position: relative; overflow: hidden; min-width: 0; cursor: grab;">
+          <!-- Floating Destinations Toggle Pill for Mobile/Tablet -->
+          <button id="holo-dest-toggle-btn" style="
+            display: none;
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 25;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(56, 189, 248, 0.45);
+            color: #38bdf8;
+            padding: 5px 12px;
+            border-radius: 9999px;
+            font-family: ui-monospace, monospace;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+          ">📍 DESTINATIONS ▾</button>
+
           <!-- 3D Overlay Help Tag -->
           <div style="position: absolute; bottom: 16px; left: 16px; pointer-events: none; font-size: 11px; color: rgba(148, 163, 184, 0.7); font-family: ui-monospace, monospace;">
             CURRENT SECTOR: [${this.playerWorldPos.sector.x}, ${this.playerWorldPos.sector.y}, ${this.playerWorldPos.sector.z}]
@@ -561,9 +619,9 @@ export class HolographicNavModal {
     // Sort destinations by distance
     this.starNodes.sort((a, b) => a.distanceLy - b.distanceLy);
 
-    // Auto-select first destination if none selected
+    // Auto-select first destination if none selected (do not force drawer open)
     if (!this.selectedSystem && this.starNodes.length > 0) {
-      this.selectSystem(this.starNodes[0].system);
+      this.selectSystem(this.starNodes[0].system, false);
     } else if (this.selectedSystem) {
       this.updateSelectionHighlight();
     }
@@ -619,7 +677,9 @@ export class HolographicNavModal {
 
       card.addEventListener('click', () => {
         audio.playBlip();
-        this.selectSystem(sys);
+        this.selectSystem(sys, true);
+        const sidebar = this.container.querySelector('#holo-destinations-sidebar');
+        sidebar?.classList.remove('drawer-open');
       });
 
       this.destinationsListEl.appendChild(card);
@@ -629,11 +689,15 @@ export class HolographicNavModal {
   /**
    * Select a star system, light it up in 3D, and update the UI
    */
-  public selectSystem(sys: StarSystemDescriptor): void {
+  public selectSystem(sys: StarSystemDescriptor, openDrawer = true): void {
     this.selectedSystem = sys;
     this.updateSelectionHighlight();
     this.renderDestinationsSidebar();
     this.renderDetailsPanel();
+
+    if (openDrawer) {
+      this.detailsPanel.classList.add('drawer-open');
+    }
 
     if (this.currentScale === 'SYSTEM') {
       this.rebuildSystemView();
@@ -726,6 +790,17 @@ export class HolographicNavModal {
     this.container.querySelector('#holo-btn-close')?.addEventListener('click', () => {
       audio.playBlip();
       this.close();
+    });
+
+    // Destinations drawer toggle & close (Mobile/Compact screens)
+    const destSidebar = this.container.querySelector('#holo-destinations-sidebar') as HTMLElement;
+    this.container.querySelector('#holo-dest-toggle-btn')?.addEventListener('click', () => {
+      audio.playBlip();
+      destSidebar?.classList.toggle('drawer-open');
+    });
+
+    this.container.querySelector('#holo-dest-close-btn')?.addEventListener('click', () => {
+      destSidebar?.classList.remove('drawer-open');
     });
 
     // Scale buttons
@@ -904,10 +979,23 @@ export class HolographicNavModal {
     const isLocked = this.activeCourseSystem?.id === sys.id;
 
     this.detailsPanel.innerHTML = `
-      <div style="font-size: 10px; letter-spacing: 0.25em; color: #38bdf8; text-transform: uppercase;">DESTINATION TELEMETRY</div>
-      <h2 style="font-size: 22px; font-weight: 400; margin: 4px 0 16px 0; color: #f8fafc;">${sys.name}</h2>
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+        <div>
+          <div style="font-size: 10px; letter-spacing: 0.25em; color: #38bdf8; text-transform: uppercase;">DESTINATION TELEMETRY</div>
+          <h2 style="font-size: clamp(16px, 3.5vw, 22px); font-weight: 400; margin: 4px 0 0 0; color: #f8fafc;">${sys.name}</h2>
+        </div>
+        <button id="holo-btn-details-close" style="
+          background: rgba(15, 23, 42, 0.8);
+          border: 1px solid rgba(148, 163, 184, 0.3);
+          border-radius: 6px;
+          color: #cbd5e1;
+          padding: 3px 8px;
+          font-size: 12px;
+          cursor: pointer;
+        ">✕</button>
+      </div>
 
-      <div style="display: flex; flex-direction: column; gap: 10px; font-size: 12px; font-family: ui-monospace, monospace; color: #cbd5e1; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 14px; margin-bottom: 24px;">
+      <div style="display: flex; flex-direction: column; gap: 8px; font-size: 11.5px; font-family: ui-monospace, monospace; color: #cbd5e1; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; margin-bottom: 16px;">
         <div style="display: flex; justify-content: space-between;">
           <span style="color: #94a3b8;">DISTANCE:</span>
           <span style="color: #38bdf8; font-weight: 700;">${distLy} LIGHT YEARS</span>
@@ -931,11 +1019,11 @@ export class HolographicNavModal {
       </div>
 
       <!-- Worlds Preview -->
-      <div style="margin-bottom: 24px;">
-        <div style="font-size: 11px; letter-spacing: 0.15em; color: #94a3b8; margin-bottom: 8px;">SURVEYED WORLDS</div>
-        <div style="display: flex; flex-direction: column; gap: 6px; max-height: 140px; overflow-y: auto;">
+      <div style="margin-bottom: 16px;">
+        <div style="font-size: 10px; letter-spacing: 0.15em; color: #94a3b8; margin-bottom: 6px;">SURVEYED WORLDS</div>
+        <div style="display: flex; flex-direction: column; gap: 5px; max-height: 110px; overflow-y: auto;">
           ${sys.planets.map((p, idx) => `
-            <div style="display: flex; justify-content: space-between; font-size: 11px; padding: 6px 10px; background: rgba(15, 23, 42, 0.5); border-radius: 4px;">
+            <div style="display: flex; justify-content: space-between; font-size: 10.5px; padding: 5px 8px; background: rgba(15, 23, 42, 0.5); border-radius: 4px;">
               <span style="color: #e2e8f0;">${idx + 1}. ${p.name}</span>
               <span style="color: #64748b;">${p.type || 'Terrestrial'}</span>
             </div>
@@ -944,26 +1032,26 @@ export class HolographicNavModal {
       </div>
 
       <!-- Action Buttons -->
-      <div style="display: flex; flex-direction: column; gap: 10px; margin-top: auto;">
+      <div style="display: flex; flex-direction: column; gap: 8px; margin-top: auto;">
         <button id="holo-btn-lock-course" style="
-          padding: 12px;
+          padding: 10px;
           background: ${isLocked ? 'rgba(34, 197, 94, 0.25)' : 'rgba(14, 165, 233, 0.2)'};
           border: 1px solid ${isLocked ? '#22c55e' : 'rgba(56, 189, 248, 0.5)'};
           border-radius: 8px;
           color: #f8fafc;
-          font-size: 12px;
+          font-size: 11px;
           letter-spacing: 0.1em;
           font-weight: 600;
           cursor: pointer;
         ">${isLocked ? '✓ COURSE LOCKED' : 'LOCK COURSE VECTOR'}</button>
 
         <button id="holo-btn-engage-warp" style="
-          padding: 14px;
+          padding: 11px;
           background: linear-gradient(135deg, rgba(56, 189, 248, 0.4), rgba(14, 165, 233, 0.25));
           border: 1px solid #38bdf8;
           border-radius: 8px;
           color: #f8fafc;
-          font-size: 13px;
+          font-size: 12px;
           letter-spacing: 0.15em;
           font-weight: 700;
           cursor: pointer;
@@ -972,6 +1060,10 @@ export class HolographicNavModal {
         ">ENGAGE WARP DRIVE</button>
       </div>
     `;
+
+    this.detailsPanel.querySelector('#holo-btn-details-close')?.addEventListener('click', () => {
+      this.detailsPanel.classList.remove('drawer-open');
+    });
 
     this.detailsPanel.querySelector('#holo-btn-lock-course')?.addEventListener('click', () => {
       audio.playConnectChime();

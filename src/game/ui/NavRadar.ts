@@ -31,22 +31,46 @@ export class NavRadar {
 
     this.container = document.createElement('div');
     this.container.id = 'nav-radar-widget';
-    this.container.style.cssText = `
-      position: fixed;
-      bottom: 24px;
-      right: 28px;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 8px;
-      z-index: 100;
-      pointer-events: auto;
-      user-select: none;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    // Injected responsive style tag for mobile/tablet screen adaptation
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `
+      #nav-radar-widget {
+        position: fixed;
+        bottom: 24px;
+        right: 28px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 8px;
+        z-index: 100;
+        pointer-events: auto;
+        user-select: none;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      @media (max-width: 850px), (max-height: 520px) {
+        #nav-radar-widget {
+          bottom: auto !important;
+          top: max(48px, env(safe-area-inset-top, 48px)) !important;
+          right: max(14px, env(safe-area-inset-right, 14px)) !important;
+          gap: 4px !important;
+        }
+        #nav-radar-widget .radar-canvas {
+          width: 90px !important;
+          height: 90px !important;
+        }
+        #nav-radar-widget .radar-info {
+          max-width: 140px !important;
+          padding: 4px 8px !important;
+          font-size: 9px !important;
+        }
+      }
     `;
+    this.container.appendChild(styleEl);
 
     // Holographic radar canvas
     this.canvas = document.createElement('canvas');
+    this.canvas.className = 'radar-canvas';
     this.canvas.width = 140;
     this.canvas.height = 140;
     this.canvas.title = 'Click to cycle target · Double-click for Map';
@@ -63,6 +87,7 @@ export class NavRadar {
 
     // Info chip below radar
     this.targetInfoEl = document.createElement('div');
+    this.targetInfoEl.className = 'radar-info';
     this.targetInfoEl.style.cssText = `
       background: rgba(15, 23, 42, 0.88);
       border: 1px solid rgba(56, 189, 248, 0.35);

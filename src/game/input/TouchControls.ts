@@ -83,16 +83,64 @@ export class TouchControls {
     `;
 
     this.container.innerHTML = `
+      <style>
+        @media (max-height: 520px), (max-width: 850px) {
+          #touch-joystick-zone {
+            width: 105px !important;
+            height: 105px !important;
+          }
+          #touch-joystick-base {
+            width: 92px !important;
+            height: 92px !important;
+            left: 6px !important;
+            top: 6px !important;
+          }
+          #touch-joystick-knob {
+            width: 34px !important;
+            height: 34px !important;
+          }
+          #touch-throttle-zone {
+            margin-right: 2px !important;
+          }
+          #touch-throttle-track {
+            width: 36px !important;
+            height: 110px !important;
+          }
+          #touch-throttle-label {
+            font-size: 8.5px !important;
+            margin-bottom: 2px !important;
+          }
+          #touch-btn-brake {
+            width: 36px !important;
+            padding: 4px 0 !important;
+            font-size: 8.5px !important;
+            margin-top: 3px !important;
+          }
+          #touch-actions-cluster {
+            gap: 4px !important;
+            margin-bottom: 2px !important;
+          }
+          #touch-btn-scan {
+            width: 115px !important;
+            padding: 7px 0 !important;
+            font-size: 11px !important;
+          }
+          #touch-actions-cluster button {
+            font-size: 9.5px !important;
+          }
+        }
+      </style>
+
       <!-- Top Toggle & Status Bar -->
       <div style="display: flex; justify-content: flex-end; align-items: center; width: 100%; pointer-events: auto;">
         <button id="touch-toggle-btn" style="
           background: rgba(15, 23, 42, 0.75);
           border: 1px solid rgba(56, 189, 248, 0.35);
           color: #38bdf8;
-          padding: 6px 12px;
+          padding: 5px 12px;
           border-radius: 9999px;
           font-family: ui-monospace, SFMono-Regular, monospace;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 600;
           letter-spacing: 0.05em;
           cursor: pointer;
@@ -109,7 +157,7 @@ export class TouchControls {
         align-items: flex-end;
         width: 100%;
         pointer-events: none;
-        padding-bottom: 8px;
+        padding-bottom: 4px;
       ">
         <!-- Left Zone: Virtual Analog Flight Stick -->
         <div id="touch-joystick-zone" style="
@@ -158,19 +206,37 @@ export class TouchControls {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 8px;
+          gap: 6px;
           pointer-events: auto;
-          margin-bottom: 6px;
+          margin-bottom: 4px;
+          position: relative;
         ">
-          <!-- In-Flight Radio Emote Deck -->
-          <div id="touch-emote-row" style="display: flex; gap: 6px; margin-bottom: 2px;">
+          <!-- In-Flight Radio Emote Popout Drawer -->
+          <div id="touch-emote-drawer" style="
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10, 16, 28, 0.95);
+            border: 1px solid rgba(56, 189, 248, 0.45);
+            border-radius: 14px;
+            padding: 6px 10px;
+            gap: 8px;
+            align-items: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8), 0 0 16px rgba(56, 189, 248, 0.25);
+            backdrop-filter: blur(12px);
+            z-index: 300;
+            white-space: nowrap;
+          ">
+            <span style="font-size: 9px; font-family: ui-monospace, monospace; color: #94a3b8; margin-right: 2px;">RADIO:</span>
             <button id="touch-btn-emote-wave" style="
-              width: 42px;
-              height: 36px;
+              width: 38px;
+              height: 34px;
               background: rgba(15, 23, 42, 0.85);
               border: 1px solid rgba(250, 204, 21, 0.5);
-              border-radius: 10px;
-              font-size: 18px;
+              border-radius: 8px;
+              font-size: 16px;
               display: flex;
               align-items: center;
               justify-content: center;
@@ -180,12 +246,12 @@ export class TouchControls {
             " title="Wave">👋</button>
 
             <button id="touch-btn-emote-heart" style="
-              width: 42px;
-              height: 36px;
+              width: 38px;
+              height: 34px;
               background: rgba(15, 23, 42, 0.85);
               border: 1px solid rgba(244, 63, 94, 0.5);
-              border-radius: 10px;
-              font-size: 18px;
+              border-radius: 8px;
+              font-size: 16px;
               display: flex;
               align-items: center;
               justify-content: center;
@@ -195,12 +261,12 @@ export class TouchControls {
             " title="Heart">💖</button>
 
             <button id="touch-btn-emote-peace" style="
-              width: 42px;
-              height: 36px;
+              width: 38px;
+              height: 34px;
               background: rgba(15, 23, 42, 0.85);
               border: 1px solid rgba(56, 189, 248, 0.5);
-              border-radius: 10px;
-              font-size: 18px;
+              border-radius: 8px;
+              font-size: 16px;
               display: flex;
               align-items: center;
               justify-content: center;
@@ -208,18 +274,27 @@ export class TouchControls {
               touch-action: manipulation;
               box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
             " title="Peace">✌️</button>
+
+            <button id="touch-btn-emote-close" style="
+              background: transparent;
+              border: none;
+              color: #94a3b8;
+              font-size: 13px;
+              padding: 2px 6px;
+              cursor: pointer;
+            ">✕</button>
           </div>
 
           <!-- Primary Scan / Tractor Beam Button -->
           <button id="touch-btn-scan" style="
-            width: 140px;
-            padding: 11px 0;
+            width: 136px;
+            padding: 9px 0;
             background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(14, 165, 233, 0.15));
             border: 1.5px solid rgba(56, 189, 248, 0.6);
             border-radius: 12px;
             color: #f8fafc;
             font-family: ui-sans-serif, system-ui, sans-serif;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 700;
             letter-spacing: 0.08em;
             cursor: pointer;
@@ -232,10 +307,10 @@ export class TouchControls {
           </button>
 
           <!-- Navigation & Flight Operations -->
-          <div style="display: flex; gap: 8px;">
+          <div style="display: flex; gap: 6px;">
             <button id="touch-btn-map" style="
-              width: 66px;
-              padding: 9px 0;
+              width: 65px;
+              padding: 7px 0;
               background: rgba(30, 41, 59, 0.7);
               border: 1px solid rgba(148, 163, 184, 0.3);
               border-radius: 8px;
@@ -292,10 +367,10 @@ export class TouchControls {
           </div>
 
           <!-- Modules & Journal -->
-          <div style="display: flex; gap: 8px;">
+          <div style="display: flex; gap: 6px;">
             <button id="touch-btn-upgrade" style="
-              width: 66px;
-              padding: 8px 0;
+              width: 65px;
+              padding: 6px 0;
               background: rgba(15, 23, 42, 0.8);
               border: 1px solid rgba(148, 163, 184, 0.3);
               border-radius: 8px;
@@ -308,8 +383,8 @@ export class TouchControls {
             ">STORE</button>
 
             <button id="touch-btn-journal" style="
-              width: 66px;
-              padding: 8px 0;
+              width: 65px;
+              padding: 6px 0;
               background: rgba(15, 23, 42, 0.8);
               border: 1px solid rgba(148, 163, 184, 0.3);
               border-radius: 8px;
@@ -321,6 +396,27 @@ export class TouchControls {
               touch-action: manipulation;
             ">LOGS</button>
           </div>
+
+          <!-- Radio Emote Drawer Trigger Button -->
+          <button id="touch-btn-emote-toggle" style="
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            color: #38bdf8;
+            padding: 4px 14px;
+            border-radius: 9999px;
+            font-family: ui-monospace, SFMono-Regular, monospace;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            touch-action: manipulation;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+          ">
+            <span>📡 COMMS ▾</span>
+          </button>
         </div>
 
         <!-- Right Zone: Vertical Throttle Lever & Brake -->
@@ -436,6 +532,10 @@ export class TouchControls {
         x: rect.left + rect.width / 2,
         y: rect.top + rect.height / 2,
       };
+      const measuredRadius = (rect.width / 2) - 10;
+      if (measuredRadius > 20) {
+        this.joystickRadius = measuredRadius;
+      }
 
       this.updateJoystick(e.clientX, e.clientY);
     };
@@ -478,16 +578,17 @@ export class TouchControls {
 
     // Normalized axes (-1 to 1) with deadzone
     const normX = applyDeadzone(knobX / this.joystickRadius, 0.06);
-    // Negative dy = forward stick = pitch down (or pitch up based on preference; convention: forward stick pushes nose down)
+    // Y is inverted for flight pitch (pushing forward = pitch down / nose down)
     const normY = applyDeadzone(-knobY / this.joystickRadius, 0.06);
 
     this.touchInput.setAxes({ x: normX, y: normY });
   }
 
   private setupThrottleEvents(): void {
-    const track = this.throttleTrackEl;
+    const track = this.container.querySelector('#touch-throttle-track') as HTMLElement;
 
     const handlePointerDown = (e: PointerEvent) => {
+      if (this.throttlePointerId !== null) return;
       this.throttlePointerId = e.pointerId;
       track.setPointerCapture(e.pointerId);
       this.updateThrottleFromPointer(e.clientY);
@@ -523,7 +624,7 @@ export class TouchControls {
 
   private updateThrottleFromPointer(clientY: number): void {
     const rect = this.throttleTrackEl.getBoundingClientRect();
-    const trackHeight = rect.height;
+    const trackHeight = rect.height || 160;
     // 0 is bottom, 1 is top
     const relativeY = rect.bottom - clientY;
     const norm = clamp(relativeY / trackHeight, 0, 1);
@@ -536,7 +637,9 @@ export class TouchControls {
 
     // Update fill height & knob position
     this.throttleFillEl.style.height = `${percent}%`;
-    const knobTravel = 160 - 32; // track height - knob height
+    const rect = this.throttleTrackEl.getBoundingClientRect();
+    const trackHeight = rect.height || 160;
+    const knobTravel = Math.max(50, trackHeight - 32);
     this.throttleKnobEl.style.bottom = `${(this.currentThrottle * knobTravel)}px`;
 
     // Update readout
@@ -568,41 +671,40 @@ export class TouchControls {
         this.touchInput.setActionState('tractor', true);
         this.touchInput.setActionState('interact', true);
         navigator.vibrate?.([30, 40, 30]);
-      }, 250);
+      }, 350);
     });
 
     const releaseScan = () => {
       this.scanBtnEl.style.transform = 'scale(1)';
-      if (this.tractorTimer) {
+      if (this.tractorTimer !== null) {
         clearTimeout(this.tractorTimer);
         this.tractorTimer = null;
       }
 
       if (this.isHoldingTractor) {
         this.isHoldingTractor = false;
+        this.scanBtnEl.textContent = 'SCAN / TRACTOR';
+        this.scanBtnEl.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(14, 165, 233, 0.15))';
+        this.scanBtnEl.style.borderColor = 'rgba(56, 189, 248, 0.6)';
         this.touchInput.setActionState('tractor', false);
         this.touchInput.setActionState('interact', false);
       } else {
-        // Quick tap was a scan
+        // Tap: Trigger pulse scan
         this.touchInput.triggerAction('scan');
-        navigator.vibrate?.(15);
+        navigator.vibrate?.(20);
       }
-
-      this.scanBtnEl.textContent = 'SCAN / TRACTOR';
-      this.scanBtnEl.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(14, 165, 233, 0.15))';
-      this.scanBtnEl.style.borderColor = 'rgba(56, 189, 248, 0.6)';
     };
 
     this.scanBtnEl.addEventListener('pointerup', releaseScan);
     this.scanBtnEl.addEventListener('pointercancel', releaseScan);
 
-    // MAP
+    // Map button
     this.mapBtnEl.addEventListener('click', () => {
       this.touchInput.triggerAction('map');
       navigator.vibrate?.(15);
     });
 
-    // ORBIT / LAND
+    // Orbit / Land button
     this.orbitBtnEl.addEventListener('click', () => {
       if (this.currentContext === 'surface') {
         this.touchInput.triggerAction('cancel'); // Return to orbit
@@ -640,21 +742,57 @@ export class TouchControls {
       this.toggleVisibility();
     });
 
-    // In-Flight Radio Emote Actions
+    // Emote Drawer Toggle & Close
+    this.container.querySelector('#touch-btn-emote-toggle')?.addEventListener('click', () => {
+      this.toggleEmoteDrawer();
+      navigator.vibrate?.(10);
+    });
+
+    this.container.querySelector('#touch-btn-emote-close')?.addEventListener('click', () => {
+      this.closeEmoteDrawer();
+    });
+
+    // In-Flight Radio Emote Actions (Auto-collapse drawer upon transmit)
     this.container.querySelector('#touch-btn-emote-wave')?.addEventListener('click', () => {
       this.onEmoteCallback?.('wave');
+      this.closeEmoteDrawer();
       navigator.vibrate?.(25);
     });
 
     this.container.querySelector('#touch-btn-emote-heart')?.addEventListener('click', () => {
       this.onEmoteCallback?.('heart');
+      this.closeEmoteDrawer();
       navigator.vibrate?.(25);
     });
 
     this.container.querySelector('#touch-btn-emote-peace')?.addEventListener('click', () => {
       this.onEmoteCallback?.('peace');
+      this.closeEmoteDrawer();
       navigator.vibrate?.(25);
     });
+  }
+
+  public openEmoteDrawer(): void {
+    const drawer = this.container.querySelector('#touch-emote-drawer') as HTMLElement;
+    if (drawer) drawer.style.display = 'flex';
+  }
+
+  public closeEmoteDrawer(): void {
+    const drawer = this.container.querySelector('#touch-emote-drawer') as HTMLElement;
+    if (drawer) drawer.style.display = 'none';
+  }
+
+  public toggleEmoteDrawer(): void {
+    const drawer = this.container.querySelector('#touch-emote-drawer') as HTMLElement;
+    if (drawer) {
+      const isHidden = drawer.style.display === 'none' || !drawer.style.display;
+      drawer.style.display = isHidden ? 'flex' : 'none';
+    }
+  }
+
+  public isEmoteDrawerOpen(): boolean {
+    const drawer = this.container.querySelector('#touch-emote-drawer') as HTMLElement;
+    return drawer ? drawer.style.display === 'flex' : false;
   }
 
   public setContext(context: 'space' | 'surface' | 'menu'): void {

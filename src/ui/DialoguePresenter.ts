@@ -18,17 +18,45 @@ export class DialoguePresenter {
   constructor(parent: HTMLElement) {
     this.container = document.createElement('div');
     this.container.id = 'dialogue-presenter-container';
-    this.container.style.cssText = `
-      position: fixed;
-      bottom: 28px;
-      left: 28px;
-      max-width: 480px;
-      z-index: 1500;
-      pointer-events: none;
-      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+    // Injected responsive style tag for mobile viewport adaptation
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `
+      #dialogue-presenter-container {
+        position: fixed;
+        bottom: 28px;
+        left: 28px;
+        max-width: 480px;
+        z-index: 1500;
+        pointer-events: none;
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        box-sizing: border-box;
+      }
+      @media (max-width: 850px), (max-height: 520px) {
+        #dialogue-presenter-container {
+          bottom: auto !important;
+          top: max(48px, env(safe-area-inset-top, 48px)) !important;
+          left: 50% !important;
+          transform: translateX(-50%) !important;
+          max-width: min(440px, 92vw) !important;
+          width: min(440px, 92vw) !important;
+        }
+        #dialogue-presenter-container .dialogue-bubble {
+          padding: 8px 12px !important;
+        }
+        #dialogue-presenter-container .dialogue-speaker {
+          font-size: 10px !important;
+        }
+        #dialogue-presenter-container .dialogue-text {
+          font-size: 12px !important;
+          line-height: 1.4 !important;
+        }
+      }
     `;
+    this.container.appendChild(styleEl);
 
     this.bubbleEl = document.createElement('div');
+    this.bubbleEl.className = 'dialogue-bubble';
     this.bubbleEl.style.cssText = `
       background: rgba(10, 16, 28, 0.92);
       border: 1px solid rgba(56, 189, 248, 0.4);
@@ -48,6 +76,7 @@ export class DialoguePresenter {
     `;
 
     this.speakerEl = document.createElement('div');
+    this.speakerEl.className = 'dialogue-speaker';
     this.speakerEl.style.cssText = `
       font-family: ui-monospace, monospace;
       font-size: 11px;
@@ -58,6 +87,7 @@ export class DialoguePresenter {
     `;
 
     this.textEl = document.createElement('div');
+    this.textEl.className = 'dialogue-text';
     this.textEl.style.cssText = `
       font-size: 13.5px;
       line-height: 1.55;

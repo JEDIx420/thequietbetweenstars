@@ -174,4 +174,24 @@ describe('Touch Controls & Mobile Flight Deck', () => {
 
     controls.dispose();
   });
+
+  it('toggles and collapses the comms emote drawer on user interaction', () => {
+    const controls = new TouchControls(container, touchInput);
+    const drawer = container.querySelector('#touch-emote-drawer') as HTMLElement;
+    expect(drawer).toBeDefined();
+    const toggleBtn = container.querySelector('#touch-btn-emote-toggle') as any;
+
+    expect(controls.isEmoteDrawerOpen()).toBe(false);
+
+    toggleBtn.click();
+    expect(controls.isEmoteDrawerOpen()).toBe(true);
+
+    // Clicking an emote auto-collapses the drawer
+    const waveBtn = container.querySelector('#touch-btn-emote-wave') as any;
+    waveBtn.click();
+    expect(controls.isEmoteDrawerOpen()).toBe(false);
+
+    controls.dispose();
+  });
 });
+

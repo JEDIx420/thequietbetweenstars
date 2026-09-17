@@ -138,6 +138,53 @@ export class TitleRevealSequence {
             transform: translateX(-50%) scale(1.02);
           }
         }
+
+        .title-reveal-main {
+          font-size: clamp(20px, 5.2vw, 60px);
+          font-weight: 200;
+          letter-spacing: clamp(0.1em, 1.5vw, 0.35em);
+          text-transform: uppercase;
+          color: #f8fafc;
+          text-shadow: 0 0 25px rgba(56, 189, 248, 0.8), 0 0 50px rgba(14, 165, 233, 0.4);
+          animation: cinemaGlow 3.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          line-height: 1.2;
+          text-align: center;
+          max-width: min(92vw, 1000px);
+          box-sizing: border-box;
+          will-change: transform, opacity;
+        }
+
+        @media (max-width: 640px) {
+          .title-reveal-main {
+            font-size: clamp(17px, 5.2vw, 26px);
+            letter-spacing: 0.12em;
+          }
+          .title-reveal-badge {
+            font-size: 9px !important;
+            letter-spacing: 0.15em !important;
+            margin-bottom: 8px !important;
+          }
+          .title-reveal-sub {
+            font-size: 11px !important;
+            letter-spacing: 0.14em !important;
+            margin-top: 10px !important;
+          }
+        }
+
+        @media (max-height: 500px) {
+          .title-reveal-main {
+            font-size: clamp(17px, 4.6vw, 30px) !important;
+            letter-spacing: 0.16em !important;
+          }
+          .title-reveal-badge {
+            font-size: 9px !important;
+            margin-bottom: 6px !important;
+          }
+          .title-reveal-sub {
+            font-size: 11px !important;
+            margin-top: 8px !important;
+          }
+        }
       </style>
 
       <!-- Horizontal Cinematic Anamorphic Flare Beam -->
@@ -152,7 +199,7 @@ export class TitleRevealSequence {
       "></div>
 
       <!-- Sector Mandate Badge -->
-      <div style="
+      <div class="title-reveal-badge" style="
         font-family: ui-monospace, monospace;
         font-size: clamp(10px, 1.4vw, 13px);
         font-weight: 700;
@@ -167,23 +214,12 @@ export class TitleRevealSequence {
       </div>
 
       <!-- Main Title -->
-      <div style="
-        font-size: clamp(26px, 6.2vw, 64px);
-        font-weight: 200;
-        letter-spacing: 0.35em;
-        text-transform: uppercase;
-        color: #f8fafc;
-        text-shadow: 0 0 25px rgba(56, 189, 248, 0.8), 0 0 50px rgba(14, 165, 233, 0.4);
-        animation: cinemaGlow 3.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        line-height: 1.25;
-        white-space: nowrap;
-        will-change: transform, opacity;
-      ">
+      <div class="title-reveal-main">
         THE QUIET BETWEEN STARS
       </div>
 
       <!-- Subtitle -->
-      <div style="
+      <div class="title-reveal-sub" style="
         font-size: clamp(12px, 1.8vw, 16px);
         font-weight: 300;
         letter-spacing: 0.25em;

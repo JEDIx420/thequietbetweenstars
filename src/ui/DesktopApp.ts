@@ -775,6 +775,30 @@ export class DesktopApp {
     this.hasSavedJourney = await saveManager.hasSavedJourney();
 
     this.uiContainer.innerHTML = `
+      <style>
+        @media (max-height: 520px) {
+          #title-screen-container h1 {
+            font-size: clamp(20px, 4.8vw, 36px) !important;
+            margin: 0 0 6px 0 !important;
+          }
+          #title-screen-container p {
+            font-size: 11px !important;
+            line-height: 1.4 !important;
+            margin: 0 0 16px 0 !important;
+            max-width: 480px !important;
+          }
+          #title-screen-container .title-kicker {
+            font-size: 9px !important;
+            letter-spacing: 0.2em !important;
+            margin-bottom: 6px !important;
+          }
+          #title-screen-container button {
+            padding: 8px 28px !important;
+            font-size: 11px !important;
+            min-width: 220px !important;
+          }
+        }
+      </style>
       <div id="title-screen-container" style="
         position: absolute;
         inset: 0;
@@ -786,9 +810,11 @@ export class DesktopApp {
         font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         background: radial-gradient(circle at 50% 50%, rgba(13, 21, 39, 0.45) 0%, rgba(3, 3, 7, 0.8) 100%);
         opacity: 0;
+        padding: 0 16px;
+        box-sizing: border-box;
         transition: opacity 0.85s cubic-bezier(0.16, 1, 0.3, 1);
       ">
-        <div style="
+        <div class="title-kicker" style="
           font-size: 13px;
           letter-spacing: 0.35em;
           color: #38bdf8;
@@ -1291,23 +1317,139 @@ export class DesktopApp {
   private renderFlightHUD(mode: 'keyboard' | 'touch' = 'keyboard'): void {
     const isTouch = mode === 'touch' || isTouchDevice();
     this.uiContainer.innerHTML = `
+      <style>
+        #desktop-emote-drawer button:hover {
+          filter: brightness(1.2);
+        }
+        @media (max-width: 850px), (max-height: 520px) {
+          #hud-telemetry-bar {
+            padding: 3px 8px !important;
+            gap: 6px !important;
+            font-size: 9.5px !important;
+          }
+          .hud-title-brand {
+            font-size: 9.5px !important;
+            letter-spacing: 0.15em !important;
+          }
+        }
+      </style>
       <div style="
         position: absolute;
         inset: 0;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        padding: max(16px, env(safe-area-inset-top, 16px)) max(18px, env(safe-area-inset-right, 18px)) max(16px, env(safe-area-inset-bottom, 16px)) max(18px, env(safe-area-inset-left, 18px));
+        padding: max(10px, env(safe-area-inset-top, 10px)) max(14px, env(safe-area-inset-right, 14px)) max(10px, env(safe-area-inset-bottom, 10px)) max(14px, env(safe-area-inset-left, 14px));
         box-sizing: border-box;
         pointer-events: none;
         font-family: ui-sans-serif, system-ui, sans-serif;
       ">
-        <div style="display: flex; justify-content: space-between; align-items: center; pointer-events: auto; flex-wrap: wrap; gap: 8px;">
-          <div style="font-size: 11px; letter-spacing: 0.25em; color: #38bdf8; font-weight: 600;">
+        <!-- Top HUD Header Strip -->
+        <div style="display: flex; justify-content: space-between; align-items: center; pointer-events: auto; gap: 8px; width: 100%;">
+          <div class="hud-title-brand" style="font-size: 11px; letter-spacing: 0.22em; color: #38bdf8; font-weight: 600; white-space: nowrap;">
             THE QUIET BETWEEN STARS
           </div>
 
-          <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+          <!-- Top-Center Telemetry Readout -->
+          <div style="display: flex; align-items: center; gap: 8px; position: relative;">
+            <div id="hud-telemetry-bar" style="
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              background: rgba(15, 23, 42, 0.82);
+              border: 1px solid rgba(56, 189, 248, 0.3);
+              padding: 4px 12px;
+              border-radius: 9999px;
+              font-family: ui-monospace, monospace;
+              font-size: 10.5px;
+              color: #94a3b8;
+              box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+              white-space: nowrap;
+            ">
+              <span>SPD: <strong id="telemetry-speed" style="color: #38bdf8;">0</strong> m/s</span>
+              <span>THR: <strong id="telemetry-throttle" style="color: #38bdf8;">0%</strong></span>
+              <span>CREDITS: <strong id="telemetry-credits" style="color: #34d399;">${this.credits}</strong></span>
+            </div>
+
+            <!-- Desktop Radio Emote Drawer Trigger & Popover -->
+            <div id="desktop-emote-container" style="display: ${isTouch ? 'none' : 'block'}; position: relative;">
+              <button id="btn-desktop-emote-toggle" style="
+                background: rgba(15, 23, 42, 0.85);
+                border: 1px solid rgba(56, 189, 248, 0.4);
+                color: #38bdf8;
+                padding: 4px 10px;
+                border-radius: 9999px;
+                font-family: ui-monospace, monospace;
+                font-size: 10.5px;
+                font-weight: 600;
+                letter-spacing: 0.05em;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+              ">
+                <span>📡 RADIO [C] ▾</span>
+              </button>
+
+              <div id="desktop-emote-drawer" style="
+                display: none;
+                position: absolute;
+                top: calc(100% + 6px);
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(10, 16, 28, 0.95);
+                border: 1px solid rgba(56, 189, 248, 0.4);
+                border-radius: 12px;
+                padding: 6px 10px;
+                gap: 6px;
+                align-items: center;
+                box-shadow: 0 8px 30px rgba(0, 0, 0, 0.8), 0 0 16px rgba(56, 189, 248, 0.2);
+                backdrop-filter: blur(12px);
+                z-index: 500;
+                white-space: nowrap;
+              ">
+                <button id="btn-desktop-emote-wave" style="
+                  background: rgba(250, 204, 21, 0.15);
+                  border: 1px solid rgba(250, 204, 21, 0.4);
+                  border-radius: 6px;
+                  color: #fde047;
+                  padding: 3px 8px;
+                  font-size: 11px;
+                  cursor: pointer;
+                " title="Wave [1]">👋 [1]</button>
+                <button id="btn-desktop-emote-heart" style="
+                  background: rgba(244, 63, 94, 0.15);
+                  border: 1px solid rgba(244, 63, 94, 0.4);
+                  border-radius: 6px;
+                  color: #fda4af;
+                  padding: 3px 8px;
+                  font-size: 11px;
+                  cursor: pointer;
+                " title="Heart [2]">💖 [2]</button>
+                <button id="btn-desktop-emote-peace" style="
+                  background: rgba(56, 189, 248, 0.15);
+                  border: 1px solid rgba(56, 189, 248, 0.4);
+                  border-radius: 6px;
+                  color: #7dd3fc;
+                  padding: 3px 8px;
+                  font-size: 11px;
+                  cursor: pointer;
+                " title="Peace [3]">✌️ [3]</button>
+                <button id="btn-desktop-emote-close" style="
+                  background: none;
+                  border: none;
+                  color: #94a3b8;
+                  font-size: 12px;
+                  padding: 2px 5px;
+                  cursor: pointer;
+                ">✕</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Top-Right Actions & Utilities -->
+          <div style="display: flex; gap: 6px; align-items: center; flex-wrap: nowrap;">
             <div id="hud-save-indicator" style="
               font-family: ui-monospace, monospace;
               font-size: 10px;
@@ -1317,127 +1459,83 @@ export class DesktopApp {
               transition: opacity 0.3s ease;
             ">● SAVED</div>
 
-            <button id="btn-open-chart" style="
-              background: rgba(15, 23, 42, 0.75);
-              border: 1px solid rgba(56, 189, 248, 0.35);
-              border-radius: 8px;
-              color: #38bdf8;
-              padding: 6px 12px;
-              font-size: 11px;
-              font-weight: 600;
-              cursor: pointer;
-              touch-action: manipulation;
-            ">MAP [M]</button>
+            ${!isTouch ? `
+              <button id="btn-open-chart" style="
+                background: rgba(15, 23, 42, 0.75);
+                border: 1px solid rgba(56, 189, 248, 0.35);
+                border-radius: 8px;
+                color: #38bdf8;
+                padding: 5px 10px;
+                font-size: 10.5px;
+                font-weight: 600;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">MAP [M]</button>
 
-            <button id="btn-open-supply" style="
-              background: rgba(16, 185, 129, 0.15);
-              border: 1px solid rgba(52, 211, 153, 0.4);
-              border-radius: 8px;
-              color: #34d399;
-              padding: 6px 12px;
-              font-size: 11px;
-              font-weight: 700;
-              cursor: pointer;
-              touch-action: manipulation;
-            ">STORE [U]</button>
+              <button id="btn-open-supply" style="
+                background: rgba(16, 185, 129, 0.15);
+                border: 1px solid rgba(52, 211, 153, 0.4);
+                border-radius: 8px;
+                color: #34d399;
+                padding: 5px 10px;
+                font-size: 10.5px;
+                font-weight: 700;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">STORE [U]</button>
 
-            <button id="btn-open-journal" style="
-              background: rgba(15, 23, 42, 0.75);
-              border: 1px solid rgba(148, 163, 184, 0.25);
-              border-radius: 8px;
-              color: #cbd5e1;
-              padding: 6px 12px;
-              font-size: 11px;
-              cursor: pointer;
-              touch-action: manipulation;
-            ">LOG [J]</button>
+              <button id="btn-open-journal" style="
+                background: rgba(15, 23, 42, 0.75);
+                border: 1px solid rgba(148, 163, 184, 0.25);
+                border-radius: 8px;
+                color: #cbd5e1;
+                padding: 5px 10px;
+                font-size: 10.5px;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">LOG [J]</button>
+            ` : ''}
 
             <button id="btn-open-help" style="
               background: rgba(15, 23, 42, 0.75);
               border: 1px solid rgba(148, 163, 184, 0.25);
               border-radius: 8px;
               color: #cbd5e1;
-              padding: 6px 12px;
-              font-size: 11px;
+              padding: 5px 10px;
+              font-size: 10.5px;
               cursor: pointer;
               touch-action: manipulation;
-            ">HELP [H]</button>
+            ">${isTouch ? 'HELP' : 'HELP [H]'}</button>
 
             <button id="btn-audio-mute" style="
               background: rgba(15, 23, 42, 0.75);
               border: 1px solid rgba(148, 163, 184, 0.25);
               border-radius: 8px;
               color: #cbd5e1;
-              padding: 6px 12px;
-              font-size: 11px;
+              padding: 5px 10px;
+              font-size: 10.5px;
               cursor: pointer;
               touch-action: manipulation;
-            ">${audio.getIsMuted() ? '🔇 MUTED' : '🔊 SOUND'}</button>
+            ">${audio.getIsMuted() ? '🔇' : '🔊'}</button>
+
+            <!-- Minimal Non-Intrusive Fullscreen Toggle -->
+            <button id="btn-toggle-fullscreen" style="
+              background: rgba(15, 23, 42, 0.75);
+              border: 1px solid rgba(56, 189, 248, 0.35);
+              border-radius: 8px;
+              color: #38bdf8;
+              padding: 5px 10px;
+              font-size: 12px;
+              cursor: pointer;
+              touch-action: manipulation;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            " title="Toggle Fullscreen">⛶</button>
           </div>
         </div>
 
         <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; align-self: center;">
-          <!-- Telemetry readouts -->
-          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;">
-            <div id="hud-telemetry-bar" style="
-              display: flex;
-              align-items: center;
-              gap: 12px;
-              background: rgba(15, 23, 42, 0.75);
-              border: 1px solid rgba(56, 189, 248, 0.25);
-              padding: 4px 14px;
-              border-radius: 12px;
-              font-family: ui-monospace, monospace;
-              font-size: 11px;
-              color: #94a3b8;
-            ">
-              <span>SPD: <strong id="telemetry-speed" style="color: #38bdf8;">0</strong> m/s</span>
-              <span>THR: <strong id="telemetry-throttle" style="color: #38bdf8;">0%</strong></span>
-              <span>CREDITS: <strong id="telemetry-credits" style="color: #34d399;">${this.credits}</strong></span>
-            </div>
-
-            <!-- Desktop Radio Emote Dock -->
-            <div id="hud-emotes-bar" style="
-              display: ${isTouch ? 'none' : 'flex'};
-              align-items: center;
-              gap: 5px;
-              background: rgba(15, 23, 42, 0.75);
-              border: 1px solid rgba(56, 189, 248, 0.3);
-              padding: 3px 8px;
-              border-radius: 12px;
-              pointer-events: auto;
-            ">
-              <span style="font-size: 10px; font-family: ui-monospace, monospace; color: #94a3b8; margin-right: 2px;">RADIO:</span>
-              <button id="btn-desktop-emote-wave" style="
-                background: rgba(250, 204, 21, 0.15);
-                border: 1px solid rgba(250, 204, 21, 0.4);
-                border-radius: 6px;
-                color: #fde047;
-                padding: 2px 8px;
-                font-size: 11px;
-                cursor: pointer;
-              " title="Wave [1]">👋 [1]</button>
-              <button id="btn-desktop-emote-heart" style="
-                background: rgba(244, 63, 94, 0.15);
-                border: 1px solid rgba(244, 63, 94, 0.4);
-                border-radius: 6px;
-                color: #fda4af;
-                padding: 2px 8px;
-                font-size: 11px;
-                cursor: pointer;
-              " title="Heart [2]">💖 [2]</button>
-              <button id="btn-desktop-emote-peace" style="
-                background: rgba(56, 189, 248, 0.15);
-                border: 1px solid rgba(56, 189, 248, 0.4);
-                border-radius: 6px;
-                color: #7dd3fc;
-                padding: 2px 8px;
-                font-size: 11px;
-                cursor: pointer;
-              " title="Peace [3]">✌️ [3]</button>
-            </div>
-          </div>
-
           <div id="proximity-indicator" style="
             display: none;
             align-items: center;
@@ -1481,8 +1579,8 @@ export class DesktopApp {
             W/S Pitch · A/D Yaw · Q/E Roll · Hold Shift Accelerate · Space Scan/Tractor · 1, 2, 3 Radio Emotes · U Store · M Map
           </div>
 
-          <div style="
-            display: flex;
+          <div id="hud-mode-pill" style="
+            display: ${isTouch ? 'none' : 'flex'};
             align-items: center;
             gap: 8px;
             background: rgba(15, 23, 42, 0.8);
@@ -1494,7 +1592,7 @@ export class DesktopApp {
             font-family: ui-monospace, monospace;
           ">
             <span style="width: 6px; height: 6px; border-radius: 50%; background: #38bdf8;"></span>
-            <span>${isTouch ? 'TOUCH & FLIGHT ACTIVE' : 'KEYBOARD & FLIGHT ACTIVE'}</span>
+            <span>KEYBOARD & FLIGHT ACTIVE</span>
             <span style="color: #64748b; margin-left: 6px;">[ \` Telemetry ]</span>
           </div>
         </div>
@@ -1521,23 +1619,75 @@ export class DesktopApp {
       this.helpModal.toggle();
     });
 
+    // Desktop Emote Drawer Toggle & Close
+    const desktopDrawer = this.uiContainer.querySelector('#desktop-emote-drawer') as HTMLElement;
+    const desktopToggle = this.uiContainer.querySelector('#btn-desktop-emote-toggle');
+    desktopToggle?.addEventListener('click', () => {
+      if (desktopDrawer) {
+        const isHidden = desktopDrawer.style.display === 'none' || !desktopDrawer.style.display;
+        desktopDrawer.style.display = isHidden ? 'flex' : 'none';
+      }
+    });
+
+    this.uiContainer.querySelector('#btn-desktop-emote-close')?.addEventListener('click', () => {
+      if (desktopDrawer) desktopDrawer.style.display = 'none';
+    });
+
     this.uiContainer.querySelector('#btn-desktop-emote-wave')?.addEventListener('click', () => {
       this.triggerShipEmote('wave');
+      if (desktopDrawer) desktopDrawer.style.display = 'none';
     });
 
     this.uiContainer.querySelector('#btn-desktop-emote-heart')?.addEventListener('click', () => {
       this.triggerShipEmote('heart');
+      if (desktopDrawer) desktopDrawer.style.display = 'none';
     });
 
     this.uiContainer.querySelector('#btn-desktop-emote-peace')?.addEventListener('click', () => {
       this.triggerShipEmote('peace');
+      if (desktopDrawer) desktopDrawer.style.display = 'none';
     });
 
     this.uiContainer.querySelector('#btn-audio-mute')?.addEventListener('click', () => {
       const isMuted = audio.toggleMute();
       const btn = this.uiContainer.querySelector('#btn-audio-mute') as HTMLButtonElement;
-      if (btn) btn.textContent = isMuted ? '🔇 MUTED' : '🔊 SOUND';
+      if (btn) btn.textContent = isMuted ? '🔇' : '🔊';
     });
+
+    // Minimal Fullscreen Toggle
+    const updateFsIcon = () => {
+      const isFs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
+      const btn = this.uiContainer.querySelector('#btn-toggle-fullscreen') as HTMLButtonElement;
+      if (btn) {
+        btn.innerHTML = isFs ? '🗗' : '⛶';
+        btn.title = isFs ? 'Exit Fullscreen' : 'Toggle Fullscreen';
+      }
+    };
+
+    this.uiContainer.querySelector('#btn-toggle-fullscreen')?.addEventListener('click', async () => {
+      audio.playBlip();
+      try {
+        if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
+          if (document.documentElement.requestFullscreen) {
+            await document.documentElement.requestFullscreen();
+          } else if ((document.documentElement as any).webkitRequestFullscreen) {
+            await (document.documentElement as any).webkitRequestFullscreen();
+          }
+        } else {
+          if (document.exitFullscreen) {
+            await document.exitFullscreen();
+          } else if ((document as any).webkitExitFullscreen) {
+            await (document as any).webkitExitFullscreen();
+          }
+        }
+      } catch (err) {
+        console.warn('[DesktopApp] Fullscreen error:', err);
+      }
+      updateFsIcon();
+    });
+
+    document.addEventListener('fullscreenchange', updateFsIcon);
+    document.addEventListener('webkitfullscreenchange', updateFsIcon);
   }
 
   private renderOrbitInspectionHUD(): void {
@@ -1994,12 +2144,25 @@ export class DesktopApp {
           this.showHudNotice(`DEBUG TELEMETRY ${this.debugTelemetryVisible ? 'ACTIVE [F3]' : 'OFF'}`);
         }
       }
+      if (e.key === 'c' || e.key === 'C') {
+        const desktopDrawer = this.uiContainer.querySelector('#desktop-emote-drawer') as HTMLElement;
+        if (desktopDrawer) {
+          const isHidden = desktopDrawer.style.display === 'none' || !desktopDrawer.style.display;
+          desktopDrawer.style.display = isHidden ? 'flex' : 'none';
+        }
+      }
       if (e.key === '1' || e.code === 'Digit1') {
         this.triggerShipEmote('wave');
+        const desktopDrawer = this.uiContainer.querySelector('#desktop-emote-drawer') as HTMLElement;
+        if (desktopDrawer) desktopDrawer.style.display = 'none';
       } else if (e.key === '2' || e.code === 'Digit2') {
         this.triggerShipEmote('heart');
+        const desktopDrawer = this.uiContainer.querySelector('#desktop-emote-drawer') as HTMLElement;
+        if (desktopDrawer) desktopDrawer.style.display = 'none';
       } else if (e.key === '3' || e.code === 'Digit3') {
         this.triggerShipEmote('peace');
+        const desktopDrawer = this.uiContainer.querySelector('#desktop-emote-drawer') as HTMLElement;
+        if (desktopDrawer) desktopDrawer.style.display = 'none';
       }
     });
   }
