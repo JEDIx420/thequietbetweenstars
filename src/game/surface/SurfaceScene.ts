@@ -100,7 +100,7 @@ export class SurfaceScene {
   // Terrain streaming
   private terrainGroup = new THREE.Group();
   private activeChunks: Map<string, THREE.Mesh> = new Map();
-  private chunkSize = 200;
+  private chunkSize = 250;
   private chunkSegments = 32;
   private heightfieldCache: HeightfieldCache;
   private lastChunkX: number | null = null;
@@ -183,7 +183,7 @@ export class SurfaceScene {
       (x, z) => this.computeRawTerrainHeight(x, z),
       this.chunkSize,
       this.chunkSegments,
-      36
+      64
     );
 
     // 1. Derive deterministic planetary ecology & sentient giants
@@ -206,7 +206,7 @@ export class SurfaceScene {
 
     const fogColorHex = region.fogModifier.color || profile.atmosphere.fogColor;
     const fogDensity = profile.atmosphere.fogDensity * (region.fogModifier.densityMultiplier || 1.0);
-    this.scene.fog = new THREE.FogExp2(new THREE.Color(fogColorHex), fogDensity);
+    this.scene.fog = new THREE.FogExp2(new THREE.Color(fogColorHex), Math.min(fogDensity, 0.0016));
 
     // 3. Dynamic Star Lighting & Celestial Atmosphere Director
     this.hemiLight = new THREE.HemisphereLight(
@@ -618,10 +618,10 @@ export class SurfaceScene {
       }
     }
 
-    // Direct proximity to guaranteed giant encounter sites (up to 55m)
+    // Direct proximity to guaranteed giant encounter sites (up to 120m)
     for (const site of this.faunaPopulationManager.encounterSites) {
       const dist = this.shipPosition.distanceTo(site.position);
-      if (dist < 55) {
+      if (dist < 120) {
         scanTarget = {
           name: site.giantNPC.name,
           info: `Sentient Giant Elder: ${site.giantNPC.title}\nTemperament: ${site.giantNPC.personality}\nObserving: ${site.giantNPC.currentConcern}`,
@@ -744,6 +744,51 @@ export class SurfaceScene {
         break;
       }
 
+      case 'bioluminescent_archipelago': {
+        // Island atolls and submerged reefs in warm alien shallows
+        const seaFloor = this.noise.fbm2D(wx * 0.003, wz * 0.003, 3, 2.0, 0.5) * 8.0 - 6.0;
+        const islandSpires = Math.pow(Math.max(0, this.noise.ridged2D(wx * 0.006, wz * 0.006, 3, 2.0, 0.55)), 1.8) * 36.0;
+        const lagoon = this.noise.noise2D(wx * 0.012, wz * 0.012) * 4.0;
+        elevation = seaFloor + islandSpires + lagoon;
+        break;
+      }
+
+      case 'obsidian_caldera': {
+        // Massive circular caldera basin bordered by high basalt rims and geyser mounds
+        const calderaNoise = this.noise.fbm2D(wx * 0.004, wz * 0.004, 4, 2.0, 0.5);
+        const rim = Math.sin(calderaNoise * Math.PI * 2) * 28.0;
+        const craterDrop = Math.abs(this.noise.noise2D(wx * 0.007, wz * 0.007)) < 0.3 ? -35.0 : 0;
+        const basaltPillars = Math.max(0, this.noise.noise2D(wx * 0.02, wz * 0.02)) * 12.0;
+        elevation = rim + craterDrop + basaltPillars;
+        break;
+      }
+
+      case 'glacial_chasm': {
+        // Sheer ice rift walls and profound abyssal crevasses
+        const glacier = this.noise.ridged2D(wx * 0.005, wz * 0.005, 4, 2.2, 0.5) * 34.0;
+        const chasm = Math.abs(this.noise.noise2D(wx * 0.01, wz * 0.01));
+        const chasmDrop = chasm < 0.16 ? -(0.16 - chasm) * 60.0 : 0;
+        elevation = glacier + chasmDrop;
+        break;
+      }
+
+      case 'floating_mesas': {
+        // Soaring sheer-walled tablelands and giant step pillars
+        const base = this.noise.fbm2D(wx * 0.004, wz * 0.004, 3, 2.0, 0.5);
+        const stepped = SimplexNoise2D.terrace(base * 0.5 + 0.5, 3, 0.95) * 45.0 - 15.0;
+        const sheer = this.noise.noise2D(wx * 0.018, wz * 0.018) * 4.0;
+        elevation = stepped + sheer;
+        break;
+      }
+
+      case 'spore_grotto': {
+        // Undulating fungal mounds, crater basins, and subterranean cavern entrances
+        const mounds = Math.sin(wx * 0.015) * Math.cos(wz * 0.015) * 14.0;
+        const basin = this.noise.fbm2D(wx * 0.005, wz * 0.005, 3, 2.0, 0.5) * 18.0;
+        elevation = mounds + basin;
+        break;
+      }
+
       default: {
         // Coherent rolling hills and highland ridges
         const f1 = this.noise.fbm2D(wx * 0.005, wz * 0.005, 4, 2.0, 0.5) * 20.0;
@@ -770,7 +815,7 @@ export class SurfaceScene {
     this.lastChunkX = cx;
     this.lastChunkZ = cz;
 
-    const radius = 1; // 3x3 chunks around ship
+    const radius = 2; // 5x5 chunks around ship (1,250m huge map expanse)
     const activeKeys = new Set<string>();
 
     for (let dx = -radius; dx <= radius; dx++) {
@@ -945,12 +990,14 @@ export class SurfaceScene {
     // Center chunk (highest priority 10)
     this.requestAndStageChunk(cx, cz, 10);
 
-    // Surrounding chunks (priority 5)
-    const radius = 1;
+    // Surrounding chunks: inner ring (priority 5), outer ring (priority 2)
+    const radius = 2;
     for (let dx = -radius; dx <= radius; dx++) {
       for (let dz = -radius; dz <= radius; dz++) {
         if (dx === 0 && dz === 0) continue;
-        this.requestAndStageChunk(cx + dx, cz + dz, 5);
+        const ring = Math.max(Math.abs(dx), Math.abs(dz));
+        const priority = ring === 1 ? 5 : 2;
+        this.requestAndStageChunk(cx + dx, cz + dz, priority);
       }
     }
   }

@@ -25,7 +25,12 @@ export type RegionalMorphology =
   | 'spore_basin'
   | 'hematite_ridges'
   | 'crater_basin'
-  | 'regolith_highland';
+  | 'regolith_highland'
+  | 'bioluminescent_archipelago'
+  | 'obsidian_caldera'
+  | 'glacial_chasm'
+  | 'floating_mesas'
+  | 'spore_grotto';
 
 export type VegetationArchetype =
   | 'none'
@@ -36,7 +41,12 @@ export type VegetationArchetype =
   | 'bulbous'
   | 'crystals'
   | 'grass'
-  | 'spore_tree';
+  | 'spore_tree'
+  | 'bioluminescent_tendril'
+  | 'crystalline_lotus'
+  | 'giant_kelp_spire'
+  | 'spiral_fern'
+  | 'floating_spore_orb';
 
 export type FaunaArchetype =
   | 'quadruped'
@@ -51,7 +61,11 @@ export type FaunaArchetype =
   | 'crystal_scuttler'
   | 'dune_serpent'
   | 'avian_flock'
-  | 'biped_stalker';
+  | 'biped_stalker'
+  | 'ocean_leviathan'
+  | 'lithic_behemoth'
+  | 'zephyr_leviathan'
+  | 'archipelago_swimmer';
 
 export interface RegionalSurfacePalette {
   lowland: string;

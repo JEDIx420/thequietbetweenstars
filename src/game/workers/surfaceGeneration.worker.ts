@@ -119,6 +119,46 @@ export function computePointElevation(
       break;
     }
 
+    case 'bioluminescent_archipelago': {
+      const seaFloor = noise.fbm2D(wx * 0.003, wz * 0.003, 3, 2.0, 0.5) * 8.0 - 6.0;
+      const islandSpires = Math.pow(Math.max(0, noise.ridged2D(wx * 0.006, wz * 0.006, 3, 2.0, 0.55)), 1.8) * 36.0;
+      const lagoon = noise.noise2D(wx * 0.012, wz * 0.012) * 4.0;
+      elevation = seaFloor + islandSpires + lagoon;
+      break;
+    }
+
+    case 'obsidian_caldera': {
+      const calderaNoise = noise.fbm2D(wx * 0.004, wz * 0.004, 4, 2.0, 0.5);
+      const rim = Math.sin(calderaNoise * Math.PI * 2) * 28.0;
+      const craterDrop = Math.abs(noise.noise2D(wx * 0.007, wz * 0.007)) < 0.3 ? -35.0 : 0;
+      const basaltPillars = Math.max(0, noise.noise2D(wx * 0.02, wz * 0.02)) * 12.0;
+      elevation = rim + craterDrop + basaltPillars;
+      break;
+    }
+
+    case 'glacial_chasm': {
+      const glacier = noise.ridged2D(wx * 0.005, wz * 0.005, 4, 2.2, 0.5) * 34.0;
+      const chasm = Math.abs(noise.noise2D(wx * 0.01, wz * 0.01));
+      const chasmDrop = chasm < 0.16 ? -(0.16 - chasm) * 60.0 : 0;
+      elevation = glacier + chasmDrop;
+      break;
+    }
+
+    case 'floating_mesas': {
+      const base = noise.fbm2D(wx * 0.004, wz * 0.004, 3, 2.0, 0.5);
+      const stepped = SimplexNoise2D.terrace(base * 0.5 + 0.5, 3, 0.95) * 45.0 - 15.0;
+      const sheer = noise.noise2D(wx * 0.018, wz * 0.018) * 4.0;
+      elevation = stepped + sheer;
+      break;
+    }
+
+    case 'spore_grotto': {
+      const mounds = Math.sin(wx * 0.015) * Math.cos(wz * 0.015) * 14.0;
+      const basin = noise.fbm2D(wx * 0.005, wz * 0.005, 3, 2.0, 0.5) * 18.0;
+      elevation = mounds + basin;
+      break;
+    }
+
     default: {
       const f1 = noise.fbm2D(wx * 0.005, wz * 0.005, 4, 2.0, 0.5) * 20.0;
       const f2 = noise.noise2D(wx * 0.015, wz * 0.015) * 5.0;

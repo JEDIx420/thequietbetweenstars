@@ -461,6 +461,10 @@ export class FaunaGenerator {
       dune_serpent: ['Sub-Sand Dune Serpent', 'Regolith Wyrm', 'Lithic Glider', 'Basalt Ouroboros'],
       avian_flock: ['Thermal Dart Flock', 'Vapour Swifts', 'Aero-Falcons', 'Prism Skimmers'],
       biped_stalker: ['Savannah Raptor', 'Canyon Strider', 'Swift Crested Runner', 'Basalt Stalker'],
+      ocean_leviathan: ['Abyssal Sea Titan', 'Deep Crested Wyrm', 'Tidal Sovereign', 'Hydro-Whale'],
+      lithic_behemoth: ['Crag Mountain Walker', 'Bedrock Golem', 'Tectonic Colossus', 'Basalt Prowler'],
+      zephyr_leviathan: ['Stratospheric Sky-Whale', 'Ion Ribbon Sovereign', 'Aether Manta', 'Solar Wind Cruiser'],
+      archipelago_swimmer: ['Lagoon Ray', 'Coral Glider', 'Bioluminescent Reef Stalker', 'Atoll Skimmer'],
     };
 
     const diets = [

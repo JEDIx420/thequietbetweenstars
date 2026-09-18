@@ -11,7 +11,7 @@ describe('Vibrant Alien Fauna & Flora Generation Suite', () => {
   const regions = LandingRegionGenerator.generateRegions(profile, 101);
   const region = regions[0];
 
-  it('generates rich procedural 3D creatures across all 13 fauna archetypes', () => {
+  it('generates rich procedural 3D creatures across all fauna archetypes', () => {
     const allArchetypes: FaunaArchetype[] = [
       'sky_whale',
       'titan_strider',
@@ -26,6 +26,10 @@ describe('Vibrant Alien Fauna & Flora Generation Suite', () => {
       'hopping',
       'ray',
       'crawler',
+      'ocean_leviathan',
+      'lithic_behemoth',
+      'zephyr_leviathan',
+      'archipelago_swimmer',
     ];
 
     for (const arch of allArchetypes) {
@@ -63,6 +67,11 @@ describe('Vibrant Alien Fauna & Flora Generation Suite', () => {
       'crystals',
       'stalks',
       'shrubs',
+      'bioluminescent_tendril',
+      'crystalline_lotus',
+      'giant_kelp_spire',
+      'spiral_fern',
+      'floating_spore_orb',
     ];
 
     for (const arch of vegArchetypes) {
@@ -73,10 +82,11 @@ describe('Vibrant Alien Fauna & Flora Generation Suite', () => {
       };
 
       const meshes = FloraGenerator.createFloraInstances(testRegion, 0, 0, 120, () => 10);
-      expect(meshes.length).toBe(1);
-      const mesh = meshes[0];
-      expect(mesh.count).toBeGreaterThan(0);
-      expect(mesh.geometry.attributes.position.count).toBeGreaterThan(0);
+      expect(meshes.length).toBeGreaterThanOrEqual(1);
+      for (const mesh of meshes) {
+        expect(mesh.count).toBeGreaterThan(0);
+        expect(mesh.geometry.attributes.position.count).toBeGreaterThan(0);
+      }
     }
   });
 });

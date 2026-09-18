@@ -13,6 +13,12 @@ export class ParticleTextureGenerator {
       return this.cache.get(type)!;
     }
 
+    if (typeof document === 'undefined') {
+      const tex = new THREE.Texture();
+      this.cache.set(type, tex as any);
+      return tex as any;
+    }
+
     const size = 64;
     const canvas = document.createElement('canvas');
     canvas.width = size;

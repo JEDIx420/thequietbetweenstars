@@ -29,6 +29,7 @@ import { DeepCruiseController } from '../game/flight/DeepCruiseController';
 import { AutopilotController } from '../game/flight/AutopilotController';
 import { saveManager, type PlayerSaveSlot, type ShipModule } from '../persistence/SaveManager';
 import { TitleRevealSequence } from './TitleRevealSequence';
+import { AtmosphericEntrySequence } from '../game/surface/AtmosphericEntrySequence';
 import { NewJourneyCinematic } from './NewJourneyCinematic';
 import { ExpeditionBriefing } from './ExpeditionBriefing';
 import { ShipEmoteDirector, type EmoteType } from '../game/scenes/ShipEmoteDirector';
@@ -140,9 +141,10 @@ export class DesktopApp {
 
   // Staged Entry & Ascent Transition Timers
   private entryElapsed = 0;
-  private readonly entryDuration = 2.2;
+  private readonly entryDuration = 2.8;
   private ascentElapsed = 0;
   private readonly ascentDuration = 1.8;
+  private atmosphericEntrySequence: AtmosphericEntrySequence | null = null;
 
   // Bound window listeners for clean disposal
   private boundCheckOrientation: (() => void) | null = null;
@@ -561,6 +563,10 @@ export class DesktopApp {
       if (this.surfaceScene && !this.surfaceScene.isCenterReady()) {
         return;
       }
+      if (this.atmosphericEntrySequence) {
+        this.atmosphericEntrySequence.finish();
+        this.atmosphericEntrySequence = null;
+      }
       if (this.surfaceScene) {
         this.surfaceScene.finishPreparation();
       }
@@ -887,7 +893,7 @@ export class DesktopApp {
     this.showHudNotice(`ATMOSPHERIC ENTRY INITIATED // VECTOR: ${selectedSite.name}`);
 
     // Pre-instantiate SurfaceScene with deferred chunk initialization
-    // Progressive background worker generation will populate chunks over the 2.2s entry ease
+    // Progressive background worker generation will populate chunks over the 2.8s entry ease
     if (this.surfaceScene) {
       this.surfaceScene.dispose();
       this.surfaceScene = null;
@@ -897,6 +903,21 @@ export class DesktopApp {
       selectedSite,
       Array.from(this.collectedCreditIds),
       { deferHeavyInitialization: true }
+    );
+
+    // Launch atmospheric entry plasma sequence & pre-warm surface scene WebGL shaders
+    if (this.atmosphericEntrySequence) {
+      this.atmosphericEntrySequence.dispose();
+      this.atmosphericEntrySequence = null;
+    }
+    this.atmosphericEntrySequence = new AtmosphericEntrySequence(this.canvasContainer);
+    this.atmosphericEntrySequence.start(
+      this.orbitController.planet,
+      selectedSite,
+      this.renderer.renderer,
+      this.surfaceScene.scene,
+      this.renderer.camera,
+      () => {}
     );
   }
 
@@ -2773,6 +2794,7 @@ export class DesktopApp {
     this.abortInSpaceWarpCountdown();
     if (this.inSpaceWarpCountdownEl) this.inSpaceWarpCountdownEl.remove();
     if (this.touchControls) this.touchControls.dispose();
+    if (this.atmosphericEntrySequence) this.atmosphericEntrySequence.dispose();
     if (this.debugTelemetryEl) this.debugTelemetryEl.remove();
     if (this.surfaceScene) {
       this.surfaceScene.dispose();
