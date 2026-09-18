@@ -61,6 +61,7 @@ export interface StoryState {
   harmonicRelayState: HarmonicRelayState;
   systemsSinceLastResonance: number;
   activeVesselId: string | null;
+  freeExplorationMode?: boolean;
 }
 
 export type StoryEventType =
@@ -71,7 +72,8 @@ export type StoryEventType =
   | 'VESSEL_HAILED'
   | 'RELAY_PILLAR_ALIGNED'
   | 'RELAY_ACTIVATED'
-  | 'SYSTEM_ENTERED';
+  | 'SYSTEM_ENTERED'
+  | 'FREE_EXPLORATION_TOGGLED';
 
 export interface StoryEvent {
   type: StoryEventType;

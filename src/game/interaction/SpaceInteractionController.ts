@@ -25,6 +25,7 @@ export interface SpaceInteractionCallbacks {
   onStageAdvanced?: (newStage: number, stageName: string, isFinal: boolean) => void;
   isHeld?: boolean;
   isTriggered?: boolean;
+  shipQuaternion?: THREE.Quaternion;
 }
 
 export class SpaceInteractionController {
@@ -133,7 +134,7 @@ export class SpaceInteractionController {
       case 'station': {
         if (callbacks.isTriggered === false) break;
         const station = lockedTarget.data as SpaceStation;
-        const req = this.dockingController.requestDocking(station, shipPos);
+        const req = this.dockingController.requestDocking(station, shipPos, callbacks.shipQuaternion);
         if (req.success) {
           callbacks.showNotice(req.message);
           audio.playConnectChime();

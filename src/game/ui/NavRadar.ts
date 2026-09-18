@@ -32,6 +32,11 @@ export class NavRadar {
   private static readonly scratchForward = new THREE.Vector3();
   private bgCanvas: HTMLCanvasElement;
   private lastChipKey = '';
+  private freeExplorationMode = false;
+
+  public setFreeExplorationMode(enabled: boolean): void {
+    this.freeExplorationMode = enabled;
+  }
 
   constructor(parent: HTMLElement, autopilot: AutopilotController) {
     this.autopilotController = autopilot;
@@ -586,8 +591,8 @@ export class NavRadar {
         ctx.fillText(glyph, data.px - 3, data.dy > 0 ? data.py - 6 : data.py + 11);
       }
 
-      // Dedicated Story / Resonance harmonic wave animation
-      const isStory = t.isStoryTarget || t.anomaly?.hasResonance || t.anomaly?.signature?.isResonanceAnomaly || t.type === 'station' || t.type === 'vessel' || t.type === 'relay' || t.id.startsWith('story_');
+      // Dedicated Story / Resonance harmonic wave animation (suppressed in Free Roam mode)
+      const isStory = !this.freeExplorationMode && (t.isStoryTarget || t.anomaly?.hasResonance || t.anomaly?.signature?.isResonanceAnomaly || t.type === 'station' || t.type === 'vessel' || t.type === 'relay' || t.id.startsWith('story_'));
       if (isStory) {
         const pulseTime = Date.now() * 0.0035;
         const pulseRadius = 5.2 + Math.sin(pulseTime) * 1.2;

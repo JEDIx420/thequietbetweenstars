@@ -311,8 +311,10 @@ export class DesktopApp {
     });
 
     this.journalModal = new JournalModal(this.container);
+    this.journalModal.setStoryDirector(this.storyDirector);
     this.helpModal = new HelpModal(this.container);
     this.settingsModal = new SettingsModal(this.container);
+    this.settingsModal.setStoryDirector(this.storyDirector);
     this.helpModal.setOnOpenSettings(() => {
       this.helpModal.hide();
       this.settingsModal.open();
@@ -363,6 +365,11 @@ export class DesktopApp {
 
     // 6. Story Presentation & Objective HUD Subsystems
     this.storyObjectiveHud = new StoryObjectiveHUD(this.canvasContainer);
+    this.storyObjectiveHud.setOnToggleFreeRoam(() => {
+      const next = !this.storyDirector.isFreeExploration();
+      this.storyDirector.setFreeExploration(next);
+      audio.playBlip();
+    });
     this.stagedScanHud = new StagedScanHUD(this.canvasContainer);
     this.storyPresentationDirector = new StoryPresentationDirector(
       this.storyDirector,
@@ -778,11 +785,23 @@ export class DesktopApp {
   private updateNormalSpaceFlight(dt: number, tick: SchedulerTick, input: NormalizedInputState): void {
     const monitor = PerformanceMonitor.getInstance();
     monitor.startTiming('sim');
-    this.flightModel.update(input, dt, this.renderer.camera);
+
+    // Neutralize flight model inputs and momentum when docking tether or undocking is engaged
+    const isDockingActive = this.dockingController.getStatus() !== 'IDLE';
+    const effectiveInput = isDockingActive
+      ? { ...input, axes: { x: 0, y: 0 }, throttle: 0, roll: 0, boost: false }
+      : input;
+
+    if (isDockingActive) {
+      this.flightModel.velocity.multiplyScalar(Math.max(0, 1 - dt * 10.0));
+      this.flightModel.update(effectiveInput, dt, this.renderer.camera);
+    } else {
+      this.flightModel.update(effectiveInput, dt, this.renderer.camera);
+    }
 
     const shipPos = this.flightModel.position;
-    const throttle = this.flightModel.getThrottle();
-    this.spaceScene.updateSpaceFlight(dt, shipPos, this.renderer.camera.position, throttle, input.axes.x, input.axes.y, tick.didSimTick);
+    const throttle = isDockingActive ? 0 : this.flightModel.getThrottle();
+    this.spaceScene.updateSpaceFlight(dt, shipPos, this.renderer.camera.position, throttle, effectiveInput.axes.x, effectiveInput.axes.y, tick.didSimTick);
     monitor.stopTiming('sim');
 
     // Relativistic camera FOV expansion strictly during warp drive
@@ -960,6 +979,15 @@ export class DesktopApp {
       this.stationModal.show(this.activeSpaceStation, this.storyDirector, currentSlot);
     }
 
+    // Show docking guidance telemetry when tethering or undocking
+    if (this.dockingController.getStatus() === 'AUTOPILOT_TETHER') {
+      const pct = Math.round(this.dockingController.getProgress() * 100);
+      this.updateContextPrompt(`AUTONOMOUS DOCKING GUIDANCE // ALIGNING MOORINGS [${pct}%]`);
+    } else if (this.dockingController.getStatus() === 'UNDOCKING') {
+      const pct = Math.round(this.dockingController.getProgress() * 100);
+      this.updateContextPrompt(`DEPARTURE CLEARANCE // RELEASING MOORING CLAMPS [${pct}%]`);
+    }
+
     // If a specific non-planet entity (anomaly, probe, courier, encounter, station, vessel, relay) is locked on, prioritize it
     const activeNonPlanetLock = lockedTarget && lockedTarget.type !== 'planet';
 
@@ -1005,6 +1033,7 @@ export class DesktopApp {
         this.spaceInteractionController.handleSpaceAction(lockedTarget, shipPos, dt, {
           isHeld: isScanHeld,
           isTriggered: isScanTriggered,
+          shipQuaternion: this.flightModel.quaternion,
           showNotice: (msg) => this.showHudNotice(msg),
           setContextPrompt: (msg) => this.updateContextPrompt(msg),
           addCredits: (amt) => { this.credits += amt; },
@@ -1118,6 +1147,7 @@ export class DesktopApp {
 
     // Update Local Nav Radar
     if (this.navRadar && this.uiState === 'playing') {
+      this.navRadar.setFreeExplorationMode(this.storyDirector.isFreeExploration());
       const podId = this.spaceScene.activeCourierPod ? this.spaceScene.activeCourierPod.order.orderId : null;
       if (podId !== this.lastCourierPodState) {
         this.lastCourierPodState = podId;

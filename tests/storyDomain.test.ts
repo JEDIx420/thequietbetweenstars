@@ -208,4 +208,20 @@ describe('Story Domain & Save v5 Migration', () => {
     expect(planBeat5.injectedVessel).toBeDefined();
     expect(planBeat5.injectedVessel!.id).toBe('the_wanderer_7');
   });
+
+  it('supports Free Exploration sandbox mode toggling and events', () => {
+    const director = new StoryDirector();
+    const events: any[] = [];
+    director.subscribe((e) => events.push(e));
+
+    expect(director.isFreeExploration()).toBe(false);
+
+    director.setFreeExploration(true);
+    expect(director.isFreeExploration()).toBe(true);
+    expect(events.some((e) => e.type === 'FREE_EXPLORATION_TOGGLED' && e.payload.enabled === true)).toBe(true);
+
+    director.setFreeExploration(false);
+    expect(director.isFreeExploration()).toBe(false);
+    expect(events.some((e) => e.type === 'FREE_EXPLORATION_TOGGLED' && e.payload.enabled === false)).toBe(true);
+  });
 });

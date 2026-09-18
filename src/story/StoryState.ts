@@ -48,6 +48,7 @@ export const DEFAULT_STORY_STATE: StoryState = {
   },
   systemsSinceLastResonance: 0,
   activeVesselId: null,
+  freeExplorationMode: false,
 };
 
 export function cloneStoryState(state: StoryState): StoryState {

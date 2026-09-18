@@ -219,6 +219,19 @@ export class StoryPresentationDirector {
         this.callbacks.showHudNotice('ANCIENT RELAY HARMONIC PULSE DISCHARGED');
         break;
       }
+
+      case 'FREE_EXPLORATION_TOGGLED': {
+        const enabled = !!event.payload?.enabled;
+        const state = this.storyDirector.getState();
+        this.objectiveHud.update(state);
+        audio.playConnectChime();
+        this.callbacks.showHudNotice(
+          enabled
+            ? 'FREE ROAM MODE ACTIVE // Story objectives paused · Freely explore the galaxy'
+            : 'STORY MISSIONS RESUMED // Active resonance objectives re-engaged'
+        );
+        break;
+      }
     }
   }
 

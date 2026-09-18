@@ -40,6 +40,19 @@ export class StoryDirector {
     this.state = cloneStoryState(state);
   }
 
+  public isFreeExploration(): boolean {
+    return this.state.freeExplorationMode ?? false;
+  }
+
+  public setFreeExploration(enabled: boolean): void {
+    this.state.freeExplorationMode = enabled;
+    this.emit({
+      type: 'FREE_EXPLORATION_TOGGLED',
+      payload: { enabled },
+      timestamp: Date.now(),
+    });
+  }
+
   public subscribe(listener: StoryEventListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

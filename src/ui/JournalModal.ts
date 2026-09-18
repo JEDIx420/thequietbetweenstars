@@ -2,6 +2,7 @@ import { saveManager, type DiscoveryRecord, type JournalEntry } from '../persist
 import { audio } from '../audio/AudioEngine';
 import { CHAPTER_1_BEATS } from '../story/chapters/Chapter1Resonance';
 import type { StoryState } from '../story/StoryTypes';
+import { StoryDirector } from '../story/StoryDirector';
 
 export type JournalTab = 'STORY' | 'WORLDS' | 'LIFE' | 'PEOPLES' | 'LORE' | 'SYSTEMS' | 'ANOMALIES' | 'RESOURCES' | 'NOTES';
 
@@ -12,6 +13,11 @@ export class JournalModal {
   private discoveries: DiscoveryRecord[] = [];
   private journalEntries: JournalEntry[] = [];
   private storyState: StoryState | null = null;
+  private storyDirector: StoryDirector | null = null;
+
+  public setStoryDirector(director: StoryDirector): void {
+    this.storyDirector = director;
+  }
 
   constructor(parent: HTMLElement) {
     this.container = document.createElement('div');
@@ -170,6 +176,7 @@ export class JournalModal {
 
     if (this.currentTab === 'STORY') {
       const state = this.storyState;
+      const isFree = !!state?.freeExplorationMode;
       const beatId = state?.currentBeat || 'beat_0_awakening';
       const beatDef = CHAPTER_1_BEATS[beatId];
       const fragments = state?.resonanceFragments || [];
@@ -181,36 +188,64 @@ export class JournalModal {
       const alignedPillars = state?.harmonicRelayState?.alignedPillars || [];
 
       content.innerHTML = `
+        <!-- Free Roam / Story Mode Banner -->
         <div style="
           grid-column: 1 / -1;
-          background: rgba(15, 23, 42, 0.85);
-          border: 1px solid rgba(56, 189, 248, 0.4);
-          border-left: 4px solid #38bdf8;
+          background: ${isFree ? 'rgba(22, 101, 52, 0.25)' : 'rgba(15, 23, 42, 0.85)'};
+          border: 1px solid ${isFree ? 'rgba(74, 222, 128, 0.4)' : 'rgba(56, 189, 248, 0.4)'};
+          border-left: 4px solid ${isFree ? '#4ade80' : '#38bdf8'};
           border-radius: 10px;
           padding: 20px;
           margin-bottom: 6px;
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 16px;
+          flex-wrap: wrap;
         ">
-          <div style="font-size: 10px; color: #7dd3fc; letter-spacing: 0.2em; font-weight: 700; text-transform: uppercase;">
-            ACTIVE MISSION // CHAPTER 1: THE RESONANCE
+          <div>
+            <div style="font-size: 10px; color: ${isFree ? '#86efac' : '#7dd3fc'}; letter-spacing: 0.2em; font-weight: 700; text-transform: uppercase;">
+              ${isFree ? 'SANDBOX MODE // FREE EXPLORATION' : 'ACTIVE MISSION // CHAPTER 1: THE RESONANCE'}
+            </div>
+            <h3 style="font-size: 18px; margin: 6px 0 10px 0; color: #f8fafc; font-weight: 400;">
+              ${isFree ? 'Autonomous Galactic Exploration' : (beatDef ? beatDef.title : 'Subcarrier Whisper')}
+            </h3>
+            <div style="
+              background: ${isFree ? 'rgba(34, 197, 94, 0.12)' : 'rgba(56, 189, 248, 0.1)'};
+              border: 1px solid ${isFree ? 'rgba(74, 222, 128, 0.3)' : 'rgba(56, 189, 248, 0.3)'};
+              border-radius: 6px;
+              padding: 10px 14px;
+              font-size: 13px;
+              color: #e2e8f0;
+              line-height: 1.5;
+              display: flex;
+              align-items: center;
+              gap: 8px;
+            ">
+              <span style="color: ${isFree ? '#4ade80' : '#38bdf8'}; font-weight: bold;">
+                ${isFree ? 'SANDBOX STATUS:' : 'CURRENT OBJECTIVE:'}
+              </span>
+              <span>
+                ${isFree ? 'Active narrative objectives are paused. Explore solar systems freely.' : (beatDef ? beatDef.objective : 'Review long-range telemetry with Mnemosyne.')}
+              </span>
+            </div>
           </div>
-          <h3 style="font-size: 18px; margin: 6px 0 10px 0; color: #f8fafc; font-weight: 400;">
-            ${beatDef ? beatDef.title : 'Subcarrier Whisper'}
-          </h3>
-          <div style="
-            background: rgba(56, 189, 248, 0.1);
-            border: 1px solid rgba(56, 189, 248, 0.3);
+
+          <button id="btn-toggle-free-exploration-journal" style="
+            background: ${isFree ? 'rgba(34, 197, 94, 0.2)' : 'rgba(56, 189, 248, 0.15)'};
+            border: 1px solid ${isFree ? '#4ade80' : 'rgba(56, 189, 248, 0.4)'};
+            color: ${isFree ? '#86efac' : '#7dd3fc'};
+            padding: 8px 16px;
             border-radius: 6px;
-            padding: 10px 14px;
-            font-size: 13px;
-            color: #e2e8f0;
-            line-height: 1.5;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            font-size: 11.5px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            white-space: nowrap;
           ">
-            <span style="color: #38bdf8; font-weight: bold;">CURRENT OBJECTIVE:</span>
-            <span>${beatDef ? beatDef.objective : 'Review long-range telemetry with Mnemosyne.'}</span>
-          </div>
+            ${isFree ? '▶ RESUME STORY MISSIONS' : '⏸ PAUSE & FREE ROAM'}
+          </button>
         </div>
 
         <!-- Resonance Fragments Section -->
@@ -267,6 +302,19 @@ export class JournalModal {
           </div>
         </div>
       `;
+
+      const toggleBtn = content.querySelector('#btn-toggle-free-exploration-journal');
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+          audio.playBlip();
+          if (this.storyDirector) {
+            const nextMode = !this.storyDirector.isFreeExploration();
+            this.storyDirector.setFreeExploration(nextMode);
+            this.storyState = this.storyDirector.getState();
+            this.render();
+          }
+        });
+      }
       return;
     }
 

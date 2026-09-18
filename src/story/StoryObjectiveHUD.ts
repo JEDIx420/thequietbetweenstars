@@ -111,8 +111,40 @@ export class StoryObjectiveHUD {
     `;
     this.badgeEl.textContent = 'UPDATED';
 
+    const controlsWrapper = document.createElement('div');
+    controlsWrapper.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    `;
+
+    const freeRoamBtn = document.createElement('button');
+    freeRoamBtn.id = 'hud-btn-toggle-freeroam';
+    freeRoamBtn.title = 'Toggle Free Exploration Mode';
+    freeRoamBtn.style.cssText = `
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #94a3b8;
+      font-size: 8px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s ease;
+    `;
+    freeRoamBtn.textContent = 'FREE ROAM';
+    freeRoamBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.onToggleFreeRoamCallback) {
+        this.onToggleFreeRoamCallback();
+      }
+    });
+
+    controlsWrapper.appendChild(this.badgeEl);
+    controlsWrapper.appendChild(freeRoamBtn);
+
     headerEl.appendChild(this.chapterEl);
-    headerEl.appendChild(this.badgeEl);
+    headerEl.appendChild(controlsWrapper);
     card.appendChild(headerEl);
 
     // Beat title
@@ -158,7 +190,34 @@ export class StoryObjectiveHUD {
     parent.appendChild(this.container);
   }
 
+  private onToggleFreeRoamCallback: (() => void) | null = null;
+
+  public setOnToggleFreeRoam(cb: () => void): void {
+    this.onToggleFreeRoamCallback = cb;
+  }
+
   public update(state: StoryState, showNotification = false): void {
+    const isFree = !!state.freeExplorationMode;
+    const btn = this.container.querySelector('#hud-btn-toggle-freeroam') as HTMLElement;
+    if (btn) {
+      btn.textContent = isFree ? '▶ RESUME' : '⏸ ROAM';
+      btn.style.color = isFree ? '#4ade80' : '#94a3b8';
+      btn.style.borderColor = isFree ? 'rgba(74, 222, 128, 0.4)' : 'rgba(255, 255, 255, 0.2)';
+      btn.style.background = isFree ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255, 255, 255, 0.08)';
+    }
+
+    if (isFree) {
+      this.chapterEl.textContent = 'EXPLORATION // FREE ROAM';
+      this.chapterEl.style.color = '#4ade80';
+      this.titleEl.textContent = 'SANDBOX CRUISE';
+      this.titleEl.style.color = '#86efac';
+      this.objectiveEl.textContent = 'Story paused. Explore uncharted star systems at your own pace.';
+      this.fragmentsEl.style.display = 'none';
+      return;
+    }
+
+    this.chapterEl.style.color = '#7dd3fc';
+    this.titleEl.style.color = '#f1f5f9';
     const beatDef = CHAPTER_1_BEATS[state.currentBeat];
     if (!beatDef) return;
 
