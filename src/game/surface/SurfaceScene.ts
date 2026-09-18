@@ -990,14 +990,12 @@ export class SurfaceScene {
     // Center chunk (highest priority 10)
     this.requestAndStageChunk(cx, cz, 10);
 
-    // Surrounding chunks: inner ring (priority 5), outer ring (priority 2)
-    const radius = 2;
+    // Immediate landing zone chunks (priority 5)
+    const radius = 1;
     for (let dx = -radius; dx <= radius; dx++) {
       for (let dz = -radius; dz <= radius; dz++) {
         if (dx === 0 && dz === 0) continue;
-        const ring = Math.max(Math.abs(dx), Math.abs(dz));
-        const priority = ring === 1 ? 5 : 2;
-        this.requestAndStageChunk(cx + dx, cz + dz, priority);
+        this.requestAndStageChunk(cx + dx, cz + dz, 5);
       }
     }
   }

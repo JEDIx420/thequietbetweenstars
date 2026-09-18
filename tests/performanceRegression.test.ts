@@ -509,7 +509,10 @@ describe('Performance Engine & Lifecycle Regression Suite', () => {
       const queue = FrameBudgetQueue.getInstance();
 
       // Wait for progressive heightfield generator to finish inserting chunk (0, 0)
-      await new Promise((r) => setTimeout(r, 100));
+      for (let i = 0; i < 50; i++) {
+        if (cache.hasChunk(0, 0)) break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
 
       expect(cache.hasChunk(0, 0)).toBe(true);
       expect(queue.pendingCount).toBeGreaterThan(0);
@@ -581,7 +584,10 @@ describe('Performance Engine & Lifecycle Regression Suite', () => {
       expect(didRejectWorker).toBe(true);
 
       // Wait for progressive fallback generator to finish
-      await new Promise((r) => setTimeout(r, 120));
+      for (let i = 0; i < 50; i++) {
+        if (cache.hasChunk(0, 0)) break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
 
       // Center chunk (0, 0) should now be inserted in cache via progressive fallback
       expect(cache.hasChunk(0, 0)).toBe(true);
