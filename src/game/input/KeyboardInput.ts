@@ -45,6 +45,8 @@ export class KeyboardInput implements InputSource {
     } else if (code === 'Tab') {
       e.preventDefault();
       this.triggeredActions.add('cycle_target');
+    } else if (code === 'KeyT') {
+      this.triggeredActions.add('target_lock');
     } else if (code === 'KeyX') {
       this.triggeredActions.add('autopilot');
     } else if (code === 'KeyP' || code === 'Escape') {

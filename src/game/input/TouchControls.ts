@@ -873,8 +873,9 @@ export class TouchControls {
       navigator.vibrate?.(15);
     });
 
-    // Target button (Left Thumb: cycle lock on nav radar)
+    // Target button (Left Thumb: lock on target ahead / cycle lock)
     this.targetBtnEl?.addEventListener('click', () => {
+      this.touchInput.triggerAction('target_lock');
       this.touchInput.triggerAction('cycle_target');
       navigator.vibrate?.(15);
     });

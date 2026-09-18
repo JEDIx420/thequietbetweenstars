@@ -40,6 +40,9 @@ import { RenderQualityController } from '../game/performance/RenderQualityContro
 import { PerformanceMonitor } from '../game/performance/PerformanceMonitor';
 import { FrameBudgetQueue } from '../game/performance/FrameBudgetQueue';
 import type { NormalizedInputState } from '../game/input/InputSource';
+import { TargetLockSystem, type LockableTarget } from '../game/targeting/TargetLockSystem';
+import { TargetLockReticle } from '../game/ui/TargetLockReticle';
+import type { SpaceEncounter } from '../game/scenes/SpaceEncounterManager';
 
 const scratchShipForward = new THREE.Vector3();
 
@@ -63,6 +66,8 @@ export class DesktopApp {
   public renderQualityController!: RenderQualityController;
   public stateMachine: FlightStateMachine = new FlightStateMachine(FlightPhase.SYSTEM_CRUISE);
   public approachController: ApproachController = new ApproachController();
+  public targetLockSystem: TargetLockSystem = new TargetLockSystem();
+  private targetLockReticle!: TargetLockReticle;
   public orbitController: OrbitController = new OrbitController();
   public worldPosition: WorldPosition = new WorldPosition();
   public floatingOrigin: FloatingOrigin = new FloatingOrigin(2500);
@@ -239,6 +244,10 @@ export class DesktopApp {
       this.holographicNavModal.setScale('SYSTEM');
       this.holographicNavModal.open();
     });
+
+    // Target Lock HUD Reticle & Touch Raycasting
+    this.targetLockReticle = new TargetLockReticle(this.canvasContainer);
+    this.setupViewportTouchTargeting();
 
     // 3. Interstellar Deep Cruise subsystem
     this.deepCruiseController = new DeepCruiseController(
@@ -484,7 +493,41 @@ export class DesktopApp {
       this.surfaceScene.adjustAltitude(-12.0);
     }
 
-    if (res.nearbyResource) {
+    // Handle T / Target Ahead lock-on on surface
+    const surfaceCandidates = this.collectSurfaceLockCandidates();
+    if (this.inputManager.consumeAction('target_lock')) {
+      const locked = this.targetLockSystem.lockTargetInForwardCone(
+        this.surfaceScene.shipPosition,
+        this.surfaceScene.shipPhysicsRoot.quaternion,
+        surfaceCandidates,
+        { maxDistance: 450, minDot: 0.3 }
+      );
+      if (locked) {
+        audio.playBlip();
+        this.showHudNotice(`TARGET LOCKED // ${locked.name.toUpperCase()} [${locked.distance}m]`);
+      } else {
+        this.showHudNotice('NO TARGET IN FORWARD SIGHT');
+      }
+    }
+
+    const lockedTarget = this.targetLockSystem.getLockedTarget();
+    if (lockedTarget) {
+      this.targetLockSystem.updateTargetDistance(this.surfaceScene.shipPosition);
+      if (lockedTarget.distance !== undefined && lockedTarget.distance > 600) {
+        this.targetLockSystem.clearLockedTarget();
+      }
+    }
+
+    if (lockedTarget) {
+      const distStr = `${lockedTarget.distance ?? 0}m`;
+      if (lockedTarget.isSentient) {
+        this.updateContextPrompt(`LOCKED: ${lockedTarget.name.toUpperCase()} [${distStr}] // SPACE: COMMUNICATE · T: NEXT TARGET`);
+      } else if (lockedTarget.type === 'resource') {
+        this.updateContextPrompt(`LOCKED: ${lockedTarget.name} [${distStr}] // SPACE: EXTRACT SAMPLE · T: NEXT TARGET`);
+      } else {
+        this.updateContextPrompt(`LOCKED: ${lockedTarget.name} [${distStr}] // SPACE: SCAN SPECIMEN · T: NEXT TARGET`);
+      }
+    } else if (res.nearbyResource) {
       this.updateContextPrompt(`SURVEY SAMPLE DETECTED: ${res.nearbyResource.name} // PRESS SPACE TO COLLECT`);
     } else if (res.activeScanTarget) {
       if (res.activeScanTarget.isSentient) {
@@ -495,12 +538,27 @@ export class DesktopApp {
     } else {
       const atmo = this.surfaceScene.currentAtmosphereState;
       const atmoInfo = atmo ? ` · ${atmo.localTimeFormatted} [${atmo.phase}] · WX: ${atmo.weather.replace('_', ' ')}` : '';
-      this.updateContextPrompt(`SURFACE EXPLORATION${atmoInfo} // Q/E: ALTITUDE · F3: TELEMETRY · ESC: ORBIT`);
+      this.updateContextPrompt(`SURFACE EXPLORATION${atmoInfo} // T: TARGET AHEAD · Q/E: ALTITUDE · ESC: ORBIT`);
     }
 
     // Contextual action: Collect sample or initiate conversation or scan
     if (this.inputManager.consumeAction('scan') || this.inputManager.consumeAction('talk') || this.inputManager.consumeAction('interact')) {
-      if (res.nearbyResource) {
+      if (lockedTarget) {
+        if (lockedTarget.isSentient && lockedTarget.data?.npcData) {
+          this.startGiantConversation(lockedTarget.data.npcData);
+        } else if (lockedTarget.type === 'resource') {
+          this.collectSurveySample(lockedTarget.data);
+        } else {
+          audio.playScanEffect();
+          this.tutorialDirector.onPlayerScan();
+          this.showHudNotice(`SCANNED: ${lockedTarget.name} — LOG UPDATED`);
+          const info = lockedTarget.data?.creature?.scanInfo
+            ? `${lockedTarget.data.creature.scanInfo.behaviour}\nDiet: ${lockedTarget.data.creature.scanInfo.diet}\nTemperament: ${lockedTarget.data.creature.scanInfo.temperament}`
+            : (lockedTarget.data?.info || 'Surface Feature Cataloged');
+          this.recordSurfaceDiscovery(lockedTarget.name, info);
+          this.tutorialDirector.onPlayerDiscovery();
+        }
+      } else if (res.nearbyResource) {
         this.collectSurveySample(res.nearbyResource);
       } else if (res.activeScanTarget?.isSentient && res.activeScanTarget.npcData) {
         this.startGiantConversation(res.activeScanTarget.npcData);
@@ -521,6 +579,15 @@ export class DesktopApp {
     if (this.inputManager.consumeAction('confirm') || this.inputManager.consumeAction('cancel') || this.inputManager.consumeAction('autopilot')) {
       this.returnToOrbitFromSurface();
     }
+
+    // Update Target Lock Reticle on Surface
+    this.targetLockReticle.update(
+      this.targetLockSystem.getLockedTarget(),
+      this.renderer.camera,
+      window.innerWidth,
+      window.innerHeight,
+      isTouchDevice()
+    );
 
     monitor.startTiming('render');
     this.renderer.render(this.surfaceScene.scene);
@@ -661,6 +728,36 @@ export class DesktopApp {
 
     const scanReach = this.installedModules.has('mod_scanner_deep_ecology') ? 280 : 140;
 
+    // Handle T / Target Ahead lock-on
+    const spaceCandidates = this.collectSpaceLockCandidates();
+    if (this.inputManager.consumeAction('target_lock')) {
+      const locked = this.targetLockSystem.lockTargetInForwardCone(
+        shipPos,
+        this.flightModel.quaternion,
+        spaceCandidates,
+        { maxDistance: 5000, minDot: 0.3 }
+      );
+      if (locked) {
+        audio.playBlip();
+        this.showHudNotice(`TARGET LOCKED // ${locked.name.toUpperCase()}`);
+        if (locked.type === 'planet') {
+          const targets = (this.navRadar as any)?.targets as any[];
+          const idx = targets?.findIndex((t) => t.id === locked.id);
+          if (idx !== undefined && idx !== -1) this.navRadar.selectTargetIndex(idx);
+        }
+      } else {
+        this.showHudNotice('NO TARGET IN FORWARD SIGHT');
+      }
+    }
+
+    const lockedTarget = this.targetLockSystem.getLockedTarget();
+    if (lockedTarget) {
+      this.targetLockSystem.updateTargetDistance(shipPos);
+      if (lockedTarget.distance !== undefined && lockedTarget.distance > 8000) {
+        this.targetLockSystem.clearLockedTarget();
+      }
+    }
+
     // Forward vector for heading-weighted approach prioritization using module scratch vector
     const shipForward = scratchShipForward.set(0, 0, -1).applyQuaternion(this.flightModel.quaternion);
 
@@ -669,7 +766,60 @@ export class DesktopApp {
     const targetPlanet = (!this.deepCruiseController.state.isActive && phase !== FlightPhase.STELLAR_CRUISE)
       ? this.approachController.update(shipPos, this.spaceScene.activePlanetList, shipForward)
       : null;
-    if (targetPlanet) {
+
+    // If a specific non-planet entity (anomaly, probe, courier, encounter) is locked on, prioritize it
+    const activeNonPlanetLock = lockedTarget && lockedTarget.type !== 'planet';
+
+    if (activeNonPlanetLock) {
+      const dist = lockedTarget.distance ?? Math.round(shipPos.distanceTo(lockedTarget.position));
+      const inScanReach = dist <= (scanReach + 60);
+
+      this.updateContextPrompt(
+        inScanReach
+          ? `LOCKED: ${lockedTarget.name} [${dist}m] // SPACE: SCAN & INTERACT · T: NEXT TARGET`
+          : `LOCKED: ${lockedTarget.name} [${dist}m] // APPROACH TO SCAN · T: NEXT TARGET`
+      );
+
+      if (this.inputManager.consumeAction('scan')) {
+        if (inScanReach) {
+          if (lockedTarget.type === 'encounter') {
+            const enc = lockedTarget.data as SpaceEncounter;
+            if (!enc.isScanned) {
+              enc.isScanned = true;
+              this.credits += enc.rewardCredits;
+              if (enc.rewardSampleCategory) {
+                this.sampleInventory[enc.rewardSampleCategory] = (this.sampleInventory[enc.rewardSampleCategory] || 0) + 1;
+              }
+              audio.playConnectChime();
+              const sampleNotice = enc.rewardSampleCategory ? ` · +1 ${enc.rewardSampleCategory} SAMPLE` : '';
+              this.showHudNotice(`DISCOVERY: ${enc.name} // +${enc.rewardCredits} CREDITS${sampleNotice}`);
+              saveManager.recordDiscovery({
+                id: enc.id,
+                type: 'anomaly',
+                name: enc.name,
+                systemName: this.spaceScene.currentSystem?.name || 'Deep Space',
+                sector: { ...this.worldPosition.sector },
+                timestamp: Date.now(),
+                details: enc.logSnippet,
+                category: 'ANOMALIES',
+              });
+              this.saveCurrentJourney();
+            } else {
+              audio.playScanEffect();
+              this.showHudNotice(`RE-SCANNED: ${enc.name} // SPECTRAL DATA LOGGED`);
+            }
+          } else if (lockedTarget.type === 'courier' && this.spaceScene.activeCourierPod) {
+            this.dockCourierPod(this.spaceScene.activeCourierPod);
+          } else {
+            audio.playScanEffect();
+            this.showHudNotice(`SCANNED: ${lockedTarget.name}`);
+          }
+        } else {
+          audio.playScanEffect();
+          this.showHudNotice(`OUT OF SCANNER RANGE [${dist}m] — CLOSE TO ${scanReach}m`);
+        }
+      }
+    } else if (targetPlanet) {
       if (phase !== FlightPhase.PLANET_APPROACH) {
         this.stateMachine.transitionTo(FlightPhase.PLANET_APPROACH);
       }
@@ -811,6 +961,15 @@ export class DesktopApp {
       this.updateDebugTelemetryOverlay(null);
     }
 
+    // Update Target Lock Reticle in Space
+    this.targetLockReticle.update(
+      this.targetLockSystem.getLockedTarget(),
+      this.renderer.camera,
+      window.innerWidth,
+      window.innerHeight,
+      isTouchDevice()
+    );
+
     monitor.startTiming('render');
     this.renderer.render(this.spaceScene.scene);
     monitor.stopTiming('render');
@@ -874,6 +1033,8 @@ export class DesktopApp {
 
   private engageOrbit(target: TargetPlanetInfo): void {
     audio.playConnectChime();
+    this.targetLockSystem.clearLockedTarget();
+    this.targetLockReticle.update(null, this.renderer.camera, window.innerWidth, window.innerHeight);
     this.stateMachine.transitionTo(FlightPhase.ORBIT);
     this.orbitController.enterOrbit(target.planet, target.position, this.flightModel.position);
 
@@ -891,6 +1052,9 @@ export class DesktopApp {
       this.showHudNotice('ATMOSPHERIC ENTRY UNAVAILABLE ON THIS CELESTIAL BODY');
       return;
     }
+
+    this.targetLockSystem.clearLockedTarget();
+    this.targetLockReticle.update(null, this.renderer.camera, window.innerWidth, window.innerHeight);
 
     const selectedSite = this.activeOrbitSites[this.selectedSiteIndex];
     this.stateMachine.transitionTo(FlightPhase.ENTRY);
@@ -927,6 +1091,8 @@ export class DesktopApp {
   }
 
   private returnToOrbitFromSurface(): void {
+    this.targetLockSystem.clearLockedTarget();
+    this.targetLockReticle.update(null, this.renderer.camera, window.innerWidth, window.innerHeight);
     this.stateMachine.transitionTo(FlightPhase.ASCENT);
     this.ascentElapsed = 0;
     this.showHudNotice('SUB-ORBITAL ASCENT THRUSTERS ENGAGED');
@@ -1031,6 +1197,234 @@ export class DesktopApp {
     this.touchControls = new TouchControls(this.touchLayer, this.inputManager.getTouchSource());
     this.touchControls.setOnEmote((type) => this.triggerShipEmote(type));
     this.touchControls.hide();
+  }
+
+  private setupViewportTouchTargeting(): void {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchStartTime = 0;
+
+    const handlePointerDown = (e: PointerEvent) => {
+      touchStartX = e.clientX;
+      touchStartY = e.clientY;
+      touchStartTime = performance.now();
+    };
+
+    const handlePointerUp = (e: PointerEvent) => {
+      if (this.uiState !== 'playing') return;
+      const elapsed = performance.now() - touchStartTime;
+      const dist = Math.hypot(e.clientX - touchStartX, e.clientY - touchStartY);
+      if (elapsed > 500 || dist > 15) return;
+
+      const target = e.target as HTMLElement;
+      if (target && target.closest('button, a, input, .modal, #touch-joystick-base, #touch-throttle-track, #nav-radar-canvas, #touch-emote-drawer, #desktop-emote-drawer, .hud-panel')) {
+        return;
+      }
+
+      this.handleDirectViewportTap(e.clientX, e.clientY);
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown, { passive: true });
+    window.addEventListener('pointerup', handlePointerUp, { passive: true });
+  }
+
+  private handleDirectViewportTap(clientX: number, clientY: number): void {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const ndcX = (clientX / width) * 2 - 1;
+    const ndcY = -(clientY / height) * 2 + 1;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.renderer.camera);
+
+    const phase = this.stateMachine.getPhase();
+    if (phase === FlightPhase.SURFACE_FLIGHT && this.surfaceScene) {
+      const candidates = this.collectSurfaceLockCandidates();
+      const hit = this.targetLockSystem.findTargetFromRay(raycaster.ray, candidates, 35);
+      if (hit) {
+        audio.playBlip();
+        navigator.vibrate?.([20, 30]);
+        this.showHudNotice(`TARGET ACQUIRED // ${hit.name.toUpperCase()}`);
+        if (hit.isSentient && hit.data?.npcData) {
+          this.startGiantConversation(hit.data.npcData);
+        } else if (hit.type === 'resource') {
+          this.collectSurveySample(hit.data);
+        } else {
+          audio.playScanEffect();
+          this.tutorialDirector.onPlayerScan();
+          this.showHudNotice(`SCANNED: ${hit.name} — LOG UPDATED`);
+          const info = hit.data?.creature?.scanInfo
+            ? `${hit.data.creature.scanInfo.behaviour}\nDiet: ${hit.data.creature.scanInfo.diet}\nTemperament: ${hit.data.creature.scanInfo.temperament}`
+            : (hit.data?.info || 'Surface Feature Scanned');
+          this.recordSurfaceDiscovery(hit.name, info);
+          this.tutorialDirector.onPlayerDiscovery();
+        }
+      }
+    } else if (phase === FlightPhase.SYSTEM_CRUISE || phase === FlightPhase.PLANET_APPROACH) {
+      const candidates = this.collectSpaceLockCandidates();
+      const hit = this.targetLockSystem.findTargetFromRay(raycaster.ray, candidates, 50);
+      if (hit) {
+        audio.playBlip();
+        navigator.vibrate?.([20, 30]);
+        this.showHudNotice(`TARGET ACQUIRED // ${hit.name.toUpperCase()}`);
+        if (hit.type === 'encounter') {
+          const enc = hit.data as SpaceEncounter;
+          if (!enc.isScanned) {
+            enc.isScanned = true;
+            this.credits += enc.rewardCredits;
+            if (enc.rewardSampleCategory) {
+              this.sampleInventory[enc.rewardSampleCategory] = (this.sampleInventory[enc.rewardSampleCategory] || 0) + 1;
+            }
+            audio.playConnectChime();
+            const sampleNotice = enc.rewardSampleCategory ? ` · +1 ${enc.rewardSampleCategory} SAMPLE` : '';
+            this.showHudNotice(`DISCOVERY: ${enc.name} // +${enc.rewardCredits} CREDITS${sampleNotice}`);
+            saveManager.recordDiscovery({
+              id: enc.id,
+              type: 'anomaly',
+              name: enc.name,
+              systemName: this.spaceScene.currentSystem?.name || 'Deep Space',
+              sector: { ...this.worldPosition.sector },
+              timestamp: Date.now(),
+              details: enc.logSnippet,
+              category: 'ANOMALIES',
+            });
+            this.saveCurrentJourney();
+          } else {
+            audio.playScanEffect();
+            this.showHudNotice(`TARGET LOCKED: ${enc.name} // SPECTRAL DATA LOGGED`);
+          }
+        } else if (hit.type === 'courier' && this.spaceScene.activeCourierPod) {
+          this.dockCourierPod(this.spaceScene.activeCourierPod);
+        } else if (hit.type === 'planet') {
+          const p = hit.data as { descriptor: any; position: THREE.Vector3 };
+          const dist = this.flightModel.position.distanceTo(p.position);
+          if (dist <= p.descriptor.radius + ApproachController.ORBIT_INSPECT_DIST) {
+            this.engageOrbit({
+              planet: p.descriptor,
+              position: p.position,
+              distance: dist,
+              approachRatio: 1,
+              canInspect: true,
+            });
+          } else if (this.navRadar.hasTargetId(p.descriptor.id)) {
+            const targets = (this.navRadar as any).targets as any[];
+            const idx = targets.findIndex((t) => t.id === p.descriptor.id);
+            if (idx !== -1) this.navRadar.selectTargetIndex(idx);
+          }
+        }
+      }
+    }
+  }
+
+  private collectSpaceLockCandidates(): LockableTarget[] {
+    const list: LockableTarget[] = [];
+    if (this.spaceScene.encounterManager?.encounters) {
+      for (const enc of this.spaceScene.encounterManager.encounters) {
+        list.push({
+          id: enc.id,
+          name: enc.name,
+          type: 'encounter',
+          position: enc.position,
+          radius: 40,
+          isScanned: enc.isScanned,
+          data: enc,
+        });
+      }
+    }
+    if (this.spaceScene.activeCourierPod) {
+      list.push({
+        id: 'courier_pod',
+        name: 'SUPPLY COURIER POD',
+        type: 'courier',
+        position: this.spaceScene.activeCourierPod.position,
+        radius: 25,
+        data: this.spaceScene.activeCourierPod,
+      });
+    }
+    for (const p of this.spaceScene.activePlanetList) {
+      list.push({
+        id: p.descriptor.id,
+        name: p.descriptor.name,
+        type: 'planet',
+        position: p.position,
+        radius: p.descriptor.radius,
+        data: p,
+      });
+    }
+    if (this.spaceScene.currentSystem?.anomalies) {
+      for (const a of this.spaceScene.currentSystem.anomalies) {
+        const angle = a.angle || 0;
+        const dist = 600 + a.distanceFromStar * 300;
+        const pos = new THREE.Vector3(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+        list.push({
+          id: a.id,
+          name: a.name,
+          type: 'anomaly',
+          position: pos,
+          radius: 35,
+          data: a,
+        });
+      }
+    }
+    return list;
+  }
+
+  private collectSurfaceLockCandidates(): LockableTarget[] {
+    if (!this.surfaceScene) return [];
+    const list: LockableTarget[] = [];
+    const shipPos = this.surfaceScene.shipPosition;
+
+    for (const site of this.surfaceScene.faunaPopulationManager.encounterSites) {
+      list.push({
+        id: site.giantCreature.id,
+        name: site.giantNPC.name,
+        type: 'titan',
+        position: site.position,
+        radius: 45,
+        isSentient: true,
+        data: { npcData: site.giantNPC, creature: site.giantCreature },
+      });
+    }
+
+    for (const creature of this.surfaceScene.faunaPopulationManager.getActiveCreatures()) {
+      if (list.some((c) => c.id === creature.id)) continue;
+      list.push({
+        id: creature.id,
+        name: creature.scanInfo.name,
+        type: creature.scanInfo.isSentient ? 'titan' : 'creature',
+        position: creature.group.position,
+        radius: creature.scanInfo.isSentient ? 35 : 16,
+        isSentient: creature.scanInfo.isSentient,
+        data: { npcData: creature.scanInfo.npcData, creature },
+      });
+    }
+
+    const nearbyProps = this.surfaceScene.spatialHash.queryRadius(shipPos.x, shipPos.z, 300);
+    for (const entry of nearbyProps) {
+      list.push({
+        id: entry.id,
+        name: entry.data.name,
+        type: 'landmark',
+        position: entry.data.mesh.position,
+        radius: 25,
+        data: entry.data,
+      });
+    }
+
+    for (const node of this.surfaceScene.resourceManager.nodes) {
+      if (!node.collected && shipPos.distanceTo(node.mesh.position) < 200) {
+        list.push({
+          id: `node-${node.id}`,
+          name: node.name,
+          type: 'resource',
+          position: node.mesh.position,
+          radius: 12,
+          data: node,
+        });
+      }
+    }
+
+    return list;
   }
 
   private setupOrientationHandler(): void {
@@ -2713,15 +3107,8 @@ export class DesktopApp {
         if (desktopDrawer) desktopDrawer.style.display = 'none';
       }
       if (e.key === 't' || e.key === 'T') {
-        if (this.uiState === 'playing' && this.navRadar && this.stateMachine.getPhase() !== FlightPhase.SURFACE_FLIGHT) {
-          const locked = this.navRadar.selectTargetInForwardView(this.flightModel.position, this.flightModel.quaternion);
-          if (locked) {
-            audio.playBlip();
-            const target = this.navRadar.getSelectedTarget();
-            if (target) {
-              this.showHudNotice(`TARGET LOCKED // ${target.name.toUpperCase()}`);
-            }
-          }
+        if (this.uiState === 'playing') {
+          (this.inputManager.getKeyboardSource() as any).triggeredActions?.add('target_lock');
         }
       }
     });

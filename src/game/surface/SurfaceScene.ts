@@ -119,7 +119,7 @@ export class SurfaceScene {
   private activeFloraChunks: Map<string, THREE.InstancedMesh[]> = new Map();
   private activePropChunks: Map<string, { meshes: THREE.Object3D[]; scannableIds: string[] }> = new Map();
   private scannableProps: Array<{ mesh: THREE.Object3D; name: string; info: string }> = [];
-  private spatialHash = new SpatialHash<{ mesh: THREE.Object3D; name: string; info: string }>(60);
+  public spatialHash = new SpatialHash<{ mesh: THREE.Object3D; name: string; info: string }>(60);
 
   // Living Ecology, Sentient Species & Resource Nodes
   public ecologyProfile: PlanetEcologyProfile;

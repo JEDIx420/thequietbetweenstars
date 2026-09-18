@@ -14,6 +14,7 @@ export type GameAction =
   | 'cancel'
   | 'journal'
   | 'cycle_target'
+  | 'target_lock'
   | 'help'
   | 'supply'
   | 'talk'
