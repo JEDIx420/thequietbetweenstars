@@ -15,6 +15,9 @@ export class WorldLabApp {
 
   constructor(container: HTMLElement) {
     this.container = container;
+    if (typeof (window as any).__dismissPreloader === 'function') {
+      (window as any).__dismissPreloader();
+    }
     this.render();
   }
 

@@ -176,6 +176,11 @@ export class DesktopApp {
     this.setupVisibilityListener();
     this.initTouchControls();
 
+    // Seamlessly transition initial preloader into live space title sequence
+    if (typeof (window as any).__dismissPreloader === 'function') {
+      (window as any).__dismissPreloader();
+    }
+
     // 3-Second Live Title Reveal Sequence on page load
     const titleSequence = new TitleRevealSequence(this.container);
     titleSequence.play(() => {

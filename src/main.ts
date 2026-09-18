@@ -24,4 +24,7 @@ async function bootstrap() {
 
 bootstrap().catch((err) => {
   console.error('[TQBS] Bootstrap error:', err);
+  if (typeof (window as any).__dismissPreloader === 'function') {
+    (window as any).__dismissPreloader();
+  }
 });

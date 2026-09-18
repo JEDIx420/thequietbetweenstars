@@ -69,6 +69,220 @@
         animation: rotateDeviceIcon 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
         margin-bottom: 24px;
       }
+
+      /* Instant Atmospheric Cosmic Preloader */
+      #initial-preloader {
+        position: fixed;
+        inset: 0;
+        z-index: 9990;
+        background: radial-gradient(circle at 50% 45%, #080e1e 0%, #03060f 55%, #020205 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        user-select: none;
+        -webkit-user-select: none;
+        overflow: hidden;
+        transition: opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1), transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      #initial-preloader.preloader-fade-out {
+        opacity: 0;
+        transform: scale(1.04);
+        pointer-events: none;
+      }
+
+      .preloader-bg-glow {
+        position: absolute;
+        width: 500px;
+        height: 350px;
+        background: radial-gradient(ellipse at center, rgba(56, 189, 248, 0.16) 0%, rgba(168, 85, 247, 0.09) 45%, transparent 70%);
+        filter: blur(50px);
+        pointer-events: none;
+        animation: pulseGlow 4.5s ease-in-out infinite alternate;
+      }
+
+      @keyframes pulseGlow {
+        0% { transform: scale(0.85); opacity: 0.6; }
+        100% { transform: scale(1.2); opacity: 1.0; }
+      }
+
+      .preloader-stars {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          radial-gradient(1px 1px at 25px 30px, #ffffff, rgba(0,0,0,0)),
+          radial-gradient(1.5px 1.5px at 140px 85px, rgba(56, 189, 248, 0.9), rgba(0,0,0,0)),
+          radial-gradient(1px 1px at 260px 220px, #ffffff, rgba(0,0,0,0)),
+          radial-gradient(1.5px 1.5px at 380px 140px, rgba(168, 85, 247, 0.8), rgba(0,0,0,0)),
+          radial-gradient(1px 1px at 450px 320px, #ffffff, rgba(0,0,0,0)),
+          radial-gradient(2px 2px at 520px 70px, rgba(56, 189, 248, 0.9), rgba(0,0,0,0)),
+          radial-gradient(1px 1px at 620px 260px, #ffffff, rgba(0,0,0,0)),
+          radial-gradient(1.5px 1.5px at 730px 190px, rgba(192, 132, 252, 0.85), rgba(0,0,0,0)),
+          radial-gradient(1px 1px at 840px 90px, #ffffff, rgba(0,0,0,0)),
+          radial-gradient(2px 2px at 920px 340px, rgba(56, 189, 248, 0.8), rgba(0,0,0,0));
+        background-repeat: repeat;
+        background-size: 550px 400px;
+        opacity: 0.65;
+        animation: starDrift 35s linear infinite;
+        pointer-events: none;
+      }
+
+      @keyframes starDrift {
+        from { transform: translate(0, 0); }
+        to { transform: translate(-80px, -40px); }
+      }
+
+      .preloader-content {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 0 24px;
+        max-width: 90vw;
+      }
+
+      .preloader-gyro {
+        position: relative;
+        width: 104px;
+        height: 104px;
+        margin-bottom: 22px;
+      }
+
+      .ring-outer {
+        transform-origin: 60px 60px;
+        animation: spinClockwise 18s linear infinite;
+      }
+
+      .ring-mid {
+        transform-origin: 60px 60px;
+        animation: spinCounterClockwise 12s linear infinite;
+      }
+
+      .ring-inner {
+        transform-origin: 60px 60px;
+        animation: spinClockwise 8s linear infinite;
+      }
+
+      @keyframes spinClockwise {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+
+      @keyframes spinCounterClockwise {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(-360deg); }
+      }
+
+      .beacon-ripple {
+        transform-origin: 60px 60px;
+      }
+      .ripple-1 {
+        animation: ripplePulse 2.4s cubic-bezier(0.1, 0.5, 0.2, 1) infinite;
+      }
+      .ripple-2 {
+        animation: ripplePulse 2.4s cubic-bezier(0.1, 0.5, 0.2, 1) infinite 1.2s;
+      }
+
+      @keyframes ripplePulse {
+        0% { transform: scale(0.6); opacity: 0.9; }
+        100% { transform: scale(2.0); opacity: 0; }
+      }
+
+      .preloader-brand {
+        margin-bottom: 26px;
+      }
+
+      .preloader-pretitle {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 10px;
+        letter-spacing: 0.28em;
+        color: #38bdf8;
+        font-weight: 600;
+        margin-bottom: 10px;
+        opacity: 0.9;
+      }
+
+      .preloader-title {
+        font-size: clamp(20px, 4.4vw, 30px);
+        font-weight: 300;
+        letter-spacing: 0.22em;
+        color: #f8fafc;
+        margin-bottom: 8px;
+        text-shadow: 0 0 24px rgba(56, 189, 248, 0.45);
+      }
+
+      .preloader-subtitle {
+        font-family: ui-monospace, monospace;
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        color: #94a3b8;
+      }
+
+      .preloader-progress-wrap {
+        width: clamp(240px, 48vw, 340px);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .preloader-bar-track {
+        width: 100%;
+        height: 5px;
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.28);
+        border-radius: 999px;
+        overflow: hidden;
+        position: relative;
+        box-shadow: 0 0 16px rgba(56, 189, 248, 0.12);
+      }
+
+      .preloader-bar-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #0284c7, #38bdf8 45%, #c084fc 80%, #f472b6 100%);
+        border-radius: 999px;
+        position: relative;
+        transition: width 0.12s ease-out;
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
+      }
+
+      .preloader-bar-beam {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        width: 32px;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9), transparent);
+        filter: blur(1px);
+        animation: beamShimmer 1.8s ease-in-out infinite;
+      }
+
+      @keyframes beamShimmer {
+        0%, 100% { opacity: 0.3; }
+        50% { opacity: 1; }
+      }
+
+      .preloader-telemetry {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 10.5px;
+        color: #7dd3fc;
+        letter-spacing: 0.1em;
+      }
+
+      .telemetry-status {
+        opacity: 0.85;
+      }
+
+      .telemetry-percent {
+        font-weight: 700;
+        color: #38bdf8;
+      }
     </style>
   </head>
   <body>
@@ -119,6 +333,119 @@
         letter-spacing: 0.08em;
       ">THE QUIET BETWEEN STARS // MOBILE FLIGHT DECK</div>
     </div>
+
+    <!-- Instant Atmospheric Cosmic Preloader -->
+    <div id="initial-preloader">
+      <div class="preloader-bg-glow"></div>
+      <div class="preloader-stars"></div>
+
+      <div class="preloader-content">
+        <!-- Animated Celestial Gyroscope Beacon -->
+        <div class="preloader-gyro">
+          <svg viewBox="0 0 120 120" width="104" height="104" fill="none" class="gyro-svg">
+            <!-- Pulsing outer acoustic ripples -->
+            <circle class="beacon-ripple ripple-1" cx="60" cy="60" r="24" stroke="rgba(56, 189, 248, 0.45)" stroke-width="1.2" />
+            <circle class="beacon-ripple ripple-2" cx="60" cy="60" r="24" stroke="rgba(168, 85, 247, 0.35)" stroke-width="1.2" />
+            
+            <!-- Outer rotating orbital ring with dashed navigation marks -->
+            <circle class="ring-outer" cx="60" cy="60" r="48" stroke="rgba(56, 189, 248, 0.55)" stroke-width="1.5" stroke-dasharray="8 6 24 6 12 8" />
+            
+            <!-- Counter-rotating middle ring -->
+            <ellipse class="ring-mid" cx="60" cy="60" rx="40" ry="22" stroke="rgba(192, 132, 252, 0.65)" stroke-width="1.4" stroke-dasharray="16 8 32 8" />
+            
+            <!-- Inclined inner orbital ring -->
+            <ellipse class="ring-inner" cx="60" cy="60" rx="30" ry="14" stroke="rgba(56, 189, 248, 0.85)" stroke-width="1.2" />
+
+            <!-- Core glowing singularity & scout ship chevron -->
+            <circle cx="60" cy="60" r="7" fill="#38bdf8" />
+            <polygon points="60,51 66,66 60,63 54,66" fill="#ffffff" />
+          </svg>
+        </div>
+
+        <!-- Typography -->
+        <div class="preloader-brand">
+          <div class="preloader-pretitle">// FLIGHT SYSTEMS STANDBY //</div>
+          <h1 class="preloader-title">THE QUIET BETWEEN STARS</h1>
+          <div class="preloader-subtitle">DEEP RECONNAISSANCE SCOUT VESSEL</div>
+        </div>
+
+        <!-- Progress Bar Container -->
+        <div class="preloader-progress-wrap">
+          <div class="preloader-bar-track">
+            <div id="preloader-bar" class="preloader-bar-fill">
+              <div class="preloader-bar-beam"></div>
+            </div>
+          </div>
+          <div class="preloader-telemetry">
+            <span id="preloader-status" class="telemetry-status">INITIALIZING SENSOR MATRIX...</span>
+            <span id="preloader-percent" class="telemetry-percent">0%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function() {
+        var bar = document.getElementById('preloader-bar');
+        var percent = document.getElementById('preloader-percent');
+        var status = document.getElementById('preloader-status');
+        var preloader = document.getElementById('initial-preloader');
+        if (!bar || !preloader) return;
+
+        var progress = 0;
+        var target = 92;
+        var dismissed = false;
+        var phases = [
+          'INITIALIZING SENSOR MATRIX...',
+          'CALIBRATING QUANTUM COILS...',
+          'MAPPING CELESTIAL EPHEMERIS...',
+          'WARMING GRAVITATIONAL THRUSTERS...',
+          'SYNCHRONIZING FLIGHT TELEMETRY...'
+        ];
+        var phaseIdx = 0;
+
+        var interval = setInterval(function() {
+          if (dismissed) return;
+          if (progress < target) {
+            var step = Math.max(0.35, (target - progress) * 0.075);
+            progress = Math.min(target, progress + step);
+            bar.style.width = progress.toFixed(1) + '%';
+            if (percent) percent.textContent = Math.floor(progress) + '%';
+
+            var nextPhase = Math.floor((progress / target) * phases.length);
+            if (nextPhase !== phaseIdx && nextPhase < phases.length) {
+              phaseIdx = nextPhase;
+              if (status) status.textContent = phases[phaseIdx];
+            }
+          }
+        }, 40);
+
+        window.__dismissPreloader = function() {
+          if (dismissed) return;
+          dismissed = true;
+          clearInterval(interval);
+          if (bar) bar.style.width = '100%';
+          if (percent) percent.textContent = '100%';
+          if (status) status.textContent = 'DECK SYSTEMS ENGAGED';
+
+          setTimeout(function() {
+            preloader.classList.add('preloader-fade-out');
+            setTimeout(function() {
+              if (preloader && preloader.parentNode) {
+                preloader.parentNode.removeChild(preloader);
+              }
+            }, 600);
+          }, 160);
+        };
+
+        // Absolute safety fallback: auto dismiss if scripts stall for > 12s
+        setTimeout(function() {
+          if (!dismissed && window.__dismissPreloader) {
+            window.__dismissPreloader();
+          }
+        }, 12000);
+      })();
+    </script>
 
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
