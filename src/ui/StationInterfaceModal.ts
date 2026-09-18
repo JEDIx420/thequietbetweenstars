@@ -224,7 +224,7 @@ export class StationInterfaceModal {
 
     switch (this.activeTab) {
       case 'concourse': {
-        const vance = state.npcMemories['dr_vance'];
+        const vance = this.saveSlot?.npcMemories?.['dr_vance'] || state.npcMemories?.['dr_vance'];
         return `
           <div style="display: flex; flex-direction: column; gap: 16px;">
             <div style="

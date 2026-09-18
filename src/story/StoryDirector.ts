@@ -11,6 +11,7 @@ export class StoryDirector {
   private static instance: StoryDirector | null = null;
   private state: StoryState;
   private listeners: Set<StoryEventListener> = new Set();
+  private npcMemoriesRef: Record<string, any> | null = null;
 
   public static getInstance(): StoryDirector {
     if (!StoryDirector.instance) {
@@ -21,6 +22,14 @@ export class StoryDirector {
 
   constructor(initialState?: StoryState) {
     this.state = initialState ? cloneStoryState(initialState) : cloneStoryState(DEFAULT_STORY_STATE);
+  }
+
+  public setNpcMemories(memories: Record<string, any>): void {
+    this.npcMemoriesRef = memories;
+  }
+
+  public reset(): void {
+    this.state = cloneStoryState(DEFAULT_STORY_STATE);
   }
 
   public getState(): StoryState {
@@ -95,9 +104,22 @@ export class StoryDirector {
         if (this.state.currentBeat === 'beat_2_station_contact') {
           this.advanceBeat('beat_3_fragment_alpha');
         }
-        // Update Dr. Vance memory
-        const vance = this.state.npcMemories['dr_vance'];
-        if (vance) {
+        // Update Dr. Vance memory in canonical repository
+        const mems = this.npcMemoriesRef || this.state.npcMemories;
+        if (mems) {
+          if (!mems['dr_vance']) {
+            mems['dr_vance'] = {
+              npcId: 'dr_vance',
+              speciesId: 'human',
+              name: 'Dr. Valeria Vance',
+              timesMet: 0,
+              lastMet: 0,
+              topicsDiscussed: [],
+              factsRevealed: [],
+              familiarity: 0.0,
+            };
+          }
+          const vance = mems['dr_vance'];
           vance.timesMet++;
           vance.lastMet = Date.now();
           vance.familiarity = Math.min(1.0, vance.familiarity + 0.3);
@@ -108,8 +130,21 @@ export class StoryDirector {
       case 'VESSEL_HAILED': {
         const vesselId = event.payload?.vesselId;
         if (vesselId === 'the_wanderer_7') {
-          const zephyr = this.state.npcMemories['captain_zephyr'];
-          if (zephyr) {
+          const mems = this.npcMemoriesRef || this.state.npcMemories;
+          if (mems) {
+            if (!mems['captain_zephyr']) {
+              mems['captain_zephyr'] = {
+                npcId: 'captain_zephyr',
+                speciesId: 'nomad_avian',
+                name: 'Captain Zephyr',
+                timesMet: 0,
+                lastMet: 0,
+                topicsDiscussed: [],
+                factsRevealed: [],
+                familiarity: 0.0,
+              };
+            }
+            const zephyr = mems['captain_zephyr'];
             zephyr.timesMet++;
             zephyr.lastMet = Date.now();
             zephyr.familiarity = Math.min(1.0, zephyr.familiarity + 0.35);

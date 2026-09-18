@@ -57,6 +57,8 @@ export class KeyboardInput implements InputSource {
       this.triggeredActions.add('supply');
     } else if (code === 'KeyH' || code === 'Slash') {
       this.triggeredActions.add('help');
+    } else if (code === 'KeyO') {
+      this.triggeredActions.add('settings');
     }
   }
 

@@ -331,6 +331,29 @@ export class SaveManager {
       raw.story = raw.story ? raw.story : cloneStoryState(DEFAULT_STORY_STATE);
     }
 
+    // Consolidate NPC memories: top-level raw.npcMemories is canonical
+    if (!raw.npcMemories) raw.npcMemories = {};
+    if (raw.story && (raw.story as any).npcMemories) {
+      const storyMemories = (raw.story as any).npcMemories as Record<string, NPCMemory>;
+      for (const [npcId, mem] of Object.entries(storyMemories)) {
+        if (!mem || ((mem.timesMet || 0) === 0 && (!mem.topicsDiscussed || mem.topicsDiscussed.length === 0))) {
+          continue;
+        }
+        if (!raw.npcMemories[npcId]) {
+          raw.npcMemories[npcId] = { ...mem };
+        } else {
+          const existing = raw.npcMemories[npcId];
+          existing.timesMet = Math.max(existing.timesMet || 0, mem.timesMet || 0);
+          existing.lastMet = Math.max(existing.lastMet || 0, mem.lastMet || 0);
+          existing.familiarity = Math.max(existing.familiarity || 0, mem.familiarity || 0);
+          const topics = new Set([...(existing.topicsDiscussed || []), ...(mem.topicsDiscussed || [])]);
+          existing.topicsDiscussed = Array.from(topics);
+          const facts = new Set([...(existing.factsRevealed || []), ...(mem.factsRevealed || [])]);
+          existing.factsRevealed = Array.from(facts);
+        }
+      }
+    }
+
     return raw as PlayerSaveSlot;
   }
 
@@ -396,7 +419,7 @@ export class SaveManager {
     const hasItems = (slot.installedModules?.length || 0) > 0 ||
       Object.keys(slot.sampleInventory || {}).length > 0 ||
       (slot.collectedCreditIds?.length || 0) > 0;
-    const hasDialogue = Object.keys(slot.npcMemories || {}).length > 0 ||
+    const hasDialogue = Object.values(slot.npcMemories || {}).some((m: any) => (m?.timesMet || 0) > 0 || (m?.topicsDiscussed?.length || 0) > 0) ||
       (slot.narrative?.triggeredEventIds?.length || 0) > 0;
     const hasMoved = Math.hypot(
       slot.playerLocalPos.x,

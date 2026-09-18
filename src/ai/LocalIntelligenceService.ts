@@ -11,10 +11,10 @@ export interface ModelManifest {
 }
 
 export const PINNED_MODEL_MANIFEST: ModelManifest = {
-  id: 'qwen2.5-0.5b-instruct-q4_k_m',
-  name: 'Qwen 2.5 0.5B Instruct (Q4_K_M)',
-  url: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf',
-  sizeBytes: 398_000_000,
+  id: 'qwen3-0.6b-q4_k_m',
+  name: 'Qwen3 0.6B (Q4_K_M)',
+  url: 'https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf',
+  sizeBytes: 484_000_000,
   contextSize: 2048,
 };
 
@@ -65,10 +65,37 @@ export class LocalIntelligenceService {
   }
 
   /**
+   * Removes cached model files from CacheStorage and resets runtime instance
+   */
+  public async removeModel(): Promise<boolean> {
+    try {
+      if (typeof caches !== 'undefined') {
+        await caches.delete('wllama_models');
+      }
+      if (this.wllamaInstance) {
+        try {
+          await this.wllamaInstance.exit?.();
+        } catch {}
+        this.wllamaInstance = null;
+      }
+      this.status = 'NOT_DOWNLOADED';
+      this.isEnabled = false;
+      this.downloadProgress = 0;
+      return true;
+    } catch (err) {
+      console.warn('[LocalIntelligenceService] Failed to remove model:', err);
+      return false;
+    }
+  }
+
+  /**
    * Opt-in on-demand download and initialization of local Wllama runtime
    */
   public async downloadAndInit(onProgress?: (percent: number) => void): Promise<boolean> {
-    if (this.status === 'READY') return true;
+    if (this.status === 'READY') {
+      this.isEnabled = true;
+      return true;
+    }
     if (this.status === 'DOWNLOADING') return false;
 
     this.status = 'DOWNLOADING';
@@ -78,9 +105,16 @@ export class LocalIntelligenceService {
       // Dynamic import to keep initial bundle light and avoid loading in testing
       const { Wllama } = await import('@wllama/wllama');
 
+      const baseUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.BASE_URL)
+        ? ((import.meta as any).env.BASE_URL.endsWith('/') ? (import.meta as any).env.BASE_URL : `${(import.meta as any).env.BASE_URL}/`)
+        : '/';
+
+      const wasmPath = `${baseUrl}wllama/wllama.wasm`;
+
       const CONFIG_PATHS = {
-        'single-thread/wllama.wasm': '/wllama/single-thread/wllama.wasm',
-        'multi-thread/wllama.wasm': '/wllama/multi-thread/wllama.wasm',
+        default: wasmPath,
+        'single-thread/wllama.wasm': wasmPath,
+        'multi-thread/wllama.wasm': wasmPath,
       };
 
       const wllama = new (Wllama as any)(CONFIG_PATHS);
@@ -125,7 +159,7 @@ export class LocalIntelligenceService {
     const systemPrompt = LoreContextBuilder.buildSystemPrompt(speaker, storyState, currentSystemName);
     const userPrompt = `Inquire about: ${userTopic}`;
 
-    const formattedPrompt = `<|im_start|>system\n${systemPrompt}<|im_end|>\n<|im_start|>user\n${userPrompt}<|im_end|>\n<|im_start|>assistant\n`;
+    const formattedPrompt = `<|im_start|>system\n${systemPrompt}\nRespond directly in 1-2 concise sentences without thinking tags or roleplay prefixes.<|im_end|>\n<|im_start|>user\n${userPrompt}<|im_end|>\n<|im_start|>assistant\n`;
 
     try {
       this.status = 'BUSY';

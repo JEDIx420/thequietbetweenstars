@@ -22,6 +22,8 @@ export interface SpaceInteractionCallbacks {
   addSample: (cat: string) => void;
   saveJourney: () => void;
   dockCourierPod?: () => void;
+  isHeld?: boolean;
+  isTriggered?: boolean;
 }
 
 export class SpaceInteractionController {
@@ -128,6 +130,7 @@ export class SpaceInteractionController {
 
     switch (lockedTarget.type) {
       case 'station': {
+        if (callbacks.isTriggered === false) break;
         const station = lockedTarget.data as SpaceStation;
         const req = this.dockingController.requestDocking(station, shipPos);
         if (req.success) {
@@ -147,6 +150,7 @@ export class SpaceInteractionController {
       }
 
       case 'vessel': {
+        if (callbacks.isTriggered === false) break;
         const vessel = lockedTarget.data as NamedVessel;
         if (vessel.canHail(shipPos)) {
           sceneAudio.setMood('HAILING');
@@ -203,6 +207,7 @@ export class SpaceInteractionController {
       }
 
       case 'relay': {
+        if (callbacks.isTriggered === false) break;
         const relay = lockedTarget.data as HarmonicRelay;
         const unaligned = relay.getNearbyUnalignedPillar(shipPos);
         if (unaligned) {
@@ -229,7 +234,8 @@ export class SpaceInteractionController {
       case 'encounter': {
         const enc = lockedTarget.data as SpaceEncounter;
         if (enc.anomalyDescriptor) {
-          const res = StagedScanController.updateScan(enc.anomalyDescriptor, dist, true, Math.max(dt, 0.4));
+          const isScanningHeld = callbacks.isHeld ?? true;
+          const res = StagedScanController.updateScan(enc.anomalyDescriptor, dist, isScanningHeld, dt);
           if (res.stageAdvanced) {
             audio.playConnectChime();
             const state = this.storyDirector.getState();
@@ -251,7 +257,7 @@ export class SpaceInteractionController {
           }
         } else {
           // Standard encounter scan
-          if (!enc.isScanned && dist <= 200) {
+          if (callbacks.isTriggered !== false && !enc.isScanned && dist <= 200) {
             enc.isScanned = true;
             callbacks.addCredits(enc.rewardCredits);
             if (enc.rewardSampleCategory) {
@@ -266,7 +272,7 @@ export class SpaceInteractionController {
       }
 
       case 'courier': {
-        if (callbacks.dockCourierPod) {
+        if (callbacks.isTriggered !== false && callbacks.dockCourierPod) {
           callbacks.dockCourierPod();
         }
         break;

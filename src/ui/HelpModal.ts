@@ -1,10 +1,11 @@
-export type HelpTab = 'FLIGHT' | 'NAVIGATION' | 'EXPLORATION' | 'COMPANION' | 'LOG';
+export type HelpTab = 'FLIGHT' | 'NAVIGATION' | 'EXPLORATION' | 'COMPANION' | 'LOG' | 'SETTINGS';
 
 export class HelpModal {
   private container: HTMLElement;
   private isVisible = false;
   private currentTab: HelpTab = 'FLIGHT';
   private inputMode: 'keyboard' | 'companion' = 'keyboard';
+  private onOpenSettingsCallback: (() => void) | null = null;
 
   constructor(parent: HTMLElement) {
     this.container = document.createElement('div');
@@ -64,6 +65,7 @@ export class HelpModal {
         <button class="help-tab-btn" data-tab="EXPLORATION" style="padding: 6px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">EXPLORATION & SCAN</button>
         <button class="help-tab-btn" data-tab="COMPANION" style="padding: 6px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">TOUCH CONTROLS</button>
         <button class="help-tab-btn" data-tab="LOG" style="padding: 6px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">SHIP LOG & SAVE</button>
+        <button class="help-tab-btn" data-tab="SETTINGS" style="padding: 6px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">AI & SETTINGS</button>
       </div>
 
       <!-- Content Area -->
@@ -85,6 +87,10 @@ export class HelpModal {
   public setInputMode(mode: 'keyboard' | 'companion'): void {
     this.inputMode = mode;
     if (this.isVisible) this.renderTab(this.currentTab);
+  }
+
+  public setOnOpenSettings(cb: () => void): void {
+    this.onOpenSettingsCallback = cb;
   }
 
   private setupEvents(): void {
@@ -243,6 +249,36 @@ export class HelpModal {
             The game autosaves your coordinates, active star system, visited locations, and narrative progress every 30 seconds and upon system arrival. Click <b>CONTINUE JOURNEY</b> on the title screen to resume where you left off.
           </p>
         `;
+        break;
+
+      case 'SETTINGS':
+        content.innerHTML = `
+          <div style="font-size: 16px; font-weight: 600; color: #38bdf8; margin-bottom: 12px;">
+            Enhanced Local Dialogue & System Configuration
+          </div>
+          <p style="font-size: 13px; color: #cbd5e1; line-height: 1.6;">
+            You can configure local on-device generative AI dialogue for NPCs, download or remove model weights, and adjust runtime settings.
+          </p>
+          <div style="margin-top: 20px;">
+            <button id="btn-help-open-settings" style="
+              background: linear-gradient(135deg, rgba(14, 165, 233, 0.3), rgba(56, 189, 248, 0.2));
+              border: 1px solid #38bdf8;
+              color: #f8fafc;
+              padding: 10px 24px;
+              border-radius: 6px;
+              font-size: 13px;
+              font-weight: 600;
+              letter-spacing: 0.05em;
+              cursor: pointer;
+              transition: all 0.2s;
+            ">OPEN SYSTEM SETTINGS</button>
+          </div>
+        `;
+        content.querySelector('#btn-help-open-settings')?.addEventListener('click', () => {
+          if (this.onOpenSettingsCallback) {
+            this.onOpenSettingsCallback();
+          }
+        });
         break;
     }
   }

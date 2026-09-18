@@ -20,7 +20,8 @@ export type GameAction =
   | 'talk'
   | 'altitude_up'
   | 'altitude_down'
-  | 'tractor';
+  | 'tractor'
+  | 'settings';
 
 export type ActionState = 'down' | 'up' | 'trigger';
 

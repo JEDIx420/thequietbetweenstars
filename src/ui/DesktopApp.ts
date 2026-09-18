@@ -19,6 +19,7 @@ import { HolographicNavModal } from './HolographicNavModal';
 import { JournalModal } from './JournalModal';
 import { HelpModal } from './HelpModal';
 import { SupplyModal } from './SupplyModal';
+import { SettingsModal } from './SettingsModal';
 import { DialoguePresenter } from './DialoguePresenter';
 import { StructuredConversationProvider } from '../narrative/ConversationDirector';
 import { NarrativeDirector } from '../narrative/NarrativeDirector';
@@ -27,7 +28,7 @@ import type { NarrativeContext } from '../narrative/NarrativeTypes';
 import { NavRadar } from '../game/ui/NavRadar';
 import { DeepCruiseController } from '../game/flight/DeepCruiseController';
 import { AutopilotController } from '../game/flight/AutopilotController';
-import { saveManager, type PlayerSaveSlot, type ShipModule } from '../persistence/SaveManager';
+import { saveManager, DEFAULT_SAVE_SLOT, type PlayerSaveSlot, type ShipModule } from '../persistence/SaveManager';
 import { TitleRevealSequence } from './TitleRevealSequence';
 import { AtmosphericEntrySequence } from '../game/surface/AtmosphericEntrySequence';
 import { NewJourneyCinematic } from './NewJourneyCinematic';
@@ -93,6 +94,7 @@ export class DesktopApp {
   public journalModal!: JournalModal;
   public helpModal!: HelpModal;
   public supplyModal!: SupplyModal;
+  public settingsModal!: SettingsModal;
 
   // Narrative & Tutorial Systems
   public dialoguePresenter!: DialoguePresenter;
@@ -302,6 +304,11 @@ export class DesktopApp {
 
     this.journalModal = new JournalModal(this.container);
     this.helpModal = new HelpModal(this.container);
+    this.settingsModal = new SettingsModal(this.container);
+    this.helpModal.setOnOpenSettings(() => {
+      this.helpModal.hide();
+      this.settingsModal.open();
+    });
 
     this.supplyModal = new SupplyModal(this.container, {
       onOrderModule: (mod) => {
@@ -879,8 +886,12 @@ export class DesktopApp {
         dockCourierPod: () => this.dockCourierPod(this.spaceScene.activeCourierPod!),
       });
 
-      if (this.inputManager.consumeAction('scan')) {
+      const isScanHeld = this.inputManager.isActionPressed('scan');
+      const isScanTriggered = this.inputManager.consumeAction('scan');
+      if (isScanHeld || isScanTriggered) {
         this.spaceInteractionController.handleSpaceAction(lockedTarget, shipPos, dt, {
+          isHeld: isScanHeld,
+          isTriggered: isScanTriggered,
           showNotice: (msg) => this.showHudNotice(msg),
           setContextPrompt: (msg) => this.updateContextPrompt(msg),
           addCredits: (amt) => { this.credits += amt; },
@@ -1070,6 +1081,11 @@ export class DesktopApp {
     if (this.inputManager.consumeAction('help')) {
       audio.playBlip();
       this.helpModal.toggle();
+    }
+
+    if (this.inputManager.consumeAction('settings')) {
+      audio.playBlip();
+      this.settingsModal.toggle();
     }
 
     if (this.inputManager.consumeAction('cycle_target')) {
@@ -1704,6 +1720,20 @@ export class DesktopApp {
             box-shadow: ${this.hasSavedJourney ? 'none' : '0 0 50px rgba(56, 189, 248, 0.55), inset 0 0 20px rgba(56, 189, 248, 0.2)'};
             min-width: 280px;
           ">${this.hasSavedJourney ? 'NEW JOURNEY' : 'START NEW GAME'}</button>
+
+          <button id="btn-title-settings" style="
+            padding: 9px 36px;
+            background: rgba(30, 41, 59, 0.55);
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            border-radius: 9999px;
+            color: #cbd5e1;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.18em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 220px;
+          ">SETTINGS / LOCAL AI</button>
         </div>
 
         <div id="audio-unlock-hint" style="
@@ -1733,6 +1763,11 @@ export class DesktopApp {
 
     const titleReadyTime = Date.now() + 450;
 
+    this.uiContainer.querySelector('#btn-title-settings')?.addEventListener('click', () => {
+      audio.playBlip();
+      this.settingsModal.open();
+    });
+
     this.uiContainer.querySelector('#btn-continue')?.addEventListener('click', async () => {
       if (Date.now() < titleReadyTime) return;
       audio.playBlip();
@@ -1747,16 +1782,32 @@ export class DesktopApp {
       audio.playBlip();
       await audio.start();
       audio.setContext('cinematic');
-      if (this.hasSavedJourney) {
-        await saveManager.clearJourney();
-        this.visitedSystems.clear();
-        this.scannedPlanets.clear();
-        this.visitedSurfaces.clear();
-        this.discoveredSpecies.clear();
-        this.discoveredAnomalies.clear();
-        this.journeyStartTime = Date.now();
-        this.tutorialDirector.reset();
-      }
+
+      // CRITICAL ISSUE 3 & 4 FIX:
+      // Always reset persistent and in-memory state on New Journey
+      await saveManager.clearJourney();
+      this.storyDirector.reset();
+      this.npcMemories = { ...DEFAULT_SAVE_SLOT.npcMemories };
+      this.storyDirector.setNpcMemories(this.npcMemories);
+      this.credits = 250;
+      this.sampleInventory = {};
+      this.installedModules.clear();
+      this.pendingOrders = [];
+      this.collectedCreditIds.clear();
+      this.visitedSystems.clear();
+      this.scannedPlanets.clear();
+      this.visitedSurfaces.clear();
+      this.discoveredSpecies.clear();
+      this.discoveredAnomalies.clear();
+      this.journeyStartTime = Date.now();
+      this.tutorialDirector.reset();
+
+      // Establish origin star system (0, 0, 0)
+      const originSystem = this.sectorManager.getFullSystem(0, 0, 0);
+      this.spaceScene.loadSystem(originSystem);
+      this.syncStoryEntitiesForSystem(originSystem);
+      await this.saveCurrentJourney();
+
       await storage.updateSettings({ introSeen: true });
 
       // Trigger 18-second in-engine New Journey Cinematic with shooting stars
@@ -1820,7 +1871,8 @@ export class DesktopApp {
     this.sampleInventory = slot.sampleInventory ? { ...slot.sampleInventory } : {};
     this.installedModules = new Set(slot.installedModules || []);
     this.pendingOrders = slot.pendingOrders ? [...slot.pendingOrders] : [];
-    this.npcMemories = slot.npcMemories ? { ...slot.npcMemories } : {};
+    this.npcMemories = slot.npcMemories ? { ...slot.npcMemories } : { ...DEFAULT_SAVE_SLOT.npcMemories };
+    this.storyDirector.setNpcMemories(this.npcMemories);
 
     // Apply installed modules to ship models and flight dynamics
     this.applyInstalledModules();
@@ -1940,6 +1992,23 @@ export class DesktopApp {
 
     const plan = StoryEncounterPlanner.planSystem(system, this.storyDirector);
 
+    // CRITICAL ISSUE 1 & 2 FIX:
+    // Incorporate story-injected anomalies into runtime system descriptor
+    if (!system.anomalies) {
+      system.anomalies = [];
+    }
+    for (const injected of plan.injectedAnomalies) {
+      const existingIdx = system.anomalies.findIndex((a) => a.id === injected.id);
+      if (existingIdx >= 0) {
+        system.anomalies[existingIdx] = injected;
+      } else {
+        system.anomalies.push(injected);
+      }
+    }
+
+    // Synchronize physical 3D encounter layer with augmented runtime descriptors
+    this.spaceScene.syncAnomalies(system.anomalies);
+
     if (plan.injectedStation) {
       this.activeSpaceStation = new SpaceStation({
         ...plan.injectedStation,
@@ -1976,6 +2045,42 @@ export class DesktopApp {
       });
       this.spaceScene.worldRoot.add(this.activeHarmonicRelay.group);
     }
+
+    // Refresh radar targets including planets, anomalies, and active story entities
+    const extraRadarTargets: any[] = [];
+    if (this.activeSpaceStation) {
+      extraRadarTargets.push({
+        id: this.activeSpaceStation.id,
+        name: this.activeSpaceStation.name,
+        type: 'station',
+        position: this.activeSpaceStation.position,
+        color: '#38bdf8',
+      });
+    }
+    if (this.activeNamedVessel) {
+      extraRadarTargets.push({
+        id: this.activeNamedVessel.id,
+        name: this.activeNamedVessel.name,
+        type: 'vessel',
+        position: this.activeNamedVessel.position,
+        color: '#c084fc',
+      });
+    }
+    if (this.activeHarmonicRelay) {
+      extraRadarTargets.push({
+        id: this.activeHarmonicRelay.id,
+        name: this.activeHarmonicRelay.name,
+        type: 'relay',
+        position: this.activeHarmonicRelay.position,
+        color: '#38bdf8',
+      });
+    }
+    this.navRadar.setPlanets(
+      this.spaceScene.activePlanetList,
+      system.anomalies,
+      this.spaceScene.activeCourierPod?.position,
+      extraRadarTargets
+    );
   }
 
   public recordArrivalDiscovery(system: StarSystemDescriptor): void {
@@ -2449,6 +2554,17 @@ export class DesktopApp {
               touch-action: manipulation;
             ">${isTouch ? 'HELP' : 'HELP [H]'}</button>
 
+            <button id="btn-open-settings" style="
+              background: rgba(15, 23, 42, 0.75);
+              border: 1px solid rgba(148, 163, 184, 0.25);
+              border-radius: 8px;
+              color: #cbd5e1;
+              padding: 5px 10px;
+              font-size: 10.5px;
+              cursor: pointer;
+              touch-action: manipulation;
+            ">${isTouch ? 'SETTINGS' : 'SETTINGS [O]'}</button>
+
             <button id="btn-audio-mute" style="
               background: rgba(15, 23, 42, 0.75);
               border: 1px solid rgba(148, 163, 184, 0.25);
@@ -2576,6 +2692,11 @@ export class DesktopApp {
     this.uiContainer.querySelector('#btn-open-help')?.addEventListener('click', () => {
       audio.playBlip();
       this.helpModal.toggle();
+    });
+
+    this.uiContainer.querySelector('#btn-open-settings')?.addEventListener('click', () => {
+      audio.playBlip();
+      this.settingsModal.toggle();
     });
 
     // Desktop Emote Drawer Toggle & Close

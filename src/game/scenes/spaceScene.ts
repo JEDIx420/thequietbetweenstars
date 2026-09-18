@@ -475,6 +475,25 @@ export class SpaceScene {
   }
 
   /**
+   * Synchronizes runtime anomaly descriptors and rebuilds only the cosmic encounter layer.
+   * Does NOT rebuild stars, planets, physics envelopes, or lighting.
+   */
+  public syncAnomalies(anomalies: SpaceAnomalyDescriptor[]): void {
+    if (this.currentSystem) {
+      this.currentSystem.anomalies = anomalies;
+    }
+    const planetPositions = this.activePlanetList.map(p => p.position);
+    if (this.encounterManager) {
+      this.worldRoot.remove(this.encounterManager.group);
+      this.encounterManager.dispose();
+      this.encounterManager = null;
+    }
+    const seed = this.currentSystem?.seed || 1337;
+    this.encounterManager = new SpaceEncounterManager(seed, this.sunPos, planetPositions, anomalies);
+    this.worldRoot.add(this.encounterManager.group);
+  }
+
+  /**
    * Floating-origin rebase handler
    * Shifts all celestial bodies, physics envelopes, lights, and particles by offset.
    */

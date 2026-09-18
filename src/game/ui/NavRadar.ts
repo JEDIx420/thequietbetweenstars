@@ -238,7 +238,8 @@ export class NavRadar {
   public setPlanets(
     planets: Array<{ descriptor: PlanetDescriptor; position: THREE.Vector3 }>,
     anomalies: SpaceAnomalyDescriptor[] = [],
-    courierPodPos?: THREE.Vector3
+    courierPodPos?: THREE.Vector3,
+    extraTargets: RadarTargetItem[] = []
   ): void {
     const list: RadarTargetItem[] = [];
 
@@ -255,15 +256,16 @@ export class NavRadar {
 
     // Add space anomalies to radar targets
     for (const a of anomalies) {
-      const angle = a.angle || 0;
-      const dist = 600 + a.distanceFromStar * 300;
-      const pos = new THREE.Vector3(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+      const pos = a.position
+        ? new THREE.Vector3(a.position.x, a.position.y, a.position.z)
+        : new THREE.Vector3(Math.cos(a.angle || 0) * (a.distanceFromStar || 1200), 0, Math.sin(a.angle || 0) * (a.distanceFromStar || 1200));
+      const isResonance = a.hasResonance || a.signature?.isResonanceAnomaly || a.type === 'RESONANCE_ECHO' || a.type === 'resonance_monolith';
       list.push({
         id: a.id,
         name: a.name,
         type: a.type,
         position: pos,
-        color: '#f59e0b',
+        color: a.color || (isResonance ? '#38bdf8' : '#f59e0b'),
         isAnomaly: true,
         anomaly: a,
       });
@@ -279,6 +281,11 @@ export class NavRadar {
         color: '#38bdf8',
         isAnomaly: false,
       });
+    }
+
+    // Add active story entities (stations, vessels, relays)
+    for (const extra of extraTargets) {
+      list.push(extra);
     }
 
     this.targets = list;
