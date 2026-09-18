@@ -57,8 +57,15 @@ export class FloraGenerator {
       'crystalline_lotus',
       'spiral_fern',
       'floating_spore_orb',
+      'mycelial_colossus_cap',
+      'plasma_tendril_flower',
+      'crystal_spire_bloom',
+      'spiral_spore_stalk',
+      'ancient_jungle_canopy',
       'mushrooms',
+      'shrubs',
       'grass',
+      'crystals',
     ];
     const filtered = options.filter((o) => o !== primary);
     return rng.pick(filtered);
@@ -133,6 +140,56 @@ export class FloraGenerator {
     const baseCol = new THREE.Color(region.localSurfacePalette.midland);
 
     switch (arch) {
+      case 'mycelial_colossus_cap':
+        return {
+          name: `${region.name} Colossal Spore Cap`,
+          archetype: arch,
+          color: new THREE.Color(region.localSurfacePalette.peak),
+          emissiveColor: new THREE.Color(region.localSurfacePalette.accent),
+          emissiveIntensity: 0.75,
+          height: rng.range(16.0, 28.0),
+          scaleVariation: 0.5,
+        };
+      case 'plasma_tendril_flower':
+        return {
+          name: `${region.name} Ionized Calyx`,
+          archetype: arch,
+          color: new THREE.Color(region.localSurfacePalette.highland),
+          emissiveColor: new THREE.Color(region.localSurfacePalette.accent),
+          emissiveIntensity: 0.9,
+          height: rng.range(4.0, 7.5),
+          scaleVariation: 0.4,
+        };
+      case 'crystal_spire_bloom':
+        return {
+          name: `${region.name} Crystalline Spire Bloom`,
+          archetype: arch,
+          color: new THREE.Color(region.localSurfacePalette.accent).offsetHSL(0.05, 0.2, 0.1),
+          emissiveColor: new THREE.Color(region.localSurfacePalette.accent),
+          emissiveIntensity: 0.8,
+          height: rng.range(5.0, 10.0),
+          scaleVariation: 0.45,
+        };
+      case 'spiral_spore_stalk':
+        return {
+          name: `${region.name} Corkscrew Spore Stalk`,
+          archetype: arch,
+          color: baseCol.clone().offsetHSL(-0.1, 0.3, 0.05),
+          emissiveColor: new THREE.Color(region.localSurfacePalette.accent),
+          emissiveIntensity: 0.65,
+          height: rng.range(6.0, 12.0),
+          scaleVariation: 0.45,
+        };
+      case 'ancient_jungle_canopy':
+        return {
+          name: `${region.name} Primordial Canopy Tree`,
+          archetype: arch,
+          color: baseCol.clone().offsetHSL(0.02, 0.25, -0.08),
+          emissiveColor: new THREE.Color(region.localSurfacePalette.accent),
+          emissiveIntensity: 0.3,
+          height: rng.range(18.0, 32.0),
+          scaleVariation: 0.55,
+        };
       case 'bioluminescent_tendril':
         return {
           name: `${region.name} Bioluminescent Tendril`,
@@ -269,6 +326,63 @@ export class FloraGenerator {
 
   private static createPlantGeometry(archetype: VegetationArchetype, height: number): THREE.BufferGeometry {
     switch (archetype) {
+      case 'mycelial_colossus_cap': {
+        // Enormous tiered mushroom with wide parasol cap
+        const trunk = new THREE.CylinderGeometry(height * 0.08, height * 0.16, height * 0.75, 7);
+        trunk.translate(0, height * 0.37, 0);
+        const cap = new THREE.ConeGeometry(height * 0.55, height * 0.22, 10);
+        cap.translate(0, height * 0.85, 0);
+        const underCap = new THREE.CylinderGeometry(height * 0.45, height * 0.08, height * 0.08, 8);
+        underCap.translate(0, height * 0.76, 0);
+        return this.mergeGeometries([trunk, cap, underCap]);
+      }
+      case 'plasma_tendril_flower': {
+        // Radial ionized calyx with glowing central spire
+        const stem = new THREE.CylinderGeometry(height * 0.03, height * 0.07, height * 0.7, 4);
+        stem.translate(0, height * 0.35, 0);
+        const calyx = new THREE.ConeGeometry(height * 0.3, height * 0.35, 6);
+        calyx.rotateX(Math.PI);
+        calyx.translate(0, height * 0.75, 0);
+        const stamen = new THREE.OctahedronGeometry(height * 0.15, 0);
+        stamen.translate(0, height * 0.85, 0);
+        return this.mergeGeometries([stem, calyx, stamen]);
+      }
+      case 'crystal_spire_bloom': {
+        // Cluster of hexagonal quartz needles
+        const needles: THREE.BufferGeometry[] = [];
+        for (let i = 0; i < 4; i++) {
+          const needle = new THREE.ConeGeometry(height * 0.12, height * (0.6 + i * 0.12), 5);
+          const nAngle = (i * Math.PI * 2) / 4;
+          needle.rotateZ(0.2);
+          needle.rotateY(nAngle);
+          needle.translate(Math.sin(nAngle) * height * 0.12, height * 0.4, Math.cos(nAngle) * height * 0.12);
+          needles.push(needle);
+        }
+        return this.mergeGeometries(needles);
+      }
+      case 'spiral_spore_stalk': {
+        // Ascending corkscrew spore nodules
+        const coreStalk = new THREE.CylinderGeometry(height * 0.04, height * 0.08, height * 0.9, 4);
+        coreStalk.translate(0, height * 0.45, 0);
+        const nodes: THREE.BufferGeometry[] = [coreStalk];
+        for (let n = 0; n < 5; n++) {
+          const nodule = new THREE.DodecahedronGeometry(height * 0.1, 0);
+          const nAngle = n * 1.3;
+          nodule.translate(Math.cos(nAngle) * height * 0.15, height * (0.25 + n * 0.14), Math.sin(nAngle) * height * 0.15);
+          nodes.push(nodule);
+        }
+        return this.mergeGeometries(nodes);
+      }
+      case 'ancient_jungle_canopy': {
+        // Huge jungle canopy with massive spreading buttress and umbrella crowns
+        const trunk = new THREE.CylinderGeometry(height * 0.08, height * 0.22, height * 0.7, 6);
+        trunk.translate(0, height * 0.35, 0);
+        const crown1 = new THREE.ConeGeometry(height * 0.6, height * 0.2, 8);
+        crown1.translate(0, height * 0.78, 0);
+        const crown2 = new THREE.ConeGeometry(height * 0.4, height * 0.16, 7);
+        crown2.translate(0, height * 0.92, 0);
+        return this.mergeGeometries([trunk, crown1, crown2]);
+      }
       case 'bioluminescent_tendril': {
         // Sinuous curving tendril with luminous apical bulb
         const stem = new THREE.CylinderGeometry(height * 0.03, height * 0.09, height * 0.85, 5);

@@ -147,6 +147,123 @@ export class LandmarkGenerator {
         break;
       }
 
+      case 'giant_spore_caps': {
+        name = `${biomeName} Megalithic Spore Cap`;
+        info = 'Centuries-old bio-architectural fungal titan with bioluminescent gills.';
+        const trunkH = rng.range(22, 38);
+        const trunkGeo = new THREE.CylinderGeometry(rng.range(2.5, 4.0), rng.range(4.5, 7.0), trunkH, 8);
+        const trunkMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(palette.surfaceLowland),
+          roughness: 0.85,
+        });
+        const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+        trunk.position.y = trunkH / 2;
+        group.add(trunk);
+
+        const capRadius = rng.range(12, 22);
+        const capGeo = new THREE.ConeGeometry(capRadius, 6, 12);
+        const capMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(palette.surfacePeak),
+          emissive: new THREE.Color(palette.accentMineral),
+          emissiveIntensity: 0.7,
+          roughness: 0.35,
+        });
+        const cap = new THREE.Mesh(capGeo, capMat);
+        cap.position.y = trunkH + 2;
+        group.add(cap);
+        break;
+      }
+
+      case 'plasma_spires': {
+        name = `${biomeName} Resonant Ion Needle`;
+        info = 'Superconducting quartz-metal spire discharging planetary static into the ionosphere.';
+        const h = rng.range(24, 42);
+        const needleGeo = new THREE.ConeGeometry(rng.range(1.8, 3.2), h, 5);
+        const needleMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(palette.surfaceHighland),
+          emissive: new THREE.Color(palette.accentMineral),
+          emissiveIntensity: 0.85,
+          metalness: 0.8,
+          roughness: 0.2,
+        });
+        const needle = new THREE.Mesh(needleGeo, needleMat);
+        needle.position.y = h / 2;
+        group.add(needle);
+
+        // Glowing orbiting ionic ring
+        const ringGeo = new THREE.TorusGeometry(rng.range(4.5, 8.0), 0.5, 6, 18);
+        const ringMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(palette.accentMineral) });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.position.y = h * 0.75;
+        ring.rotation.x = Math.PI / 3;
+        group.add(ring);
+        break;
+      }
+
+      case 'levitating_monoliths': {
+        name = `${biomeName} Floating Monolith Cluster`;
+        info = 'Diamagnetic basalt monoliths hovering in anti-gravity equilibrium above the chasm.';
+        isAnomalous = true;
+        const monoCount = rng.rangeInt(3, 5);
+        const monoMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(palette.surfaceMidland),
+          emissive: new THREE.Color(palette.accentMineral),
+          emissiveIntensity: 0.4,
+          roughness: 0.7,
+          metalness: 0.4,
+          flatShading: true,
+        });
+
+        for (let m = 0; m < monoCount; m++) {
+          const mGeo = new THREE.DodecahedronGeometry(rng.range(4, 9), 0);
+          mGeo.scale(1.0, rng.range(1.8, 2.8), 1.0);
+          const mono = new THREE.Mesh(mGeo, monoMat);
+          const mAngle = (m / monoCount) * Math.PI * 2;
+          mono.position.set(Math.cos(mAngle) * rng.range(8, 18), rng.range(14, 32), Math.sin(mAngle) * rng.range(8, 18));
+          mono.rotation.set(rng.next(), rng.next(), rng.next());
+          group.add(mono);
+        }
+        break;
+      }
+
+      case 'ancient_fossil_ribs': {
+        name = `${biomeName} Primordial Calamity Fossil`;
+        info = 'Colossal petrified skeletal remnants of an ancient world-striding behemoth.';
+        const ribCount = rng.rangeInt(5, 8);
+        const boneMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(palette.surfacePeak),
+          roughness: 0.9,
+          metalness: 0.1,
+        });
+
+        for (let r = 0; r < ribCount; r++) {
+          const ribGeo = new THREE.TorusGeometry(rng.range(10, 18), rng.range(1.2, 2.2), 6, 12, Math.PI * 0.7);
+          const rib = new THREE.Mesh(ribGeo, boneMat);
+          rib.position.set(0, 8, (r - ribCount / 2) * 8.0);
+          rib.rotation.z = Math.PI * 0.65;
+          group.add(rib);
+        }
+        break;
+      }
+
+      case 'prismatic_geodes': {
+        name = `${biomeName} Radioactive Geode Cluster`;
+        info = 'Naturally concentrated radioisotope quartz geode radiating high-energy phosphorescence.';
+        const h = rng.range(12, 24);
+        const geodeGeo = new THREE.OctahedronGeometry(rng.range(5, 10), 0);
+        const geodeMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(palette.accentMineral),
+          emissive: new THREE.Color(palette.accentMineral),
+          emissiveIntensity: 0.9,
+          roughness: 0.15,
+          metalness: 0.8,
+        });
+        const geode = new THREE.Mesh(geodeGeo, geodeMat);
+        geode.position.y = h / 2;
+        group.add(geode);
+        break;
+      }
+
       case 'ejecta_boulders':
       default: {
         // Airless crater ejecta monolith

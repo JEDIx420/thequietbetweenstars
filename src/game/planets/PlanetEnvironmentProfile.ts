@@ -11,7 +11,12 @@ export type PlanetFamily =
   | 'crystalline-mineral'
   | 'high-biosignature'
   | 'metallic-iron'
-  | 'gas-giant';
+  | 'gas-giant'
+  | 'aurora-plasma'
+  | 'fungal-mycelium'
+  | 'shattered-shards'
+  | 'chlorophyll-jungle'
+  | 'radioactive-abyss';
 
 export type TerrainMorphologyType =
   | 'craters'
@@ -23,7 +28,17 @@ export type TerrainMorphologyType =
   | 'corrosive_badlands'
   | 'faceted_crystals'
   | 'terraced_biomes'
-  | 'sharp_ridges';
+  | 'sharp_ridges'
+  | 'bioluminescent_archipelago'
+  | 'obsidian_caldera'
+  | 'glacial_chasm'
+  | 'floating_mesas'
+  | 'spore_grotto'
+  | 'plasma_fractures'
+  | 'fungal_canopy'
+  | 'shattered_monoliths'
+  | 'primordial_jungle'
+  | 'neon_badlands';
 
 export type LandmarkFamily =
   | 'ejecta_boulders'
@@ -35,7 +50,12 @@ export type LandmarkFamily =
   | 'mineral_chimneys'
   | 'crystalline_clusters'
   | 'spore_spires'
-  | 'metallic_spikes';
+  | 'metallic_spikes'
+  | 'giant_spore_caps'
+  | 'plasma_spires'
+  | 'levitating_monoliths'
+  | 'ancient_fossil_ribs'
+  | 'prismatic_geodes';
 
 export interface AtmosphereProfile {
   hasAtmosphere: boolean;
@@ -44,7 +64,7 @@ export interface AtmosphereProfile {
   skyHorizon: string;     // Horizon gradient hex
   fogColor: string;       // Volumetric fog hex
   fogDensity: number;     // e.g. 0.001 to 0.006
-  particleType: 'none' | 'dust' | 'snow' | 'ash' | 'spores' | 'mist';
+  particleType: 'none' | 'dust' | 'snow' | 'ash' | 'spores' | 'mist' | 'plasma_sparks' | 'geiger_glow';
   particleColor?: string;
 }
 
@@ -101,8 +121,8 @@ export class PlanetEnvironmentGenerator {
     const seed = typeof seedInput === 'string' ? SeededRandom.hashString(seedInput) : seedInput;
     const rng = new SeededRandom(seed);
 
-    // 1. Rarity / Outlier Determination (~5% outlier, ~25% unusual, ~70% standard)
-    const isOutlier = rng.chance(0.06);
+    // 1. Rarity / Outlier Determination (~22% exotic outlier, ~78% standard)
+    const isOutlier = rng.chance(0.22);
 
     // 2. Select Planet Family
     const families: PlanetFamily[] = [
@@ -119,7 +139,16 @@ export class PlanetEnvironmentGenerator {
       'gas-giant',
     ];
 
-    const outlierFamilies: PlanetFamily[] = ['crystalline-mineral', 'high-biosignature', 'toxic-chemical'];
+    const outlierFamilies: PlanetFamily[] = [
+      'crystalline-mineral',
+      'high-biosignature',
+      'toxic-chemical',
+      'aurora-plasma',
+      'fungal-mycelium',
+      'shattered-shards',
+      'chlorophyll-jungle',
+      'radioactive-abyss',
+    ];
     const family: PlanetFamily = familyOverride || (isOutlier
       ? rng.pick(outlierFamilies)
       : rng.pick(families));
@@ -206,6 +235,41 @@ export class PlanetEnvironmentGenerator {
         oceanCoverage = 0;
         cloudCoverage = 1.0;
         biosig = 'none';
+        break;
+      case 'aurora-plasma':
+        temp = rng.rangeInt(220, 330);
+        gravity = rng.range(6.5, 11.0);
+        oceanCoverage = rng.range(0.15, 0.45); // Ionized liquid bays
+        cloudCoverage = rng.range(0.5, 0.85);
+        biosig = 'anomalous';
+        break;
+      case 'fungal-mycelium':
+        temp = rng.rangeInt(270, 305);
+        gravity = rng.range(8.0, 10.5);
+        oceanCoverage = rng.range(0.35, 0.65); // Spore marshes
+        cloudCoverage = rng.range(0.4, 0.75);
+        biosig = 'complex-ecosystem';
+        break;
+      case 'shattered-shards':
+        temp = rng.rangeInt(200, 290);
+        gravity = rng.range(4.5, 8.5); // Gravitational anomaly
+        oceanCoverage = rng.range(0.05, 0.25);
+        cloudCoverage = rng.range(0.1, 0.4);
+        biosig = 'anomalous';
+        break;
+      case 'chlorophyll-jungle':
+        temp = rng.rangeInt(290, 325);
+        gravity = rng.range(8.5, 12.0);
+        oceanCoverage = rng.range(0.55, 0.80);
+        cloudCoverage = rng.range(0.6, 0.9);
+        biosig = 'complex-ecosystem';
+        break;
+      case 'radioactive-abyss':
+        temp = rng.rangeInt(340, 520);
+        gravity = rng.range(9.5, 15.0);
+        oceanCoverage = rng.range(0.1, 0.3);
+        cloudCoverage = rng.range(0.4, 0.7);
+        biosig = 'anomalous';
         break;
     }
 
@@ -377,6 +441,60 @@ export class PlanetEnvironmentGenerator {
           particleType: 'dust',
           particleColor: '#d97706',
         };
+      case 'aurora-plasma':
+        return {
+          hasAtmosphere: true,
+          density: 1.45,
+          skyZenith: '#1e1b4b',
+          skyHorizon: rng.pick(['#06b6d4', '#c084fc', '#38bdf8']),
+          fogColor: '#67e8f9',
+          fogDensity: 0.0028,
+          particleType: 'plasma_sparks',
+          particleColor: '#38bdf8',
+        };
+      case 'fungal-mycelium':
+        return {
+          hasAtmosphere: true,
+          density: 1.3,
+          skyZenith: '#2e1065',
+          skyHorizon: rng.pick(['#10b981', '#d946ef', '#065f46']),
+          fogColor: '#059669',
+          fogDensity: 0.0035,
+          particleType: 'spores',
+          particleColor: '#34d399',
+        };
+      case 'shattered-shards':
+        return {
+          hasAtmosphere: true,
+          density: 0.72,
+          skyZenith: '#09090b',
+          skyHorizon: rng.pick(['#a855f7', '#38bdf8', '#c084fc']),
+          fogColor: '#c084fc',
+          fogDensity: 0.0016,
+          particleType: 'none',
+        };
+      case 'chlorophyll-jungle':
+        return {
+          hasAtmosphere: true,
+          density: 1.35,
+          skyZenith: '#064e3b',
+          skyHorizon: rng.pick(['#f59e0b', '#6ee7b7', '#10b981']),
+          fogColor: '#a7f3d0',
+          fogDensity: 0.0026,
+          particleType: 'mist',
+          particleColor: '#ecfdf5',
+        };
+      case 'radioactive-abyss':
+        return {
+          hasAtmosphere: true,
+          density: 1.65,
+          skyZenith: '#14532d',
+          skyHorizon: rng.pick(['#eab308', '#84cc16', '#a3e635']),
+          fogColor: '#a3e635',
+          fogDensity: 0.0045,
+          particleType: 'geiger_glow',
+          particleColor: '#84cc16',
+        };
       case 'gas-giant':
       default:
         return {
@@ -508,6 +626,61 @@ export class PlanetEnvironmentGenerator {
           hasLiquid: false,
           liquidColor: '#78350f',
           liquidSpecular: '#b45309',
+        };
+      case 'aurora-plasma':
+        return {
+          morphology: 'plasma_fractures',
+          heightScale: rng.range(28, 44),
+          roughness: 0.8,
+          domainWarp: 0.65,
+          seaLevel: 5.5,
+          hasLiquid: true,
+          liquidColor: '#0891b2', // Ionized neon bay
+          liquidSpecular: '#67e8f9',
+        };
+      case 'fungal-mycelium':
+        return {
+          morphology: 'fungal_canopy',
+          heightScale: rng.range(22, 36),
+          roughness: 0.62,
+          domainWarp: 0.75,
+          seaLevel: 6.0,
+          hasLiquid: true,
+          liquidColor: '#065f46', // Bioluminescent spore marsh
+          liquidSpecular: '#34d399',
+        };
+      case 'shattered-shards':
+        return {
+          morphology: 'shattered_monoliths',
+          heightScale: rng.range(32, 50),
+          roughness: 0.9,
+          domainWarp: 0.85,
+          seaLevel: hasLiquid ? 4.5 : 0,
+          hasLiquid,
+          liquidColor: '#4c1d95', // Heavy metallic rift pool
+          liquidSpecular: '#c084fc',
+        };
+      case 'chlorophyll-jungle':
+        return {
+          morphology: 'primordial_jungle',
+          heightScale: rng.range(22, 36),
+          roughness: 0.65,
+          domainWarp: 0.6,
+          seaLevel: 7.0,
+          hasLiquid: true,
+          liquidColor: '#047857', // Primordial swamp liquid
+          liquidSpecular: '#a7f3d0',
+        };
+      case 'radioactive-abyss':
+        return {
+          morphology: 'neon_badlands',
+          heightScale: rng.range(30, 48),
+          roughness: 0.95,
+          domainWarp: 0.5,
+          seaLevel: hasLiquid ? 4.5 : 0,
+          hasLiquid,
+          liquidColor: '#4d7c0f', // Irradiated heavy brine
+          liquidSpecular: '#bef264',
         };
       case 'gas-giant':
       default:
@@ -649,6 +822,68 @@ export class PlanetEnvironmentGenerator {
           sunLightColor: starLight.sun,
           ambientLightColor: 0x292524,
         };
+      case 'aurora-plasma':
+        return {
+          surfaceLowland: '#0f172a', // Deep cosmic basalt
+          surfaceMidland: '#3b0764', // Violet plasma shelf
+          surfaceHighland: '#06b6d4', // Ionized teal ridge
+          surfacePeak: '#a855f7',     // Aurora flare peak
+          accentMineral: '#38bdf8',   // Electric arc seam
+          atmosphereGlow: '#06b6d4',
+          cloudColor: '#c084fc',
+          ringColor: '#67e8f9',
+          sunLightColor: 0xc084fc,
+          ambientLightColor: 0x1e1b4b,
+        };
+      case 'fungal-mycelium':
+        return {
+          surfaceLowland: '#064e3b', // Deep spore bog
+          surfaceMidland: '#701a75', // Velvet mycelial crust
+          surfaceHighland: '#059669', // Luminescent fungal tier
+          surfacePeak: '#d946ef',     // Glowing cap rim
+          accentMineral: '#34d399',   // Phosphor vein
+          atmosphereGlow: '#10b981',
+          cloudColor: '#d8b4fe',
+          sunLightColor: starLight.sun,
+          ambientLightColor: 0x2e1065,
+        };
+      case 'shattered-shards':
+        return {
+          surfaceLowland: '#18181b', // Void fissure floor
+          surfaceMidland: '#27272a', // Shattered tectonic slab
+          surfaceHighland: '#7e22ce', // Levitating amethyst shelf
+          surfacePeak: '#38bdf8',     // Crystalline needle tip
+          accentMineral: '#f43f5e',   // Harmonic anomaly ruby
+          atmosphereGlow: '#a855f7',
+          cloudColor: '#e0e7ff',
+          ringColor: '#a855f7',
+          sunLightColor: starLight.sun,
+          ambientLightColor: 0x09090b,
+        };
+      case 'chlorophyll-jungle':
+        return {
+          surfaceLowland: '#064e3b', // Primordial swamp mud
+          surfaceMidland: '#15803d', // Dense emerald canopy
+          surfaceHighland: '#166534', // Ancient moss cliffs
+          surfacePeak: '#facc15',     // Sunlit canopy flower
+          accentMineral: '#22c55e',   // Glowing sap node
+          atmosphereGlow: '#4ade80',
+          cloudColor: '#f0fdf4',
+          sunLightColor: 0xfef08a,
+          ambientLightColor: 0x064e3b,
+        };
+      case 'radioactive-abyss':
+        return {
+          surfaceLowland: '#1c1917', // Pitchblende slag
+          surfaceMidland: '#3f6212', // Irradiated uranium crust
+          surfaceHighland: '#65a30d', // Glowing neon ridge
+          surfacePeak: '#84cc16',     // Supercritical crystal spire
+          accentMineral: '#facc15',   // Amber radiation vein
+          atmosphereGlow: '#a3e635',
+          cloudColor: '#bef264',
+          sunLightColor: 0xd9f99d,
+          ambientLightColor: 0x14532d,
+        };
       case 'gas-giant':
       default:
         return {
@@ -688,6 +923,16 @@ export class PlanetEnvironmentGenerator {
         return 'spore_spires';
       case 'metallic-iron':
         return 'metallic_spikes';
+      case 'aurora-plasma':
+        return 'plasma_spires';
+      case 'fungal-mycelium':
+        return 'giant_spore_caps';
+      case 'shattered-shards':
+        return 'levitating_monoliths';
+      case 'chlorophyll-jungle':
+        return 'ancient_fossil_ribs';
+      case 'radioactive-abyss':
+        return 'prismatic_geodes';
       default:
         return 'ejecta_boulders';
     }
@@ -722,6 +967,16 @@ export class PlanetEnvironmentGenerator {
         return `Dense metallic planet rich in oxidized iron plains, copper needles, and magnetic anomalies.`;
       case 'gas-giant':
         return `Massive turbulent jovian planet with deep atmospheric convection belts and ice ring system.`;
+      case 'aurora-plasma':
+        return `Hyper-electrified planet enveloped in shimmering aurora curtains and charged ionic dunes.`;
+      case 'fungal-mycelium':
+        return `Ancient mycelial world blanketed by colossal bioluminescent fungi and undulating spore valleys.`;
+      case 'shattered-shards':
+        return `Gravitationally anomalous shattered world with massive levitating monoliths and crystal abysses.`;
+      case 'chlorophyll-jungle':
+        return `Dense primordial alien rainforest with gargantuan spiral canopies and misty swamp rivers.`;
+      case 'radioactive-abyss':
+        return `Supercritical radioactive world bathed in fluorescent neon mist and glowing pitchblende crystals.`;
     }
   }
 }

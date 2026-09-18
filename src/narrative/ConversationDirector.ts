@@ -35,14 +35,27 @@ export class StructuredConversationProvider {
   }
 
   public static handleChoice(npc: NPCIdentity, topic: string): ConversationTurn {
-    const isWater = npc.title.toLowerCase().includes('depths') || npc.npcId.includes('water');
-    const isAir = npc.title.toLowerCase().includes('ionosphere') || npc.title.toLowerCase().includes('sky') || npc.npcId.includes('air');
-    const isLand = npc.title.toLowerCase().includes('strata') || npc.npcId.includes('land');
+    const isWater = npc.title.toLowerCase().includes('depths') || npc.title.toLowerCase().includes('basin') || npc.npcId.includes('water');
+    const isAir = npc.title.toLowerCase().includes('ionosphere') || npc.title.toLowerCase().includes('sky') || npc.title.toLowerCase().includes('sovereign') || npc.npcId.includes('air');
+    const isLand = npc.title.toLowerCase().includes('strata') || npc.title.toLowerCase().includes('mantle') || npc.npcId.includes('land');
+
+    const isFungal = npc.name.toLowerCase().includes('mycelial') || npc.title.toLowerCase().includes('mycelial') || npc.title.toLowerCase().includes('spore');
+    const isVolcanic = npc.name.toLowerCase().includes('obsidian') || npc.name.toLowerCase().includes('caldera') || npc.title.toLowerCase().includes('pyroclastic');
+    const isCrystal = npc.name.toLowerCase().includes('prismatic') || npc.title.toLowerCase().includes('quartz') || npc.title.toLowerCase().includes('resonant');
+    const isPlasma = npc.name.toLowerCase().includes('aurora') || npc.name.toLowerCase().includes('ionized') || npc.title.toLowerCase().includes('magnetic ley');
 
     switch (topic) {
       case 'ecology': {
-        let text = `The life here answers to subtle geological tides. ${npc.currentConcern} If you drift with low thrust, you will see how gently the creatures share this basin.`;
-        if (isWater) {
+        let text = `The life here answers to subtle geological tides. ${npc.currentConcern || ''} If you drift with low thrust, you will see how gently the creatures share this basin.`;
+        if (isFungal) {
+          text = `Every spore stalk, luminescent cap, and mycelial chimera in this basin is interwoven through an acoustic fungal network beneath the soil. When one organism stirs, the entire grove whispers in quiet accord.`;
+        } else if (isVolcanic) {
+          text = `Life on these molten plates is hardened by primordial flame. The magma drakes and chitin burrowers feed directly on thermal vents and silicate crusts, carving sanctuaries where other life would dissolve.`;
+        } else if (isCrystal) {
+          text = `These spires and crystal behemoths are piezoelectric resonators. The faceted creatures absorb stellar winds and convert radiation into cool, steady harmonic pulses that keep the dust docile.`;
+        } else if (isPlasma) {
+          text = `The atmosphere here is electrically charged and vivid. The plasma kites glide along ion rivers, conducting coronal bursts into harmless radiant streamers across the skies.`;
+        } else if (isWater) {
           text = `In the sunken abyssal trenches, hydrostatic pressure and living luminescence become one tongue. We shepherd the microscopic drifters whose bioluminescence illuminates the ocean floor at nightfall.`;
         } else if (isAir) {
           text = `The sky is our vast pasture. We drift along thermal jet streams, basking in solar coronal winds and guiding the migratory gliders away from severe electric storms.`;

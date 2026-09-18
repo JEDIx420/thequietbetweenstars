@@ -95,28 +95,71 @@ export class FaunaPopulationManager {
   private initEncounterSites(): void {
     const rng = new SeededRandom(this.region.regionSeed + 777);
 
+    const isVolcanic = this.region.terrainMorphologyOverride.includes('volcanic') || this.region.terrainMorphologyOverride.includes('caldera') || this.region.terrainMorphologyOverride.includes('badlands');
+    const isFungal = this.region.terrainMorphologyOverride.includes('fungal') || this.region.terrainMorphologyOverride.includes('spore');
+    const isCrystal = this.region.terrainMorphologyOverride.includes('crystal') || this.region.terrainMorphologyOverride.includes('monolith') || this.region.terrainMorphologyOverride.includes('chasm');
+    const isPlasma = this.region.terrainMorphologyOverride.includes('plasma') || this.region.id.includes('aurora');
+
+    const landName = isVolcanic
+      ? `${this.region.name} Obsidian Caldera Titan`
+      : (isFungal
+      ? `${this.region.name} Mycelial Arch-Druid`
+      : (isCrystal
+      ? `${this.region.name} Prismatic Monolith Archon`
+      : (isPlasma
+      ? `${this.region.name} Ionized Ley-Line Colossus`
+      : `${this.region.name} Lithic Colossus`)));
+
+    const landTitle = isVolcanic
+      ? 'Elder of the Pyroclastic Strata'
+      : (isFungal
+      ? 'Elder of the Prime Mycelial Canopies'
+      : (isCrystal
+      ? 'Elder of the Resonant Quartz Strata'
+      : (isPlasma
+      ? 'Guardian of the Charged Magnetic Ley'
+      : 'Elder Guardian of the Deep Strata')));
+
+    const waterName = isVolcanic
+      ? `${this.region.name} Magma Trench Leviathan`
+      : (isFungal
+      ? `${this.region.name} Phosphor Basin Leviathan`
+      : (isCrystal
+      ? `${this.region.name} Crystal Trench Leviathan`
+      : `${this.region.name} Ocean Leviathan`));
+
+    const airName = isPlasma
+      ? `${this.region.name} Stratospheric Aurora Sovereign`
+      : (isFungal
+      ? `${this.region.name} Aetheric Spore Sovereign`
+      : (isVolcanic
+      ? `${this.region.name} Pyroclastic Sun Sovereign`
+      : `${this.region.name} Stratospheric Sky Sovereign`));
+
+    const accentHex = parseInt(this.region.localSurfacePalette.accent.replace('#', '0x'), 16) || 0x38bdf8;
+
     const siteConfigs = [
       {
         type: 'land' as const,
-        siteName: 'Lithic Sanctuary of the Deep Mantle',
+        siteName: `${this.region.name} Sanctuary of the Prime Mantle`,
         angle: 0.5 + rng.range(-0.2, 0.2),
         dist: rng.range(210, 260),
-        beaconColor: 0x38bdf8,
-        defaultName: `${this.region.name} Lithic Colossus`,
-        defaultTitle: 'Elder Guardian of the Deep Strata',
+        beaconColor: accentHex,
+        defaultName: landName,
+        defaultTitle: landTitle,
         personality: 'solemn' as const,
         greeting: 'I feel the tremor of your small vessel against the bedrock. The stone remembers every dawn since this world cooled. Speak, quiet voyager.',
         loreKey: 'lithic_core_resonance',
         loreTitle: 'Echoes of the Deep Mantle',
-        loreText: 'The lithic colossus reveals that the planetary core pulses in ultra-low frequency harmonic waves, shielding delicate surface biospheres from cosmic solar winds.',
+        loreText: 'The land titan reveals that the planetary core pulses in ultra-low frequency harmonic waves, shielding delicate surface biospheres from cosmic solar winds.',
       },
       {
         type: 'water' as const,
-        siteName: 'Abyssal Basin of the Primordial Depths',
+        siteName: `${this.region.name} Basin of the Primordial Depths`,
         angle: 2.6 + rng.range(-0.2, 0.2),
         dist: rng.range(270, 340),
         beaconColor: 0x06b6d4,
-        defaultName: `${this.region.name} Ocean Leviathan`,
+        defaultName: waterName,
         defaultTitle: 'Sovereign of the Primordial Depths',
         personality: 'gentle' as const,
         greeting: 'The tides carry the harmonic wake of your engines down into the deep trenches. We welcome those who glide peacefully above the water.',
@@ -126,11 +169,11 @@ export class FaunaPopulationManager {
       },
       {
         type: 'air' as const,
-        siteName: 'Stratospheric Sky Spire of the Zephyri',
+        siteName: `${this.region.name} Sky Spire of the Zephyri`,
         angle: 4.7 + rng.range(-0.2, 0.2),
         dist: rng.range(230, 290),
         beaconColor: 0xa855f7,
-        defaultName: `${this.region.name} Stratospheric Sky Sovereign`,
+        defaultName: airName,
         defaultTitle: 'Wanderer of the High Ionosphere',
         personality: 'observant' as const,
         greeting: 'Your small wings carve ribbons through our cloud decks. From the upper stratosphere, the stars look close enough to touch. What brings you to our sky?',
@@ -638,6 +681,237 @@ export class FaunaPopulationManager {
         break;
       }
 
+      case 'crystal_behemoth': {
+        // Stepped faceted crystal golem with orbiting floating shards
+        const torsoGeo = new THREE.DodecahedronGeometry(s * 1.8, 0);
+        const torso = new THREE.Mesh(torsoGeo, mat);
+        torso.position.y = s * 2.8;
+        group.add(torso);
+
+        const hornGeo = new THREE.ConeGeometry(s * 0.4, s * 2.2, 5);
+        const horn = new THREE.Mesh(hornGeo, accentMat);
+        horn.position.set(0, s * 4.4, -s * 0.5);
+        horn.rotation.x = -0.4;
+        group.add(horn);
+
+        // 4 Faceted crystal prism legs
+        const legGeo = new THREE.CylinderGeometry(s * 0.25, s * 0.35, s * 2.2, 5);
+        for (const [lx, lz] of [[-s * 1.2, -s * 1.0], [s * 1.2, -s * 1.0], [-s * 1.2, s * 1.0], [s * 1.2, s * 1.0]]) {
+          const leg = new THREE.Mesh(legGeo, accentMat);
+          leg.position.set(lx, s * 1.1, lz);
+          group.add(leg);
+        }
+
+        // Orbiting crystal shards
+        for (let sh = 0; sh < 3; sh++) {
+          const shardGeo = new THREE.OctahedronGeometry(s * 0.35, 0);
+          const shard = new THREE.Mesh(shardGeo, glowMat);
+          const shAng = (sh * Math.PI * 2) / 3;
+          shard.position.set(Math.cos(shAng) * s * 2.6, s * 3.4, Math.sin(shAng) * s * 2.6);
+          group.add(shard);
+        }
+        break;
+      }
+
+      case 'mycelial_chimera': {
+        // Slender fungal creature with wide umbrella cap and trailing tendrils
+        const stalkGeo = new THREE.CylinderGeometry(s * 0.2, s * 0.4, s * 3.2, 6);
+        const stalk = new THREE.Mesh(stalkGeo, mat);
+        stalk.position.y = s * 2.6;
+        group.add(stalk);
+
+        const capGeo = new THREE.ConeGeometry(s * 1.6, s * 0.7, 8);
+        const cap = new THREE.Mesh(capGeo, mat);
+        cap.position.y = s * 4.2;
+        group.add(cap);
+
+        // Glowing underside gills
+        const core = new THREE.SphereGeometry(s * 0.6, 6, 6);
+        const coreMesh = new THREE.Mesh(core, glowMat);
+        coreMesh.position.y = s * 3.8;
+        group.add(coreMesh);
+
+        // 3 Spindly stilt legs
+        const legGeo = new THREE.CylinderGeometry(s * 0.08, s * 0.12, s * 2.5, 3);
+        for (let l = 0; l < 3; l++) {
+          const lAng = (l * Math.PI * 2) / 3;
+          const leg = new THREE.Mesh(legGeo, accentMat);
+          leg.position.set(Math.cos(lAng) * s * 0.8, s * 1.25, Math.sin(lAng) * s * 0.8);
+          leg.rotation.z = Math.cos(lAng) * 0.3;
+          leg.rotation.x = Math.sin(lAng) * 0.3;
+          group.add(leg);
+        }
+        break;
+      }
+
+      case 'plasma_kite': {
+        // Ultra-wide delta-winged flyer with glowing ion filaments
+        const wingSpan = s * 5.2;
+        const wingGeo = new THREE.ConeGeometry(wingSpan * 0.3, wingSpan, 4);
+        wingGeo.rotateZ(Math.PI / 2);
+        const wing = new THREE.Mesh(wingGeo, mat);
+        wing.scale.set(1.0, 0.1, 0.9);
+        wing.position.y = s * 1.8;
+        group.add(wing);
+
+        // Glowing plasma core
+        const core = new THREE.Mesh(new THREE.OctahedronGeometry(s * 0.5, 0), glowMat);
+        core.position.set(0, s * 1.8, 0);
+        group.add(core);
+
+        // Trailing ion filaments
+        for (let f = -1; f <= 1; f += 2) {
+          const filGeo = new THREE.CylinderGeometry(s * 0.04, s * 0.08, s * 3.5, 3);
+          filGeo.rotateX(Math.PI / 2);
+          const fil = new THREE.Mesh(filGeo, accentMat);
+          fil.position.set(f * s * 1.6, s * 1.8, s * 2.2);
+          group.add(fil);
+        }
+        break;
+      }
+
+      case 'magma_drake': {
+        // Heavy armored quadrupedal drake with incandescent dorsal crests
+        const bodyGeo = new THREE.BoxGeometry(s * 1.8, s * 1.2, s * 3.2);
+        const body = new THREE.Mesh(bodyGeo, mat);
+        body.position.y = s * 1.4;
+        group.add(body);
+
+        // Molten dorsal spines
+        for (let sp = -1; sp <= 1; sp++) {
+          const spineGeo = new THREE.ConeGeometry(s * 0.3, s * 1.4, 4);
+          const spine = new THREE.Mesh(spineGeo, glowMat);
+          spine.position.set(0, s * 2.3, sp * s * 0.9);
+          group.add(spine);
+        }
+
+        // Head
+        const headGeo = new THREE.ConeGeometry(s * 0.6, s * 1.5, 4);
+        headGeo.rotateX(-Math.PI / 2);
+        const head = new THREE.Mesh(headGeo, accentMat);
+        head.position.set(0, s * 1.8, -s * 2.2);
+        group.add(head);
+
+        // 4 Powerful claws
+        const clawGeo = new THREE.CylinderGeometry(s * 0.2, s * 0.25, s * 1.4, 4);
+        for (const [cx, cz] of [[-s * 1.1, -s * 1.1], [s * 1.1, -s * 1.1], [-s * 1.1, s * 1.1], [s * 1.1, s * 1.1]]) {
+          const claw = new THREE.Mesh(clawGeo, accentMat);
+          claw.position.set(cx, s * 0.7, cz);
+          group.add(claw);
+        }
+        break;
+      }
+
+      case 'abyssal_drifter': {
+        // Spiral shelled drifter with glowing tentacle array
+        const shellGeo = new THREE.TorusGeometry(s * 1.2, s * 0.5, 6, 12, Math.PI * 1.5);
+        const shell = new THREE.Mesh(shellGeo, mat);
+        shell.position.y = s * 2.4;
+        shell.rotation.y = Math.PI / 2;
+        group.add(shell);
+
+        // Glowing core
+        const core = new THREE.Mesh(new THREE.SphereGeometry(s * 0.5, 6, 6), glowMat);
+        core.position.set(0, s * 2.4, -s * 0.4);
+        group.add(core);
+
+        // Tentacle skirt
+        const tentGeo = new THREE.CylinderGeometry(s * 0.05, s * 0.08, s * 2.2, 3);
+        for (let t = 0; t < 5; t++) {
+          const tAng = (t * Math.PI * 2) / 5;
+          const tent = new THREE.Mesh(tentGeo, accentMat);
+          tent.position.set(Math.cos(tAng) * s * 0.7, s * 1.1, Math.sin(tAng) * s * 0.7);
+          group.add(tent);
+        }
+        break;
+      }
+
+      case 'strider_colossus': {
+        // Elevated canopy colossus walking high on 4 slender stilts
+        const domeGeo = new THREE.DodecahedronGeometry(s * 1.6, 0);
+        const dome = new THREE.Mesh(domeGeo, mat);
+        dome.position.y = s * 5.5;
+        group.add(dome);
+
+        const dorsalCrest = new THREE.Mesh(new THREE.ConeGeometry(s * 0.4, s * 2.0, 4), glowMat);
+        dorsalCrest.position.set(0, s * 7.2, 0);
+        group.add(dorsalCrest);
+
+        // 4 High stilts
+        const stiltGeo = new THREE.CylinderGeometry(s * 0.1, s * 0.16, s * 5.2, 4);
+        for (const [sx, sz] of [[-s * 1.4, -s * 1.4], [s * 1.4, -s * 1.4], [-s * 1.4, s * 1.4], [s * 1.4, s * 1.4]]) {
+          const stilt = new THREE.Mesh(stiltGeo, accentMat);
+          stilt.position.set(sx, s * 2.6, sz);
+          stilt.rotation.z = sx > 0 ? -0.15 : 0.15;
+          group.add(stilt);
+        }
+        break;
+      }
+
+      case 'sand_scythe': {
+        // Aerodynamic predatory biped with counterbalanced scythe tail
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(s * 0.9, s * 1.1, s * 1.8), mat);
+        torso.position.y = s * 1.8;
+        group.add(torso);
+
+        const headGeo = new THREE.ConeGeometry(s * 0.45, s * 1.4, 4);
+        headGeo.rotateX(-Math.PI / 2);
+        const head = new THREE.Mesh(headGeo, accentMat);
+        head.position.set(0, s * 2.3, -s * 1.4);
+        group.add(head);
+
+        // Scythe tail
+        const tailGeo = new THREE.ConeGeometry(s * 0.2, s * 2.8, 3);
+        tailGeo.rotateX(Math.PI / 2);
+        const tail = new THREE.Mesh(tailGeo, glowMat);
+        tail.position.set(0, s * 1.9, s * 1.8);
+        group.add(tail);
+
+        // 2 Biped legs
+        const legGeo = new THREE.CylinderGeometry(s * 0.12, s * 0.15, s * 1.8, 4);
+        for (const side of [-1, 1]) {
+          const leg = new THREE.Mesh(legGeo, accentMat);
+          leg.position.set(side * s * 0.6, s * 0.9, 0);
+          leg.rotation.x = 0.25;
+          group.add(leg);
+        }
+        break;
+      }
+
+      case 'floating_aegis': {
+        // Levitating defensive shield drifter with hovering orbital plates
+        const core = new THREE.Mesh(new THREE.SphereGeometry(s * 1.1, 8, 8), glowMat);
+        core.position.y = s * 2.8;
+        group.add(core);
+
+        for (let sh = 0; sh < 4; sh++) {
+          const plateGeo = new THREE.BoxGeometry(s * 1.2, s * 1.2, s * 0.15);
+          const plate = new THREE.Mesh(plateGeo, mat);
+          const pAng = (sh * Math.PI * 2) / 4;
+          plate.position.set(Math.cos(pAng) * s * 1.8, s * 2.8, Math.sin(pAng) * s * 1.8);
+          plate.rotation.y = -pAng;
+          group.add(plate);
+        }
+        break;
+      }
+
+      case 'chitin_burrower': {
+        // Multi-segmented armored worm/driller with side articulators
+        const segCount = 7;
+        for (let i = 0; i < segCount; i++) {
+          const segGeo = new THREE.CylinderGeometry(s * 0.45, s * 0.55, s * 0.8, 6);
+          segGeo.rotateX(Math.PI / 2);
+          const seg = new THREE.Mesh(segGeo, i % 2 === 0 ? mat : accentMat);
+          seg.position.set(0, s * 0.6, (i - segCount / 2) * s * 0.75);
+          group.add(seg);
+        }
+        const mandible = new THREE.Mesh(new THREE.ConeGeometry(s * 0.3, s * 1.0, 4), glowMat);
+        mandible.position.set(0, s * 0.6, -s * (segCount / 2) * 0.75 - s * 0.6);
+        mandible.rotation.x = -Math.PI / 2;
+        group.add(mandible);
+        break;
+      }
+
       case 'quadruped':
       default: {
         if (species.category === 'AERIAL') {
@@ -773,17 +1047,20 @@ export class FaunaPopulationManager {
     const group = new THREE.Group();
     const h = 28.0; // Towering 28m colossus
 
+    const rockColor = new THREE.Color(this.region.localSurfacePalette.rock || 0x334155);
+    const accentColor = new THREE.Color(this.region.localSurfacePalette.accent || 0x38bdf8);
+
     const giantMat = new THREE.MeshStandardMaterial({
-      color: 0x334155, // Basaltic monolithic slate
+      color: rockColor,
       roughness: 0.85,
       metalness: 0.25,
       flatShading: true,
     });
 
     const crystalMat = new THREE.MeshStandardMaterial({
-      color: 0x38bdf8,
-      emissive: 0x0284c7,
-      emissiveIntensity: 0.8,
+      color: accentColor,
+      emissive: accentColor,
+      emissiveIntensity: 0.85,
       roughness: 0.2,
       metalness: 0.85,
     });
@@ -914,16 +1191,19 @@ export class FaunaPopulationManager {
   ): ActiveCreature {
     const group = new THREE.Group();
 
+    const lowlandColor = new THREE.Color(this.region.localSurfacePalette.lowland || 0x0f283d);
+    const accentColor = new THREE.Color(this.region.localSurfacePalette.accent || 0x06b6d4);
+
     const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0x0f283d, // Deep abyssal navy
+      color: lowlandColor,
       roughness: 0.45,
       metalness: 0.35,
       flatShading: true,
     });
 
     const biolumMat = new THREE.MeshStandardMaterial({
-      color: 0x06b6d4,
-      emissive: 0x22d3ee,
+      color: accentColor,
+      emissive: accentColor,
       emissiveIntensity: 0.85,
       roughness: 0.2,
       metalness: 0.8,
@@ -1056,16 +1336,19 @@ export class FaunaPopulationManager {
     const wingSpan = 54.0; // 54m wingspan
     const bodyLen = 36.0;
 
+    const midlandColor = new THREE.Color(this.region.localSurfacePalette.midland || 0x1e1b4b);
+    const accentColor = new THREE.Color(this.region.localSurfacePalette.accent || 0xa855f7);
+
     const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0x1e1b4b, // Deep indigo sky aerostat
+      color: midlandColor,
       roughness: 0.4,
       metalness: 0.3,
       flatShading: true,
     });
 
     const glowMat = new THREE.MeshStandardMaterial({
-      color: 0xa855f7,
-      emissive: 0xc084fc,
+      color: accentColor,
+      emissive: accentColor,
       emissiveIntensity: 0.9,
       roughness: 0.2,
       metalness: 0.8,

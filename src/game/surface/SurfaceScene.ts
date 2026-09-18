@@ -789,6 +789,51 @@ export class SurfaceScene {
         break;
       }
 
+      case 'plasma_fractures': {
+        // Electrified fault lines and tiered plateau shoulders
+        const ridges = this.noise.ridged2D(wx * 0.007, wz * 0.007, 3, 2.2, 0.6) * 30.0;
+        const rift = Math.abs(this.noise.noise2D(wx * 0.014, wz * 0.014));
+        const plasmaDrop = rift < 0.15 ? -(0.15 - rift) * 58.0 : 0;
+        elevation = ridges + plasmaDrop;
+        break;
+      }
+
+      case 'fungal_canopy': {
+        // Undulating bulbous mounds and stepped spore plateaus
+        const bulbous = (Math.sin(wx * 0.018) + Math.cos(wz * 0.018)) * 12.0;
+        const shelf = SimplexNoise2D.terrace(this.noise.fbm2D(wx * 0.004, wz * 0.004, 3) * 0.5 + 0.5, 4, 0.8) * 28.0 - 10.0;
+        elevation = bulbous + shelf;
+        break;
+      }
+
+      case 'shattered_monoliths': {
+        // Sharp stepped anti-gravity monolith tablelands with vertical drop-offs
+        const base = this.noise.fbm2D(wx * 0.005, wz * 0.005, 4, 2.0, 0.5);
+        const stepped = SimplexNoise2D.terrace(base * 0.5 + 0.5, 5, 0.96) * 52.0 - 18.0;
+        const fissure = Math.abs(this.noise.noise2D(wx * 0.015, wz * 0.015));
+        const rift = fissure < 0.12 ? -(0.12 - fissure) * 65.0 : 0;
+        elevation = stepped + rift;
+        break;
+      }
+
+      case 'primordial_jungle': {
+        // Meandering river valleys, organic undulating hills, and rounded limestone karsts
+        const hills = this.noise.fbm2D(wx * 0.004, wz * 0.004, 4, 2.0, 0.5) * 22.0;
+        const karsts = Math.pow(Math.max(0, this.noise.noise2D(wx * 0.008, wz * 0.008)), 2.0) * 32.0;
+        const riverCut = Math.abs(this.noise.noise2D(wx * 0.005, wz * 0.005));
+        const river = riverCut < 0.14 ? -(0.14 - riverCut) * 28.0 : 0;
+        elevation = hills + karsts + river;
+        break;
+      }
+
+      case 'neon_badlands': {
+        // Supercritical radioactive eroded ridges, jagged peaks, and sinkhole vents
+        const jagged = this.noise.ridged2D(wx * 0.008, wz * 0.008, 4, 2.3, 0.6) * 36.0;
+        const craters = Math.sin(wx * 0.012) * Math.sin(wz * 0.012) * 10.0;
+        elevation = jagged + craters;
+        break;
+      }
+
       default: {
         // Coherent rolling hills and highland ridges
         const f1 = this.noise.fbm2D(wx * 0.005, wz * 0.005, 4, 2.0, 0.5) * 20.0;
@@ -1142,7 +1187,7 @@ export class SurfaceScene {
   }
 
   private createAtmosphericParticles(
-    particleType: 'dust' | 'snow' | 'ash' | 'spores' | 'mist',
+    particleType: 'dust' | 'snow' | 'ash' | 'spores' | 'mist' | 'plasma_sparks' | 'geiger_glow',
     densityMultiplier: number
   ): THREE.Points {
     const count = Math.floor(650 * densityMultiplier);
@@ -1161,13 +1206,14 @@ export class SurfaceScene {
     const pTexture = ParticleTextureGenerator.getParticleTexture(particleType);
     const atmo = this.planet.profile.atmosphere;
 
+    const isLuminescent = particleType === 'spores' || particleType === 'plasma_sparks' || particleType === 'geiger_glow';
     const mat = new THREE.PointsMaterial({
       color: new THREE.Color(atmo.particleColor || atmo.fogColor),
-      size: particleType === 'snow' ? 3.0 : 2.2,
+      size: particleType === 'snow' ? 3.0 : (particleType === 'plasma_sparks' ? 2.8 : 2.2),
       map: pTexture,
       transparent: true,
-      opacity: particleType === 'spores' ? 0.75 : 0.6,
-      blending: particleType === 'spores' ? THREE.AdditiveBlending : THREE.NormalBlending,
+      opacity: isLuminescent ? 0.8 : 0.6,
+      blending: isLuminescent ? THREE.AdditiveBlending : THREE.NormalBlending,
       depthWrite: false,
     });
 

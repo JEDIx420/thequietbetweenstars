@@ -159,6 +159,46 @@ export function computePointElevation(
       break;
     }
 
+    case 'plasma_fractures': {
+      const ridges = noise.ridged2D(wx * 0.007, wz * 0.007, 3, 2.2, 0.6) * 30.0;
+      const rift = Math.abs(noise.noise2D(wx * 0.014, wz * 0.014));
+      const plasmaDrop = rift < 0.15 ? -(0.15 - rift) * 58.0 : 0;
+      elevation = ridges + plasmaDrop;
+      break;
+    }
+
+    case 'fungal_canopy': {
+      const bulbous = (Math.sin(wx * 0.018) + Math.cos(wz * 0.018)) * 12.0;
+      const shelf = SimplexNoise2D.terrace(noise.fbm2D(wx * 0.004, wz * 0.004, 3) * 0.5 + 0.5, 4, 0.8) * 28.0 - 10.0;
+      elevation = bulbous + shelf;
+      break;
+    }
+
+    case 'shattered_monoliths': {
+      const base = noise.fbm2D(wx * 0.005, wz * 0.005, 4, 2.0, 0.5);
+      const stepped = SimplexNoise2D.terrace(base * 0.5 + 0.5, 5, 0.96) * 52.0 - 18.0;
+      const fissure = Math.abs(noise.noise2D(wx * 0.015, wz * 0.015));
+      const rift = fissure < 0.12 ? -(0.12 - fissure) * 65.0 : 0;
+      elevation = stepped + rift;
+      break;
+    }
+
+    case 'primordial_jungle': {
+      const hills = noise.fbm2D(wx * 0.004, wz * 0.004, 4, 2.0, 0.5) * 22.0;
+      const karsts = Math.pow(Math.max(0, noise.noise2D(wx * 0.008, wz * 0.008)), 2.0) * 32.0;
+      const riverCut = Math.abs(noise.noise2D(wx * 0.005, wz * 0.005));
+      const river = riverCut < 0.14 ? -(0.14 - riverCut) * 28.0 : 0;
+      elevation = hills + karsts + river;
+      break;
+    }
+
+    case 'neon_badlands': {
+      const jagged = noise.ridged2D(wx * 0.008, wz * 0.008, 4, 2.3, 0.6) * 36.0;
+      const craters = Math.sin(wx * 0.012) * Math.sin(wz * 0.012) * 10.0;
+      elevation = jagged + craters;
+      break;
+    }
+
     default: {
       const f1 = noise.fbm2D(wx * 0.005, wz * 0.005, 4, 2.0, 0.5) * 20.0;
       const f2 = noise.noise2D(wx * 0.015, wz * 0.015) * 5.0;

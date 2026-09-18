@@ -37,7 +37,16 @@ export interface EcologicalSpecies {
     | 'balloon'
     | 'shoreline_grazer'
     | 'colossus'
-    | 'sentient_giant';
+    | 'sentient_giant'
+    | 'crystal_behemoth'
+    | 'mycelial_chimera'
+    | 'plasma_kite'
+    | 'magma_drake'
+    | 'abyssal_drifter'
+    | 'strider_colossus'
+    | 'sand_scythe'
+    | 'floating_aegis'
+    | 'chitin_burrower';
   scale: number; // visual bounding scale multiplier
   baseSpeed: number;
   temperament: 'curious' | 'timid' | 'placid' | 'majestic' | 'venerable';
@@ -101,17 +110,9 @@ export class EcologyGenerator {
       viability = rng.range(0.35, 0.6);
       trophicComplexity = 2;
     } else if (bio === 'complex-ecosystem') {
+      tier = 'COMPLEX_BIOSPHERE';
       viability = rng.range(0.65, 0.88);
       trophicComplexity = 3 + rng.rangeInt(0, 1);
-      // Sentience emerges naturally in 25-30% of temperate liquid-bearing complex ecosystems
-      const isTemperate = temp >= 240 && temp <= 340;
-      const hasHydrosphere = hydro >= 0.12;
-      const naturalSentient = isTemperate && hasHydrosphere && (rng.next() < 0.28);
-      tier = naturalSentient ? 'SENTIENT_BIOSPHERE' : 'COMPLEX_BIOSPHERE';
-      if (naturalSentient) {
-        trophicComplexity = 5;
-        viability = Math.max(viability, 0.85);
-      }
     } else if (bio === 'anomalous') {
       // Anomalous high probability of Sentient Biosphere (~75%)
       const isSentient = rng.next() < 0.75;
@@ -139,28 +140,62 @@ export class EcologyGenerator {
         groundSpecies.push(this.createSpecies(rng, 'GROUND', 'tripod', motif, 0.8, 2.2, 'shrub browser'));
         aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'glider', motif, 0.9, 1.5, 'aerial planktonivore'));
       } else if (tier === 'COMPLEX_BIOSPHERE' || tier === 'SENTIENT_BIOSPHERE') {
-        // Diverse ground species
-        groundSpecies.push(this.createSpecies(rng, 'GROUND', 'quadruped', motif, 1.2, 2.4, 'canopy grazer'));
-        groundSpecies.push(this.createSpecies(rng, 'GROUND', 'six_legged', motif, 1.4, 2.8, 'lowland grazer'));
-        groundSpecies.push(this.createSpecies(rng, 'GROUND', 'hopper', motif, 0.8, 1.5, 'crevice seeker'));
-        groundSpecies.push(this.createSpecies(rng, 'GROUND', 'segmented', motif, 1.1, 1.3, 'sub-surface burrower'));
+        const family = planetProfile.family;
 
-        // Aerial species
-        aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'ray', motif, 1.8, 3.2, 'thermal drifter'));
-        aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'jelly', motif, 1.5, 4.0, 'buoyant atmospheric sifter'));
-        aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'swarm', motif, 0.6, 0.8, 'luminescent micro-flock'));
+        // Tailor species to specific planetary families for maximum ecological contrast
+        if (family === 'volcanic-basalt' || family === 'radioactive-abyss') {
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'magma_drake', motif, 1.6, 2.8, 'pyroclastic mineralivore'));
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'chitin_burrower', motif, 1.2, 1.4, 'obsidian bore grazer'));
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'sand_scythe', motif, 1.1, 2.0, 'sulfur runner'));
+          aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'plasma_kite', motif, 1.4, 2.5, 'convection plume soarer'));
+          megafaunaSpecies.push(this.createSpecies(rng, 'MEGAFAUNA', 'colossus', motif, 4.0, 18.0, 'volcanic caldera titan'));
+        } else if (family === 'crystalline-mineral' || family === 'shattered-shards') {
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'crystal_behemoth', motif, 1.8, 3.4, 'harmonic quartz grazer'));
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'tripod', motif, 1.0, 2.6, 'faceted prism walker'));
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'hopper', motif, 0.7, 1.3, 'chasm jumper'));
+          aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'floating_aegis', motif, 1.5, 3.8, 'anti-gravity harmonic floater'));
+          aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'ray', motif, 1.8, 3.2, 'prismatic wing skimmer'));
+          megafaunaSpecies.push(this.createSpecies(rng, 'MEGAFAUNA', 'crystal_behemoth', motif, 3.8, 16.0, 'monolithic crystal archon'));
+        } else if (family === 'fungal-mycelium' || family === 'high-biosignature') {
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'mycelial_chimera', motif, 1.5, 3.0, 'symbiotic spore grazer'));
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'strider_colossus', motif, 2.0, 5.2, 'high-canopy stilt browser'));
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'six_legged', motif, 1.2, 2.0, 'velvet moss scuttler'));
+          aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'jelly', motif, 1.8, 4.5, 'bioluminescent spore sifter'));
+          aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'swarm', motif, 0.6, 0.8, 'phosphor micro-flock'));
+          megafaunaSpecies.push(this.createSpecies(rng, 'MEGAFAUNA', 'strider_colossus', motif, 3.6, 17.0, 'prime mycelial arch-grazer'));
+        } else if (family === 'aurora-plasma') {
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'crystal_behemoth', motif, 1.6, 3.0, 'ionized quartz grazer'));
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'sand_scythe', motif, 1.3, 2.4, 'plasma dune raptor'));
+          aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'plasma_kite', motif, 2.0, 3.5, 'auroral discharge soarer'));
+          aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'floating_aegis', motif, 1.4, 3.2, 'electrostatic shield drifter'));
+          megafaunaSpecies.push(this.createSpecies(rng, 'MEGAFAUNA', 'colossus', motif, 3.5, 15.0, 'ley-line storm colossus'));
+        } else if (family === 'oceanic-water') {
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'shoreline_grazer', motif, 1.3, 2.2, 'tidal reef grazer'));
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'hopper', motif, 0.8, 1.6, 'sandbar skipper'));
+          amphibiousSpecies.push(this.createSpecies(rng, 'AMPHIBIOUS', 'abyssal_drifter', motif, 1.8, 3.2, 'bioluminescent trench swimmer'));
+          aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'ray', motif, 2.2, 3.8, 'pelagic wave glider'));
+          aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'jelly', motif, 1.6, 4.2, 'floating ocean medusa'));
+          megafaunaSpecies.push(this.createSpecies(rng, 'MEGAFAUNA', 'colossus', motif, 4.2, 16.0, 'ocean trench leviathan'));
+        } else {
+          // Standard terrestrial & cryogenic diversity
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'quadruped', motif, 1.2, 2.4, 'canopy grazer'));
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'six_legged', motif, 1.4, 2.8, 'lowland grazer'));
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'hopper', motif, 0.8, 1.5, 'crevice seeker'));
+          groundSpecies.push(this.createSpecies(rng, 'GROUND', 'segmented', motif, 1.1, 1.3, 'sub-surface burrower'));
+          aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'ray', motif, 1.8, 3.2, 'thermal drifter'));
+          aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'jelly', motif, 1.5, 4.0, 'buoyant atmospheric sifter'));
+          aerialSpecies.push(this.createSpecies(rng, 'AERIAL', 'swarm', motif, 0.6, 0.8, 'luminescent micro-flock'));
+          megafaunaSpecies.push(this.createSpecies(rng, 'MEGAFAUNA', 'colossus', motif, 3.5, 14.0, 'gentle high-canopy colossus'));
+        }
 
-        // Coastal/Amphibious if hydrosphere present
-        if (hydro > 0.15) {
+        // Coastal/Amphibious if hydrosphere present and not already added
+        if (hydro > 0.15 && amphibiousSpecies.length === 0) {
           amphibiousSpecies.push(this.createSpecies(rng, 'AMPHIBIOUS', 'shoreline_grazer', motif, 1.3, 2.0, 'tidal herbivore'));
         }
 
-        // Megafauna Colossi
-        megafaunaSpecies.push(this.createSpecies(rng, 'MEGAFAUNA', 'colossus', motif, 3.5, 14.0, 'gentle high-canopy colossus'));
-
         // Sentient Giants if tier allows
         if (tier === 'SENTIENT_BIOSPHERE') {
-          sentientSpecies.push(this.createSpecies(rng, 'SENTIENT', 'sentient_giant', motif, 4.0, rng.range(12.0, 24.0), 'sapient stellar philosopher'));
+          sentientSpecies.push(this.createSpecies(rng, 'SENTIENT', 'sentient_giant', motif, 4.0, rng.range(14.0, 26.0), 'sapient stellar philosopher'));
         }
       }
     }

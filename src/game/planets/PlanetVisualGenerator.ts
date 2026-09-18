@@ -46,18 +46,18 @@ export class PlanetVisualGenerator {
     // 1. Procedural surface texture canvas
     const texture = this.getOrCreateSurfaceTexture(planet);
 
-    const roughness = profile.family === 'cryogenic-ice'
+    const roughness = profile.family === 'cryogenic-ice' || profile.family === 'aurora-plasma'
       ? 0.25
-      : profile.family === 'metallic-iron'
+      : profile.family === 'metallic-iron' || profile.family === 'shattered-shards'
       ? 0.35
       : profile.terrain.hasLiquid
       ? 0.45
       : 0.82;
 
-    const metalness = profile.family === 'metallic-iron'
+    const metalness = profile.family === 'metallic-iron' || profile.family === 'radioactive-abyss'
       ? 0.65
-      : profile.family === 'crystalline-mineral'
-      ? 0.4
+      : profile.family === 'crystalline-mineral' || profile.family === 'shattered-shards' || profile.family === 'aurora-plasma'
+      ? 0.45
       : 0.08;
 
     const material = new THREE.MeshStandardMaterial({
@@ -276,6 +276,47 @@ export class PlanetVisualGenerator {
         ctx.beginPath();
         ctx.ellipse(256, 242, 256, profile.family === 'cryogenic-ice' ? 65 : 28, 0, 0, Math.PI * 2);
         ctx.fill();
+      }
+
+      // Special surface features per planet family
+      if (profile.family === 'aurora-plasma') {
+        // Swirling electromagnetic aurora ribbons across the surface
+        ctx.strokeStyle = accentMineral;
+        ctx.lineWidth = 3;
+        for (let r = 0; r < 6; r++) {
+          ctx.beginPath();
+          const startY = rng.range(40, 216);
+          ctx.moveTo(0, startY);
+          ctx.bezierCurveTo(128, startY + rng.range(-30, 30), 384, startY + rng.range(-30, 30), 512, startY);
+          ctx.stroke();
+        }
+      } else if (profile.family === 'fungal-mycelium') {
+        // Bioluminescent spore clusters
+        ctx.fillStyle = accentMineral;
+        for (let s = 0; s < 28; s++) {
+          ctx.beginPath();
+          ctx.arc(rng.range(30, 480), rng.range(30, 220), rng.range(3, 9), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (profile.family === 'shattered-shards') {
+        // Linear tectonic fissures exposing deep iridescent mineral seams
+        ctx.strokeStyle = profile.palette.accentMineral;
+        ctx.lineWidth = 2.5;
+        for (let f = 0; f < 9; f++) {
+          ctx.beginPath();
+          const fx = rng.range(40, 470);
+          ctx.moveTo(fx, rng.range(20, 100));
+          ctx.lineTo(fx + rng.range(-40, 40), rng.range(120, 230));
+          ctx.stroke();
+        }
+      } else if (profile.family === 'radioactive-abyss') {
+        // Glowing fluorescent radiation craters
+        ctx.fillStyle = accentMineral;
+        for (let rc = 0; rc < 16; rc++) {
+          ctx.beginPath();
+          ctx.arc(rng.range(30, 480), rng.range(30, 220), rng.range(4, 15), 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
 

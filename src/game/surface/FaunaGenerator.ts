@@ -366,6 +366,153 @@ export class FaunaGenerator {
         break;
       }
 
+      case 'ocean_leviathan':
+      case 'archipelago_swimmer': {
+        const bodyGeo = new THREE.CylinderGeometry(1.8, 2.5, 9.0, 6);
+        bodyGeo.rotateX(Math.PI / 2);
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = 4.0;
+        group.add(body);
+        const flipperGeo = new THREE.BoxGeometry(6.0, 0.3, 2.0);
+        const flippers = new THREE.Mesh(flipperGeo, eyeMat);
+        flippers.position.set(0, 3.8, -1.5);
+        group.add(flippers);
+        behaviour = 'hover';
+        moveSpeed = rng.range(3.0, 5.0);
+        break;
+      }
+
+      case 'lithic_behemoth':
+      case 'crystal_behemoth': {
+        const torso = new THREE.Mesh(new THREE.DodecahedronGeometry(2.5, 0), bodyMat);
+        torso.position.y = 3.5;
+        group.add(torso);
+        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.6, 2.8, 5), eyeMat);
+        horn.position.set(0, 5.5, -0.8);
+        horn.rotation.x = -0.4;
+        group.add(horn);
+        const legGeo = new THREE.CylinderGeometry(0.3, 0.4, 3.2, 5);
+        for (const [lx, lz] of [[-1.5, -1.2], [1.5, -1.2], [-1.5, 1.2], [1.5, 1.2]]) {
+          const leg = new THREE.Mesh(legGeo, bodyMat);
+          leg.position.set(lx, 1.6, lz);
+          group.add(leg);
+        }
+        behaviour = 'wander';
+        moveSpeed = rng.range(2.0, 4.0);
+        break;
+      }
+
+      case 'zephyr_leviathan':
+      case 'plasma_kite': {
+        const wingSpan = 14.0;
+        const wingGeo = new THREE.ConeGeometry(wingSpan * 0.3, wingSpan, 4);
+        wingGeo.rotateZ(Math.PI / 2);
+        const wing = new THREE.Mesh(wingGeo, bodyMat);
+        wing.scale.set(1.0, 0.1, 0.9);
+        wing.position.y = 16.0;
+        group.add(wing);
+        const core = new THREE.Mesh(new THREE.OctahedronGeometry(1.2, 0), eyeMat);
+        core.position.set(0, 16.0, 0);
+        group.add(core);
+        behaviour = 'circle';
+        moveSpeed = rng.range(7.0, 12.0);
+        break;
+      }
+
+      case 'mycelial_chimera': {
+        const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.6, 4.0, 6), bodyMat);
+        stalk.position.y = 3.2;
+        group.add(stalk);
+        const cap = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.0, 8), eyeMat);
+        cap.position.y = 5.2;
+        group.add(cap);
+        behaviour = 'wander';
+        moveSpeed = rng.range(2.0, 4.0);
+        break;
+      }
+
+      case 'magma_drake': {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.4, 4.0), bodyMat);
+        body.position.y = 1.6;
+        group.add(body);
+        const spine = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.8, 4), eyeMat);
+        spine.position.set(0, 2.6, 0);
+        group.add(spine);
+        behaviour = 'wander';
+        moveSpeed = rng.range(3.5, 6.5);
+        break;
+      }
+
+      case 'abyssal_drifter': {
+        const shell = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.7, 6, 12, Math.PI * 1.5), bodyMat);
+        shell.position.y = 8.0;
+        shell.rotation.y = Math.PI / 2;
+        group.add(shell);
+        const core = new THREE.Mesh(new THREE.SphereGeometry(0.7, 6, 6), eyeMat);
+        core.position.set(0, 8.0, -0.4);
+        group.add(core);
+        behaviour = 'hover';
+        moveSpeed = rng.range(2.0, 4.0);
+        break;
+      }
+
+      case 'strider_colossus': {
+        const dome = new THREE.Mesh(new THREE.DodecahedronGeometry(2.2, 0), bodyMat);
+        dome.position.y = 8.0;
+        group.add(dome);
+        const stiltGeo = new THREE.CylinderGeometry(0.15, 0.22, 7.5, 4);
+        for (const [sx, sz] of [[-1.8, -1.8], [1.8, -1.8], [-1.8, 1.8], [1.8, 1.8]]) {
+          const stilt = new THREE.Mesh(stiltGeo, bodyMat);
+          stilt.position.set(sx, 3.8, sz);
+          group.add(stilt);
+        }
+        behaviour = 'wander';
+        moveSpeed = rng.range(3.0, 5.0);
+        break;
+      }
+
+      case 'sand_scythe': {
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.5, 2.5), bodyMat);
+        torso.position.y = 2.4;
+        group.add(torso);
+        const tail = new THREE.Mesh(new THREE.ConeGeometry(0.3, 3.8, 3), eyeMat);
+        tail.position.set(0, 2.5, 2.4);
+        tail.rotation.x = Math.PI / 2;
+        group.add(tail);
+        behaviour = 'wander';
+        moveSpeed = rng.range(5.0, 8.5);
+        break;
+      }
+
+      case 'floating_aegis': {
+        const core = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), eyeMat);
+        core.position.y = 7.0;
+        group.add(core);
+        for (let sh = 0; sh < 4; sh++) {
+          const plate = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 0.2), bodyMat);
+          const pAng = (sh * Math.PI * 2) / 4;
+          plate.position.set(Math.cos(pAng) * 2.4, 7.0, Math.sin(pAng) * 2.4);
+          plate.rotation.y = -pAng;
+          group.add(plate);
+        }
+        behaviour = 'hover';
+        moveSpeed = rng.range(2.0, 4.0);
+        break;
+      }
+
+      case 'chitin_burrower': {
+        for (let i = 0; i < 6; i++) {
+          const segGeo = new THREE.CylinderGeometry(0.6, 0.7, 1.0, 6);
+          segGeo.rotateX(Math.PI / 2);
+          const seg = new THREE.Mesh(segGeo, bodyMat);
+          seg.position.set(0, 0.8, (i - 3) * 0.9);
+          group.add(seg);
+        }
+        behaviour = 'graze';
+        moveSpeed = rng.range(2.0, 4.0);
+        break;
+      }
+
       case 'crawler':
       default: {
         // Multi-segmented low ground crawler
@@ -398,21 +545,21 @@ export class FaunaGenerator {
       phase,
       scanInfo,
       update: (dt: number, getHeightAt: (x: number, z: number) => number) => {
-        phase += dt * (archetype === 'jelly' || archetype === 'spore_medusa' ? 1.8 : 3.0);
+        phase += dt * (archetype === 'jelly' || archetype === 'spore_medusa' || archetype === 'floating_aegis' || archetype === 'abyssal_drifter' ? 1.8 : 3.0);
 
         if (behaviour === 'circle') {
-          headingAngle += dt * (archetype === 'avian_flock' ? 0.5 : 0.35);
-          const circleRadius = archetype === 'avian_flock' ? 55 : 35;
+          headingAngle += dt * (archetype === 'avian_flock' || archetype === 'plasma_kite' ? 0.5 : 0.35);
+          const circleRadius = archetype === 'avian_flock' || archetype === 'plasma_kite' ? 55 : 35;
           const targetX = spawnPos.x + Math.cos(headingAngle) * circleRadius;
           const targetZ = spawnPos.z + Math.sin(headingAngle) * circleRadius;
-          const baseAlt = archetype === 'avian_flock' ? 22 : 12;
+          const baseAlt = archetype === 'avian_flock' || archetype === 'plasma_kite' ? 22 : 12;
           const curY = getHeightAt(group.position.x, group.position.z) + baseAlt + Math.sin(phase) * 2.0;
           group.position.set(targetX, curY, targetZ);
           group.rotation.y = -headingAngle + Math.PI / 2;
         } else if (behaviour === 'hover') {
           group.position.x += Math.cos(headingAngle) * moveSpeed * dt;
           group.position.z += Math.sin(headingAngle) * moveSpeed * dt;
-          const hoverAlt = archetype === 'sky_whale' ? 24 : (archetype === 'spore_medusa' ? 14 : 7);
+          const hoverAlt = archetype === 'sky_whale' ? 24 : (archetype === 'spore_medusa' || archetype === 'floating_aegis' ? 14 : 7);
           const curY = getHeightAt(group.position.x, group.position.z) + hoverAlt + Math.sin(phase) * 1.5;
           group.position.y = curY;
           if (group.position.distanceTo(spawnPos) > (archetype === 'sky_whale' ? 80 : 45)) {
@@ -427,7 +574,7 @@ export class FaunaGenerator {
           group.position.y = curY + hop;
           group.rotation.y = -headingAngle - Math.PI / 2;
 
-          if (archetype === 'dune_serpent') {
+          if (archetype === 'dune_serpent' || archetype === 'chitin_burrower') {
             // Sinuous spine wave rotation
             group.rotation.y += Math.sin(phase * 2.5) * 0.25;
           }
@@ -465,6 +612,15 @@ export class FaunaGenerator {
       lithic_behemoth: ['Crag Mountain Walker', 'Bedrock Golem', 'Tectonic Colossus', 'Basalt Prowler'],
       zephyr_leviathan: ['Stratospheric Sky-Whale', 'Ion Ribbon Sovereign', 'Aether Manta', 'Solar Wind Cruiser'],
       archipelago_swimmer: ['Lagoon Ray', 'Coral Glider', 'Bioluminescent Reef Stalker', 'Atoll Skimmer'],
+      crystal_behemoth: ['Prismatic Litho-Behemoth', 'Resonant Quartz Golem', 'Shard Walker', 'Geode Colossus'],
+      mycelial_chimera: ['Fungal Veil Chimera', 'Spore Umbrella Strider', 'Canopy Mycelian', 'Lichen Drifter'],
+      plasma_kite: ['Ionized Plasma Kite', 'Aurora Glider', 'Corona Ray', 'Electro-Ribbon Flyer'],
+      magma_drake: ['Obsidian Drake', 'Basalt Ignis Stalker', 'Caldera Prowler', 'Pyroclast Behemoth'],
+      abyssal_drifter: ['Radioactive Trench Drifter', 'Isotope Bell', 'Phosphor Nautilus', 'Benthic Siphon'],
+      strider_colossus: ['Primordial Canopy Strider', 'Verdant Stilt Colossus', 'Jungle Megalith', 'Arboreal Titan'],
+      sand_scythe: ['Irradiated Dune Scythe', 'Sulphur Raptor', 'Glass-Waste Stalker', 'Glow Spire Chaser'],
+      floating_aegis: ['Orbital Aegis Floater', 'Prism Shard Sentry', 'Magnetic Barrier Drifter', 'Geode Aegis'],
+      chitin_burrower: ['Tectonic Chitin Burrower', 'Litho-Drill Wyrm', 'Thermal Fissure Carver', 'Spore Myriapod'],
     };
 
     const diets = [

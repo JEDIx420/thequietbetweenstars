@@ -8,7 +8,7 @@ import * as THREE from 'three';
 export class ParticleTextureGenerator {
   private static cache: Map<string, THREE.CanvasTexture> = new Map();
 
-  public static getParticleTexture(type: 'snow' | 'dust' | 'ash' | 'spores' | 'mist' | 'default'): THREE.CanvasTexture {
+  public static getParticleTexture(type: 'snow' | 'dust' | 'ash' | 'spores' | 'mist' | 'plasma_sparks' | 'geiger_glow' | 'default'): THREE.CanvasTexture {
     if (this.cache.has(type)) {
       return this.cache.get(type)!;
     }
@@ -32,6 +32,22 @@ export class ParticleTextureGenerator {
     const grad = ctx.createRadialGradient(center, center, 0, center, center, radius);
 
     switch (type) {
+      case 'plasma_sparks':
+        // Electric ionized spark
+        grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+        grad.addColorStop(0.2, 'rgba(168, 85, 247, 0.9)');
+        grad.addColorStop(0.6, 'rgba(56, 189, 248, 0.4)');
+        grad.addColorStop(1.0, 'rgba(147, 51, 234, 0.0)');
+        break;
+
+      case 'geiger_glow':
+        // Radioactive phosphor glint
+        grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+        grad.addColorStop(0.25, 'rgba(74, 222, 128, 0.9)');
+        grad.addColorStop(0.65, 'rgba(20, 83, 45, 0.35)');
+        grad.addColorStop(1.0, 'rgba(5, 46, 22, 0.0)');
+        break;
+
       case 'snow':
         // Crisp soft core with rapid falloff
         grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
@@ -68,7 +84,6 @@ export class ParticleTextureGenerator {
         grad.addColorStop(0, 'rgba(240, 245, 255, 0.45)');
         grad.addColorStop(0.5, 'rgba(220, 235, 255, 0.18)');
         grad.addColorStop(1.0, 'rgba(200, 220, 255, 0.0)');
-        break;
     }
 
     ctx.fillStyle = grad;
