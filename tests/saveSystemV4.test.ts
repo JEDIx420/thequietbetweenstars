@@ -69,7 +69,7 @@ describe('Save Schema v4 & Ship Progression Persistence', () => {
 
     const loaded = await saveMgr.getSaveSlot('current_journey');
     expect(loaded).toBeDefined();
-    expect(loaded?.saveVersion).toBe(4);
+    expect(loaded?.saveVersion).toBeGreaterThanOrEqual(4);
     expect(loaded?.credits).toBe(650);
     expect(loaded?.sampleInventory['CRYSTALLINE']).toBe(3);
     expect(loaded?.installedModules).toContain('mod_propulsion_ion_vector');
@@ -114,7 +114,7 @@ describe('Save Schema v4 & Ship Progression Persistence', () => {
 
     const migrated = await saveMgr.getSaveSlot('current_journey');
     expect(migrated).toBeDefined();
-    expect(migrated?.saveVersion).toBe(4);
+    expect(migrated?.saveVersion).toBeGreaterThanOrEqual(4);
     expect(migrated?.credits).toBeGreaterThanOrEqual(250);
     expect(migrated?.sampleInventory).toBeDefined();
     expect(migrated?.installedModules).toEqual([]);

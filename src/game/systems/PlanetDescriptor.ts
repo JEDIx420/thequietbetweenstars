@@ -48,6 +48,20 @@ export interface ResonanceSignature {
   intensity: number; // 0.0 to 1.0
   harmonicPattern: string; // e.g. "Phi-3.141-Oscillation"
   loreFragment?: string;
+  isResonanceAnomaly?: boolean;
+  tier?: number;
+  frequencyLabel?: string;
+  baseValue?: number;
+  analysisSummary?: string;
+}
+
+export interface AnomalyScanStage {
+  stage: number; // 0: Detection, 1: Harmonic Lock, 2: Telemetry Extraction, 3: Core Probe, 4: Resolved
+  name: string;
+  requiredMaxDistance: number; // Max distance to trigger or progress
+  holdDurationSec: number;
+  description: string;
+  unlockedData?: string;
 }
 
 export type SpaceAnomalyType =
@@ -56,7 +70,9 @@ export type SpaceAnomalyType =
   | 'dense_asteroid_cluster'
   | 'resonance_monolith'
   | 'drifting_beacon'
-  | 'nebula_pocket';
+  | 'nebula_pocket'
+  | 'RESONANCE_ECHO'
+  | 'DERELICT_PROBE';
 
 export interface SpaceAnomalyDescriptor {
   id: string;
@@ -68,6 +84,17 @@ export interface SpaceAnomalyDescriptor {
   scanned: boolean;
   hasResonance: boolean;
   resonance?: ResonanceSignature;
+  // Staged scan fields
+  currentStage?: number;
+  scanProgress?: number;
+  scanStages?: AnomalyScanStage[];
+  isStoryCritical?: boolean;
+  position?: { x: number; y: number; z: number };
+  color?: string;
+  radius?: number;
+  loreNote?: string;
+  discovered?: boolean;
+  signature?: ResonanceSignature;
 }
 
 export interface StarSystemDescriptor {

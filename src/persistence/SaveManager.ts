@@ -1,5 +1,7 @@
 import type { SectorCoord } from '../game/universe/WorldPosition';
 import type { StarSystemDescriptor } from '../game/systems/PlanetDescriptor';
+import type { StoryState } from '../story/StoryTypes';
+import { DEFAULT_STORY_STATE, cloneStoryState } from '../story/StoryState';
 
 export type DiscoveryCategory =
   | 'WORLDS'
@@ -107,6 +109,7 @@ export interface PlayerSaveSlot {
     triggeredEventIds: string[];
     resonanceFlags: string[];
   };
+  story?: StoryState;
 }
 
 export interface AppSettings {
@@ -129,7 +132,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 export const DEFAULT_SAVE_SLOT: PlayerSaveSlot = {
   slotId: 'current_journey',
-  saveVersion: 4,
+  saveVersion: 5,
   updatedAt: 0,
   universeSeed: 'QUIET-DEFAULT-001',
   playerSector: { x: 0, y: 0, z: 0 },
@@ -165,6 +168,7 @@ export const DEFAULT_SAVE_SLOT: PlayerSaveSlot = {
     triggeredEventIds: [],
     resonanceFlags: [],
   },
+  story: cloneStoryState(DEFAULT_STORY_STATE),
 };
 
 const DB_NAME = 'thequietbetweenstars_db';
@@ -321,6 +325,12 @@ export class SaveManager {
       }
     }
 
+    // Migrate v4 -> v5
+    if (raw.saveVersion < 5 || !raw.story) {
+      raw.saveVersion = 5;
+      raw.story = raw.story ? raw.story : cloneStoryState(DEFAULT_STORY_STATE);
+    }
+
     return raw as PlayerSaveSlot;
   }
 
@@ -350,7 +360,7 @@ export class SaveManager {
 
   public async saveJourney(slot: PlayerSaveSlot): Promise<void> {
     slot.updatedAt = Date.now();
-    slot.saveVersion = 4;
+    slot.saveVersion = 5;
     this.memorySaveSlot = { ...slot };
 
     if (!this.db) {

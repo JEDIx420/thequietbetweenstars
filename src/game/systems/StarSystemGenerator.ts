@@ -189,6 +189,8 @@ export class StarSystemGenerator {
       drifting_beacon: ['Fading Navigational Buoy', 'Automated Subspace Relay', 'Pulsing Emergency Transponder'],
       nebula_pocket: ['Ionized Hydrocarbon Shimmer', 'Gaseous Stellar Remnant', 'Cold Dust Concentration'],
       resonance_monolith: ['Harmonic Lattice Node', 'Resonant Spatial Anomaly', 'Echo Structure'],
+      RESONANCE_ECHO: ['Resonance Harmonic Echo', 'Builder Lattice Shard', 'Crystalline Monolith'],
+      DERELICT_PROBE: ['Derelict Survey Vessel', 'Ancient Recon Probe', 'Decommissioned Scout'],
     };
 
     const name = `${sysName} ${rng.pick(titles[type])} ${index}`;

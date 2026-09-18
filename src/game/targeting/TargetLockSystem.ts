@@ -9,7 +9,10 @@ export type LockableTargetType =
   | 'titan'
   | 'landmark'
   | 'resource'
-  | 'spacecraft';
+  | 'spacecraft'
+  | 'station'
+  | 'vessel'
+  | 'relay';
 
 export interface LockableTarget {
   id: string;

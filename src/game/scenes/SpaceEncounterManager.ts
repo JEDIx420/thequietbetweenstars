@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { SeededRandom } from '../universe/SeededRandom';
+import type { SpaceAnomalyDescriptor } from '../systems/PlanetDescriptor';
 
-export type SpaceEncounterType = 'asteroid_cluster' | 'derelict_probe' | 'gravitic_anomaly';
+export type SpaceEncounterType = 'asteroid_cluster' | 'derelict_probe' | 'gravitic_anomaly' | 'resonance_echo';
 
 export interface SpaceEncounter {
   id: string;
@@ -13,6 +14,7 @@ export interface SpaceEncounter {
   rewardCredits: number;
   rewardSampleCategory?: 'MINERAL' | 'CRYSTALLINE' | 'RESONANCE';
   logSnippet: string;
+  anomalyDescriptor?: SpaceAnomalyDescriptor;
   update: (dt: number) => void;
 }
 
@@ -21,12 +23,72 @@ export class SpaceEncounterManager {
   public group = new THREE.Group();
   private clock = 0;
 
-  constructor(systemSeed: number, sunPos: THREE.Vector3, planetPositions: THREE.Vector3[]) {
-    this.initEncounters(systemSeed, sunPos, planetPositions);
+  constructor(
+    systemSeed: number,
+    sunPos: THREE.Vector3,
+    planetPositions: THREE.Vector3[],
+    systemAnomalies?: SpaceAnomalyDescriptor[]
+  ) {
+    this.initEncounters(systemSeed, sunPos, planetPositions, systemAnomalies);
   }
 
-  private initEncounters(seed: number, sunPos: THREE.Vector3, planetPositions: THREE.Vector3[]): void {
+  private initEncounters(
+    seed: number,
+    sunPos: THREE.Vector3,
+    planetPositions: THREE.Vector3[],
+    systemAnomalies?: SpaceAnomalyDescriptor[]
+  ): void {
     const rng = new SeededRandom(seed + 909);
+
+    if (systemAnomalies && systemAnomalies.length > 0) {
+      // Authoritative bridge: instantiate physical 3D representations for each system anomaly
+      for (let i = 0; i < systemAnomalies.length; i++) {
+        const anomaly = systemAnomalies[i];
+        let spawnPos: THREE.Vector3;
+        if (anomaly.position) {
+          spawnPos = new THREE.Vector3(anomaly.position.x, anomaly.position.y, anomaly.position.z);
+        } else {
+          const dist = anomaly.distanceFromStar || rng.range(400, 1800);
+          const angle = anomaly.angle || (i * 1.5 + rng.range(-0.3, 0.3));
+          spawnPos = new THREE.Vector3(
+            sunPos.x + Math.cos(angle) * dist,
+            sunPos.y + rng.range(-120, 120),
+            sunPos.z + Math.sin(angle) * dist
+          );
+        }
+
+        let encounterType: SpaceEncounterType = 'gravitic_anomaly';
+        if (anomaly.type === 'RESONANCE_ECHO' || anomaly.type === 'resonance_monolith' || anomaly.hasResonance) {
+          encounterType = 'resonance_echo';
+        } else if (anomaly.type === 'DERELICT_PROBE' || anomaly.type === 'derelict_probe') {
+          encounterType = 'derelict_probe';
+        } else if (anomaly.type === 'dense_asteroid_cluster') {
+          encounterType = 'asteroid_cluster';
+        }
+
+        const encounter = this.buildEncounter(encounterType, spawnPos, rng, i, anomaly);
+        this.encounters.push(encounter);
+        this.group.add(encounter.group);
+      }
+
+      // Supplementary asteroid belts for mining gameplay
+      for (let j = 0; j < 2; j++) {
+        const refPos = planetPositions.length > 0 ? rng.pick(planetPositions) : sunPos;
+        const dist = rng.range(300, 700);
+        const ang = rng.next() * Math.PI * 2;
+        const pos = new THREE.Vector3(
+          refPos.x + Math.cos(ang) * dist,
+          refPos.y + rng.range(-80, 80),
+          refPos.z + Math.sin(ang) * dist
+        );
+        const belt = this.buildEncounter('asteroid_cluster', pos, rng, 100 + j);
+        this.encounters.push(belt);
+        this.group.add(belt.group);
+      }
+      return;
+    }
+
+    // Default fallback procedural encounters
     const encounterCount = 3 + rng.rangeInt(1, 3); // 4 to 6 cosmic points of interest
 
     for (let i = 0; i < encounterCount; i++) {
@@ -34,7 +96,6 @@ export class SpaceEncounterManager {
         ? 'asteroid_cluster'
         : (i === 1 ? 'derelict_probe' : (i === 2 ? 'gravitic_anomaly' : rng.pick(['asteroid_cluster', 'derelict_probe'])));
 
-      // Spawn at interesting orbits
       const refPos = planetPositions.length > 0 ? rng.pick(planetPositions) : sunPos;
       const angle = (i / encounterCount) * Math.PI * 2 + rng.range(-0.4, 0.4);
       const dist = rng.range(280, 850);
@@ -54,20 +115,58 @@ export class SpaceEncounterManager {
     type: SpaceEncounterType,
     spawnPos: THREE.Vector3,
     rng: SeededRandom,
-    index: number
+    index: number,
+    anomalyDesc?: SpaceAnomalyDescriptor
   ): SpaceEncounter {
     const group = new THREE.Group();
-    let name = '';
+    let name = anomalyDesc?.name || '';
     let rewardCredits = 50;
     let rewardSampleCategory: SpaceEncounter['rewardSampleCategory'] = 'MINERAL';
-    let logSnippet = '';
+    let logSnippet = anomalyDesc?.description || '';
 
     switch (type) {
+      case 'resonance_echo': {
+        if (!name) name = `RESONANCE MONOLITH [HARMONIC-${index + 1}]`;
+        rewardCredits = 250;
+        rewardSampleCategory = 'RESONANCE';
+        if (!logSnippet) logSnippet = 'Majestic crystalline monolith vibrating with ancient harmonic resonance.';
+
+        // Monolith central obelisk
+        const crystalMat = new THREE.MeshStandardMaterial({
+          color: 0x38bdf8,
+          emissive: 0x0284c7,
+          emissiveIntensity: 0.6,
+          roughness: 0.1,
+          metalness: 0.8,
+          flatShading: true,
+        });
+        const obelisk = new THREE.Mesh(new THREE.OctahedronGeometry(6.0, 0), crystalMat);
+        obelisk.scale.set(1.0, 2.5, 1.0);
+        group.add(obelisk);
+
+        // Orbiting harmonic shard rings
+        const shardMat = new THREE.MeshBasicMaterial({ color: 0xc084fc, wireframe: true });
+        const ringTorus = new THREE.Mesh(new THREE.TorusGeometry(14, 0.25, 4, 24), shardMat);
+        ringTorus.rotation.x = Math.PI / 4;
+        group.add(ringTorus);
+
+        for (let s = 0; s < 4; s++) {
+          const shard = new THREE.Mesh(new THREE.TetrahedronGeometry(1.5, 0), crystalMat);
+          const ang = (s / 4) * Math.PI * 2;
+          shard.position.set(Math.cos(ang) * 12, Math.sin(ang) * 4, Math.sin(ang) * 12);
+          group.add(shard);
+        }
+
+        const glow = new THREE.PointLight(0x38bdf8, 5.0, 90);
+        group.add(glow);
+        break;
+      }
+
       case 'asteroid_cluster': {
-        name = `MINERAL ASTEROID VEIN [BELT-${rng.rangeInt(10, 99)}]`;
+        if (!name) name = `MINERAL ASTEROID VEIN [BELT-${rng.rangeInt(10, 99)}]`;
         rewardCredits = 75;
         rewardSampleCategory = 'MINERAL';
-        logSnippet = 'Dense iron-nickel and silica asteroid cluster with rich surface fractures.';
+        if (!logSnippet) logSnippet = 'Dense iron-nickel and silica asteroid cluster with rich surface fractures.';
 
         const astMat = new THREE.MeshStandardMaterial({
           color: 0x475569,
@@ -77,7 +176,6 @@ export class SpaceEncounterManager {
         });
         const oreMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
 
-        // Cluster of 8-12 tumbling irregular rocks
         const numRocks = rng.rangeInt(8, 14);
         for (let r = 0; r < numRocks; r++) {
           const rSize = rng.range(2.5, 9.0);
@@ -90,7 +188,6 @@ export class SpaceEncounterManager {
           rock.rotation.set(rng.next() * Math.PI, rng.next() * Math.PI, 0);
           group.add(rock);
 
-          // Add glowing mineral vein to large rocks
           if (rSize > 5.5) {
             const vein = new THREE.Mesh(new THREE.OctahedronGeometry(rSize * 0.35, 0), oreMat);
             vein.position.copy(rock.position).add(new THREE.Vector3(0, rSize * 0.4, 0));
@@ -101,10 +198,10 @@ export class SpaceEncounterManager {
       }
 
       case 'derelict_probe': {
-        name = `ANCIENT RECON PROBE [PIONEER-X${index}]`;
+        if (!name) name = `ANCIENT RECON PROBE [PIONEER-X${index}]`;
         rewardCredits = 120;
         rewardSampleCategory = 'CRYSTALLINE';
-        logSnippet = 'Pre-collapse autonomous survey probe transmitting lingering telemetry on loop.';
+        if (!logSnippet) logSnippet = 'Pre-collapse autonomous survey probe transmitting lingering telemetry on loop.';
 
         const probeMat = new THREE.MeshStandardMaterial({
           color: 0x64748b,
@@ -118,22 +215,18 @@ export class SpaceEncounterManager {
           metalness: 0.9,
         });
 
-        // Main cylindrical probe core
         const core = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.4, 4.0, 6), probeMat);
         group.add(core);
 
-        // High gain dish antenna
         const dish = new THREE.Mesh(new THREE.ConeGeometry(2.8, 1.2, 8), goldMat);
         dish.position.set(0, 2.5, 0);
         group.add(dish);
 
-        // Solar panels
         const panelGeo = new THREE.BoxGeometry(8.0, 0.1, 1.8);
         const panels = new THREE.Mesh(panelGeo, probeMat);
         panels.position.set(0, 0, 0);
         group.add(panels);
 
-        // Amber flashing beacon
         const beacon = new THREE.PointLight(0xf59e0b, 2.5, 45);
         beacon.position.set(0, 3.2, 0);
         group.add(beacon);
@@ -142,12 +235,11 @@ export class SpaceEncounterManager {
 
       case 'gravitic_anomaly':
       default: {
-        name = `GRAVITIC HARMONIC ANOMALY [OMEGA-${index + 1}]`;
+        if (!name) name = `GRAVITIC HARMONIC ANOMALY [OMEGA-${index + 1}]`;
         rewardCredits = 180;
         rewardSampleCategory = 'RESONANCE';
-        logSnippet = 'Localized subspace stress curvature emitting resonant prime interval frequencies.';
+        if (!logSnippet) logSnippet = 'Localized subspace stress curvature emitting resonant prime interval frequencies.';
 
-        // Shimmering concentric torus rings
         const ringMat = new THREE.MeshBasicMaterial({
           color: 0xa855f7,
           wireframe: true,
@@ -161,7 +253,6 @@ export class SpaceEncounterManager {
         ring2.rotation.x = Math.PI / 3;
         group.add(ring2);
 
-        // Core singularity sphere
         const coreMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
         const singCore = new THREE.Mesh(new THREE.SphereGeometry(1.8, 12, 12), coreMat);
         group.add(singCore);
@@ -175,18 +266,19 @@ export class SpaceEncounterManager {
     group.position.copy(spawnPos);
 
     return {
-      id: `encounter_${type}_${index}`,
+      id: anomalyDesc?.id || `encounter_${type}_${index}`,
       type,
       name,
       position: spawnPos.clone(),
       group,
-      isScanned: false,
+      isScanned: anomalyDesc?.scanned || false,
       rewardCredits,
       rewardSampleCategory,
       logSnippet,
+      anomalyDescriptor: anomalyDesc,
       update: (dt: number) => {
-        group.rotation.y += dt * (type === 'asteroid_cluster' ? 0.08 : 0.25);
-        if (type === 'gravitic_anomaly') {
+        group.rotation.y += dt * (type === 'asteroid_cluster' ? 0.08 : (type === 'resonance_echo' ? 0.3 : 0.25));
+        if (type === 'gravitic_anomaly' || type === 'resonance_echo') {
           group.rotation.x += dt * 0.15;
           group.rotation.z += dt * 0.1;
         }

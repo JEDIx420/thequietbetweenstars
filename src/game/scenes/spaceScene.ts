@@ -4,7 +4,7 @@ import { CelestialPhysicsSystem, type CelestialBody } from '../core/celestialPhy
 import { InfiniteBackground } from '../universe/InfiniteBackground';
 import { PlanetVisualGenerator } from '../planets/PlanetVisualGenerator';
 import { PlanetEnvironmentGenerator } from '../planets/PlanetEnvironmentProfile';
-import type { PlanetDescriptor, StarSystemDescriptor, StarDescriptor } from '../systems/PlanetDescriptor';
+import type { PlanetDescriptor, StarSystemDescriptor, StarDescriptor, SpaceAnomalyDescriptor } from '../systems/PlanetDescriptor';
 import { CourierPod } from '../flight/CourierPod';
 import { SpaceTrafficDirector } from './SpaceTrafficDirector';
 import { SpaceEncounterManager } from './SpaceEncounterManager';
@@ -333,7 +333,7 @@ export class SpaceScene {
     this.initSystemTrafficAndEncounters(1337, [this.planetAureliaPos, this.moonZephyrPos]);
   }
 
-  private initSystemTrafficAndEncounters(seed: number, planetPositions: THREE.Vector3[]): void {
+  private initSystemTrafficAndEncounters(seed: number, planetPositions: THREE.Vector3[], anomalies?: SpaceAnomalyDescriptor[]): void {
     if (this.trafficDirector) {
       this.worldRoot.remove(this.trafficDirector.group);
       this.trafficDirector.dispose();
@@ -348,7 +348,7 @@ export class SpaceScene {
     this.trafficDirector = new SpaceTrafficDirector(seed, this.sunPos, planetPositions);
     this.worldRoot.add(this.trafficDirector.group);
 
-    this.encounterManager = new SpaceEncounterManager(seed, this.sunPos, planetPositions);
+    this.encounterManager = new SpaceEncounterManager(seed, this.sunPos, planetPositions, anomalies);
     this.worldRoot.add(this.encounterManager.group);
   }
 
@@ -471,7 +471,7 @@ export class SpaceScene {
 
     // 6. Initialize ambient space traffic and cosmic encounters for this system
     const planetPositions = this.activePlanetList.map(p => p.position);
-    this.initSystemTrafficAndEncounters(system.seed || 1337, planetPositions);
+    this.initSystemTrafficAndEncounters(system.seed || 1337, planetPositions, system.anomalies);
   }
 
   /**

@@ -1,5 +1,6 @@
 import type { NarrativeLine } from '../narrative/NarrativeTypes';
 import { audio } from '../audio/AudioEngine';
+import { commAudio } from '../audio/CommunicationSoundSynth';
 import type { DialogueChoice } from '../narrative/ConversationDirector';
 
 export class DialoguePresenter {
@@ -244,6 +245,7 @@ export class DialoguePresenter {
     this.bubbleEl.style.transform = 'translateY(0)';
 
     audio.playConnectChime();
+    commAudio.playSpeechSignature(speaker, 3);
 
     if (this.onMirrorCallback) {
       this.onMirrorCallback({
@@ -276,6 +278,7 @@ export class DialoguePresenter {
     } else {
       audio.playBlip();
     }
+    commAudio.playSpeechSignature(line.speaker, 3);
 
     // Mirror to phone companion if connected
     if (this.onMirrorCallback) {
