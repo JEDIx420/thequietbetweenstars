@@ -46,6 +46,7 @@ export class AudioDirector {
   private jetRumbleFilter: BiquadFilterNode | null = null;
   private jetRumbleGain: GainNode | null = null;
   private jetSpoolOsc: OscillatorNode | null = null;
+  private jetSpoolFilter: BiquadFilterNode | null = null;
   private jetSpoolGain: GainNode | null = null;
   private jetSpoolOsc2: OscillatorNode | null = null;
   private jetSpoolFilter2: BiquadFilterNode | null = null;
@@ -155,45 +156,43 @@ export class AudioDirector {
     this.thrusterMasterGain.gain.setValueAtTime(initialGain, now);
     this.thrusterMasterGain.connect(this.webAudioMasterGain);
 
-    // Create 2-second looped pink-weighted noise buffer (aerodynamic plasma air rush & hull vibration)
+    // 1. Deep Brownian Noise Buffer for velvet cosmic slipstream and hull mass
+    // Generates brownian noise (integrated pink) that has -6dB/octave slope, rich, warm, and free of vacuum hiss
     const bufferSize = this.webAudioCtx.sampleRate * 2;
     const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
     const output = noiseBuffer.getChannelData(0);
-    let b0 = 0, b1 = 0, b2 = 0;
+    let lastOut = 0.0;
     for (let i = 0; i < bufferSize; i++) {
       const white = Math.random() * 2 - 1;
-      b0 = 0.99886 * b0 + white * 0.0555179;
-      b1 = 0.99332 * b1 + white * 0.0750759;
-      b2 = 0.96900 * b2 + white * 0.1538520;
-      // Nominal headroom output for clean audible presence without distortion
-      output[i] = (b0 + b1 + b2 + white * 0.5362) * 0.65;
+      lastOut = (lastOut + 0.025 * white) / 1.025;
+      output[i] = lastOut * 3.6;
     }
 
     this.jetAirflowNoise = this.webAudioCtx.createBufferSource();
     this.jetAirflowNoise.buffer = noiseBuffer;
     this.jetAirflowNoise.loop = true;
 
-    // 1. Aerodynamic Bypass Plasma Airflow (clean, resonant spacecraft whoosh)
+    // A. Cosmic Slipstream Exhaust: steep warm lowpass filter (strictly rolls off above 260Hz)
     this.jetAirflowFilter = this.webAudioCtx.createBiquadFilter();
     this.jetAirflowFilter.type = 'lowpass';
-    this.jetAirflowFilter.frequency.setValueAtTime(280, now);
-    this.jetAirflowFilter.Q.setValueAtTime(1.4, now);
+    this.jetAirflowFilter.frequency.setValueAtTime(75, now);
+    this.jetAirflowFilter.Q.setValueAtTime(0.8, now);
 
     this.jetAirflowGain = this.webAudioCtx.createGain();
-    this.jetAirflowGain.gain.setValueAtTime(0.065, now); // Audible, gentle idle whoosh
+    this.jetAirflowGain.gain.setValueAtTime(0.05, now); // Soft, velvet background wash
 
     this.jetAirflowNoise.connect(this.jetAirflowFilter);
     this.jetAirflowFilter.connect(this.jetAirflowGain);
     this.jetAirflowGain.connect(this.thrusterMasterGain);
 
-    // 2. Deep Jet Body / Hull Displacement (warm low-end combustion rumble)
+    // B. Sub-Acoustic Hull Rumble (physical airframe vibration)
     this.jetRumbleFilter = this.webAudioCtx.createBiquadFilter();
     this.jetRumbleFilter.type = 'lowpass';
-    this.jetRumbleFilter.frequency.setValueAtTime(85, now);
-    this.jetRumbleFilter.Q.setValueAtTime(1.0, now);
+    this.jetRumbleFilter.frequency.setValueAtTime(55, now);
+    this.jetRumbleFilter.Q.setValueAtTime(1.1, now);
 
     this.jetRumbleGain = this.webAudioCtx.createGain();
-    this.jetRumbleGain.gain.setValueAtTime(0.08, now); // Solid physical hull presence
+    this.jetRumbleGain.gain.setValueAtTime(0.08, now);
 
     this.jetAirflowNoise.connect(this.jetRumbleFilter);
     this.jetRumbleFilter.connect(this.jetRumbleGain);
@@ -201,43 +200,51 @@ export class AudioDirector {
 
     this.jetAirflowNoise.start(now);
 
-    // 3. High-Bypass Jet Turbine Spool (dual-harmonic pure ion spool whine)
-    // Fundamental spool (sine)
+    // 2. Resonant Ion-Plasma Drive (Warm Sci-Fi Harmonic Tone, NO vacuum cleaner whine!)
+    // Fundamental Drive: warm triangle wave centered at 88Hz (low F/G fundamental)
     this.jetSpoolOsc = this.webAudioCtx.createOscillator();
-    this.jetSpoolOsc.type = 'sine';
-    this.jetSpoolOsc.frequency.setValueAtTime(360, now);
+    this.jetSpoolOsc.type = 'triangle';
+    this.jetSpoolOsc.frequency.setValueAtTime(88, now);
+
+    // Resonant lowpass filter to sculpt warm, analog synthesizer body
+    this.jetSpoolFilter = this.webAudioCtx.createBiquadFilter();
+    this.jetSpoolFilter.type = 'lowpass';
+    this.jetSpoolFilter.frequency.setValueAtTime(175, now);
+    this.jetSpoolFilter.Q.setValueAtTime(2.2, now);
 
     this.jetSpoolGain = this.webAudioCtx.createGain();
-    this.jetSpoolGain.gain.setValueAtTime(0.035, now); // Soft, clean turbine idle
+    this.jetSpoolGain.gain.setValueAtTime(0.075, now);
 
-    this.jetSpoolOsc.connect(this.jetSpoolGain);
+    this.jetSpoolOsc.connect(this.jetSpoolFilter);
+    this.jetSpoolFilter.connect(this.jetSpoolGain);
     this.jetSpoolGain.connect(this.thrusterMasterGain);
     this.jetSpoolOsc.start(now);
 
-    // Overtone harmonic spool (triangle wave lowpassed for silky warmth)
+    // 3. Secondary Harmonic Shimmer (Fifth interval at 132Hz, silky futuristic ion glow)
     this.jetSpoolOsc2 = this.webAudioCtx.createOscillator();
-    this.jetSpoolOsc2.type = 'triangle';
-    this.jetSpoolOsc2.frequency.setValueAtTime(720, now);
+    this.jetSpoolOsc2.type = 'sine';
+    this.jetSpoolOsc2.frequency.setValueAtTime(132, now);
 
     this.jetSpoolFilter2 = this.webAudioCtx.createBiquadFilter();
-    this.jetSpoolFilter2.type = 'lowpass';
-    this.jetSpoolFilter2.frequency.setValueAtTime(1800, now);
+    this.jetSpoolFilter2.type = 'bandpass';
+    this.jetSpoolFilter2.frequency.setValueAtTime(160, now);
+    this.jetSpoolFilter2.Q.setValueAtTime(1.6, now);
 
     this.jetSpoolGain2 = this.webAudioCtx.createGain();
-    this.jetSpoolGain2.gain.setValueAtTime(0.018, now);
+    this.jetSpoolGain2.gain.setValueAtTime(0.025, now);
 
     this.jetSpoolOsc2.connect(this.jetSpoolFilter2);
     this.jetSpoolFilter2.connect(this.jetSpoolGain2);
     this.jetSpoolGain2.connect(this.thrusterMasterGain);
     this.jetSpoolOsc2.start(now);
 
-    // 4. Physical Sub / Hull Body Displacement (detuned dual sine/triangle for warm analog beating)
+    // 4. Sub-Bass Graviton Core (Dual Detuned Sub-Oscillators for 2Hz-6Hz Acoustic Pulsation)
     this.jetSubOsc = this.webAudioCtx.createOscillator();
     this.jetSubOsc.type = 'triangle';
-    this.jetSubOsc.frequency.setValueAtTime(46, now);
+    this.jetSubOsc.frequency.setValueAtTime(42, now);
 
     this.jetSubGain = this.webAudioCtx.createGain();
-    this.jetSubGain.gain.setValueAtTime(0.12, now); // Physical mass in the subwoofer
+    this.jetSubGain.gain.setValueAtTime(0.12, now); // Deep physical bass mass
 
     this.jetSubOsc.connect(this.jetSubGain);
     this.jetSubGain.connect(this.thrusterMasterGain);
@@ -245,10 +252,10 @@ export class AudioDirector {
 
     this.jetSubOsc2 = this.webAudioCtx.createOscillator();
     this.jetSubOsc2.type = 'sine';
-    this.jetSubOsc2.frequency.setValueAtTime(46.5, now);
+    this.jetSubOsc2.frequency.setValueAtTime(44.2, now); // ~2.2Hz acoustic throbbing at idle
 
     this.jetSubGain2 = this.webAudioCtx.createGain();
-    this.jetSubGain2.gain.setValueAtTime(0.08, now);
+    this.jetSubGain2.gain.setValueAtTime(0.09, now);
 
     this.jetSubOsc2.connect(this.jetSubGain2);
     this.jetSubGain2.connect(this.thrusterMasterGain);
@@ -554,15 +561,15 @@ export class AudioDirector {
     const now = this.webAudioCtx.currentTime;
     const normIntensity = Math.min(1.0, Math.max(0.25, intensity * 2.0));
 
-    // 1. Sub injection thump (110Hz -> 32Hz deep kick)
+    // 1. Sub injection thump (85Hz -> 26Hz deep gravitic punch)
     const subOsc = this.webAudioCtx.createOscillator();
     const subGain = this.webAudioCtx.createGain();
     subOsc.type = 'sine';
-    subOsc.frequency.setValueAtTime(110, now);
-    subOsc.frequency.exponentialRampToValueAtTime(32, now + 0.32);
+    subOsc.frequency.setValueAtTime(85, now);
+    subOsc.frequency.exponentialRampToValueAtTime(26, now + 0.32);
 
     subGain.gain.setValueAtTime(0.001, now);
-    subGain.gain.linearRampToValueAtTime(0.36 * normIntensity, now + 0.035);
+    subGain.gain.linearRampToValueAtTime(0.38 * normIntensity, now + 0.035);
     subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
 
     subOsc.connect(subGain);
@@ -570,23 +577,28 @@ export class AudioDirector {
     subOsc.start(now);
     subOsc.stop(now + 0.36);
 
-    // 2. Plasma combustion surge / thruster whoosh (bandpass sweep)
+    // 2. Plasma combustion surge / thruster whoosh (warm lowpass sweep, NO vacuum cleaner hiss)
     const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 0.35);
     const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
     const data = noiseBuffer.getChannelData(0);
+    let lastOut = 0.0;
     for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
+      const white = Math.random() * 2 - 1;
+      lastOut = (lastOut + 0.03 * white) / 1.03;
+      data[i] = lastOut * 3.5;
     }
     const noise = this.webAudioCtx.createBufferSource();
     noise.buffer = noiseBuffer;
     const filter = this.webAudioCtx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(320, now);
-    filter.frequency.exponentialRampToValueAtTime(820, now + 0.22);
-    filter.Q.setValueAtTime(2.2, now);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(140, now);
+    filter.frequency.exponentialRampToValueAtTime(340, now + 0.08);
+    filter.frequency.exponentialRampToValueAtTime(75, now + 0.30);
+    filter.Q.setValueAtTime(1.8, now);
+
     const gain = this.webAudioCtx.createGain();
     gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(0.26 * normIntensity, now + 0.04);
+    gain.gain.linearRampToValueAtTime(0.24 * normIntensity, now + 0.04);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
 
     noise.connect(filter);
@@ -596,7 +608,7 @@ export class AudioDirector {
   }
 
   /**
-   * Deceleration transient (retro-thruster vectoring burst, air-brake gas purge, & turbine spool-down)
+   * Deceleration transient (retro-thruster vectoring burst, magnetic gas purge, & inertia dampener)
    */
   public playDecelerationTransient(intensity = 0.5): void {
     if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
@@ -606,56 +618,43 @@ export class AudioDirector {
     const now = this.webAudioCtx.currentTime;
     const normIntensity = Math.min(1.0, Math.max(0.25, intensity * 2.0));
 
-    // 1. Retro-thruster gas/plasma purge whoosh (bandpass downward sweep 920Hz -> 240Hz)
-    const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 0.40);
+    // 1. Retro-thruster muffled plasma purge (warm lowpass downward sweep 160Hz -> 50Hz, NO vacuum hiss!)
+    const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 0.38);
     const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
     const data = noiseBuffer.getChannelData(0);
+    let lastOut = 0.0;
     for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
+      const white = Math.random() * 2 - 1;
+      lastOut = (lastOut + 0.03 * white) / 1.03;
+      data[i] = lastOut * 3.5;
     }
     const noise = this.webAudioCtx.createBufferSource();
     noise.buffer = noiseBuffer;
     const filter = this.webAudioCtx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(920, now);
-    filter.frequency.exponentialRampToValueAtTime(240, now + 0.36);
-    filter.Q.setValueAtTime(2.4, now);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(160, now);
+    filter.frequency.exponentialRampToValueAtTime(50, now + 0.34);
+    filter.Q.setValueAtTime(1.4, now);
 
     const gain = this.webAudioCtx.createGain();
     gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(0.24 * normIntensity, now + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+    gain.gain.linearRampToValueAtTime(0.18 * normIntensity, now + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
 
     noise.connect(filter);
     filter.connect(gain);
     gain.connect(this.webAudioMasterGain);
     noise.start(now);
 
-    // 2. Turbine spool-down decompression whine (540Hz -> 240Hz pitch drop)
-    const spoolOsc = this.webAudioCtx.createOscillator();
-    const spoolGain = this.webAudioCtx.createGain();
-    spoolOsc.type = 'sine';
-    spoolOsc.frequency.setValueAtTime(540, now);
-    spoolOsc.frequency.exponentialRampToValueAtTime(240, now + 0.34);
-
-    spoolGain.gain.setValueAtTime(0.001, now);
-    spoolGain.gain.linearRampToValueAtTime(0.14 * normIntensity, now + 0.04);
-    spoolGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-
-    spoolOsc.connect(spoolGain);
-    spoolGain.connect(this.webAudioMasterGain);
-    spoolOsc.start(now);
-    spoolOsc.stop(now + 0.36);
-
-    // 3. Hull decompression sub pulse (75Hz -> 26Hz drop)
+    // 2. Hull inertial damping sub pulse (62Hz -> 22Hz drop)
     const subOsc = this.webAudioCtx.createOscillator();
     const subGain = this.webAudioCtx.createGain();
     subOsc.type = 'sine';
-    subOsc.frequency.setValueAtTime(75, now);
-    subOsc.frequency.exponentialRampToValueAtTime(26, now + 0.24);
+    subOsc.frequency.setValueAtTime(62, now);
+    subOsc.frequency.exponentialRampToValueAtTime(22, now + 0.24);
 
     subGain.gain.setValueAtTime(0.001, now);
-    subGain.gain.linearRampToValueAtTime(0.18 * normIntensity, now + 0.03);
+    subGain.gain.linearRampToValueAtTime(0.22 * normIntensity, now + 0.03);
     subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
 
     subOsc.connect(subGain);
@@ -674,29 +673,29 @@ export class AudioDirector {
     }
     const now = this.webAudioCtx.currentTime;
 
-    // 1. Spool-up capacitor whine (800Hz -> 2200Hz)
+    // 1. Spool-up capacitor charge (180Hz -> 480Hz warm harmonic lift)
     const whineOsc = this.webAudioCtx.createOscillator();
     const whineGain = this.webAudioCtx.createGain();
-    whineOsc.type = 'sine';
-    whineOsc.frequency.setValueAtTime(800, now);
-    whineOsc.frequency.exponentialRampToValueAtTime(2200, now + 0.8);
+    whineOsc.type = 'triangle';
+    whineOsc.frequency.setValueAtTime(180, now);
+    whineOsc.frequency.exponentialRampToValueAtTime(480, now + 0.75);
 
     whineGain.gain.setValueAtTime(0.001, now);
-    whineGain.gain.linearRampToValueAtTime(0.14, now + 0.4);
-    whineGain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+    whineGain.gain.linearRampToValueAtTime(0.12, now + 0.35);
+    whineGain.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
 
     whineOsc.connect(whineGain);
     whineGain.connect(this.webAudioMasterGain);
     whineOsc.start(now);
-    whineOsc.stop(now + 0.95);
+    whineOsc.stop(now + 0.90);
 
     // 2. Heavy reactor combustion / ignition thud (at now + 0.75s)
     const tIgnition = now + 0.75;
     const thudOsc = this.webAudioCtx.createOscillator();
     const thudGain = this.webAudioCtx.createGain();
     thudOsc.type = 'sine';
-    thudOsc.frequency.setValueAtTime(110, tIgnition);
-    thudOsc.frequency.exponentialRampToValueAtTime(32, tIgnition + 0.7);
+    thudOsc.frequency.setValueAtTime(95, tIgnition);
+    thudOsc.frequency.exponentialRampToValueAtTime(28, tIgnition + 0.7);
 
     thudGain.gain.setValueAtTime(0.001, tIgnition);
     thudGain.gain.linearRampToValueAtTime(0.42, tIgnition + 0.06);
@@ -711,18 +710,21 @@ export class AudioDirector {
     const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 1.0);
     const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
     const data = noiseBuffer.getChannelData(0);
+    let lastOut = 0.0;
     for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
+      const white = Math.random() * 2 - 1;
+      lastOut = (lastOut + 0.03 * white) / 1.03;
+      data[i] = lastOut * 3.5;
     }
     const noise = this.webAudioCtx.createBufferSource();
     noise.buffer = noiseBuffer;
     const filter = this.webAudioCtx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(1200, tIgnition);
-    filter.frequency.exponentialRampToValueAtTime(180, tIgnition + 0.9);
+    filter.frequency.setValueAtTime(320, tIgnition);
+    filter.frequency.exponentialRampToValueAtTime(90, tIgnition + 0.9);
     const gain = this.webAudioCtx.createGain();
     gain.gain.setValueAtTime(0.001, tIgnition);
-    gain.gain.linearRampToValueAtTime(0.32, tIgnition + 0.05);
+    gain.gain.linearRampToValueAtTime(0.28, tIgnition + 0.05);
     gain.gain.exponentialRampToValueAtTime(0.001, tIgnition + 0.95);
 
     noise.connect(filter);
@@ -770,42 +772,44 @@ export class AudioDirector {
     if (Math.abs(t - this.appliedThrottle) < 0.005) return;
     this.appliedThrottle = t;
 
-    // 1. Aerodynamic Bypass Airflow: filter smoothly sweeps from 280Hz up to 1250Hz
+    // 1. Cosmic Slipstream Exhaust: sweeps 75Hz -> 250Hz cutoff (deep, smooth, NO high-pitch vacuum hiss!)
     if (this.jetAirflowFilter && this.jetAirflowGain) {
-      this.jetAirflowFilter.frequency.setTargetAtTime(280 + t * 970, now, 0.08);
-      // Audible gain scaling: idle 0.065 -> full throttle 0.24
-      this.jetAirflowGain.gain.setTargetAtTime(0.065 + t * 0.175, now, 0.08);
+      this.jetAirflowFilter.frequency.setTargetAtTime(75 + t * 175, now, 0.08);
+      this.jetAirflowGain.gain.setTargetAtTime(0.05 + t * 0.11, now, 0.08);
     }
 
-    // 2. Low-frequency jet body displacement: 85Hz -> 185Hz
+    // 2. Sub-Acoustic Hull Resonance: 55Hz -> 95Hz
     if (this.jetRumbleFilter && this.jetRumbleGain) {
-      this.jetRumbleFilter.frequency.setTargetAtTime(85 + t * 100, now, 0.10);
-      // Body rumble: idle 0.08 -> full throttle 0.22
-      this.jetRumbleGain.gain.setTargetAtTime(0.08 + t * 0.14, now, 0.10);
+      this.jetRumbleFilter.frequency.setTargetAtTime(55 + t * 40, now, 0.09);
+      this.jetRumbleGain.gain.setTargetAtTime(0.08 + t * 0.10, now, 0.09);
     }
 
-    // 3. High-Bypass Turbine Spool-Up: 360Hz -> 880Hz (fundamental) & 720Hz -> 1760Hz (overtone)
+    // 3. Resonant Ion-Plasma Drive: 88Hz -> 176Hz (warm harmonic octave swell)
     if (this.jetSpoolOsc && this.jetSpoolGain) {
-      this.jetSpoolOsc.frequency.setTargetAtTime(360 + t * 520, now, 0.12);
-      // Turbine whine: idle 0.035 -> full throttle 0.095
-      this.jetSpoolGain.gain.setTargetAtTime(0.035 + t * 0.060, now, 0.12);
+      this.jetSpoolOsc.frequency.setTargetAtTime(88 + t * 88, now, 0.08);
+      this.jetSpoolGain.gain.setTargetAtTime(0.075 + t * 0.145, now, 0.08);
     }
-    if (this.jetSpoolOsc2 && this.jetSpoolGain2) {
-      this.jetSpoolOsc2.frequency.setTargetAtTime(720 + t * 1040, now, 0.12);
-      // Overtone whine: idle 0.018 -> full throttle 0.050
-      this.jetSpoolGain2.gain.setTargetAtTime(0.018 + t * 0.032, now, 0.12);
+    if (this.jetSpoolFilter) {
+      this.jetSpoolFilter.frequency.setTargetAtTime(175 + t * 215, now, 0.08);
     }
 
-    // 4. Physical Sub / Hull Body Displacement (46-92 Hz)
+    // 4. Secondary Harmonic Shimmer: 132Hz -> 264Hz
+    if (this.jetSpoolOsc2 && this.jetSpoolGain2) {
+      this.jetSpoolOsc2.frequency.setTargetAtTime(132 + t * 132, now, 0.08);
+      this.jetSpoolGain2.gain.setTargetAtTime(0.025 + t * 0.045, now, 0.08);
+    }
+    if (this.jetSpoolFilter2) {
+      this.jetSpoolFilter2.frequency.setTargetAtTime(160 + t * 160, now, 0.08);
+    }
+
+    // 5. Sub-Bass Graviton Core: sweeps 42Hz -> 76Hz with accelerating 2.2Hz -> 6Hz acoustic pulse
     if (this.jetSubOsc && this.jetSubGain) {
-      this.jetSubOsc.frequency.setTargetAtTime(46 + t * 46, now, 0.10);
-      // Sub gain scaling: idle 0.12 -> full throttle 0.26
-      this.jetSubGain.gain.setTargetAtTime(0.12 + t * 0.14, now, 0.10);
+      this.jetSubOsc.frequency.setTargetAtTime(42 + t * 34, now, 0.07);
+      this.jetSubGain.gain.setTargetAtTime(0.12 + t * 0.14, now, 0.07);
     }
     if (this.jetSubOsc2 && this.jetSubGain2) {
-      this.jetSubOsc2.frequency.setTargetAtTime(46.5 + t * 46.5, now, 0.10);
-      // Sub 2 gain scaling: idle 0.08 -> full throttle 0.18
-      this.jetSubGain2.gain.setTargetAtTime(0.08 + t * 0.10, now, 0.10);
+      this.jetSubOsc2.frequency.setTargetAtTime(44.2 + t * 37.8, now, 0.07);
+      this.jetSubGain2.gain.setTargetAtTime(0.09 + t * 0.11, now, 0.07);
     }
   }
 
