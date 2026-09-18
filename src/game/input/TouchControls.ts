@@ -92,7 +92,100 @@ export class TouchControls {
         #touch-controls-overlay button:active {
           transform: scale(0.94);
         }
+        /* Dedicated Tablet & iPad Layout and Sizing */
+        @media (min-width: 851px) and (pointer: coarse),
+               (min-width: 851px) and (max-width: 1366px) and (hover: none) {
+          #touch-controls-overlay {
+            padding: max(14px, env(safe-area-inset-top, 14px)) max(18px, env(safe-area-inset-right, 18px)) max(14px, env(safe-area-inset-bottom, 14px)) max(18px, env(safe-area-inset-left, 18px)) !important;
+          }
+          #touch-top-bar {
+            margin-top: 32px !important;
+          }
+          #touch-toggle-btn {
+            font-size: 9.5px !important;
+            padding: 3.5px 10px !important;
+          }
+          #touch-left-pills button {
+            padding: 6px 13px !important;
+            font-size: 11px !important;
+            border-radius: 8px !important;
+          }
+          #touch-joystick-zone {
+            width: 136px !important;
+            height: 136px !important;
+          }
+          #touch-joystick-base {
+            width: 120px !important;
+            height: 120px !important;
+            left: 8px !important;
+            top: 8px !important;
+          }
+          #touch-joystick-knob {
+            width: 48px !important;
+            height: 48px !important;
+          }
+          #touch-right-zone {
+            gap: 14px !important;
+          }
+          #touch-actions-cluster {
+            gap: 6px !important;
+            margin-bottom: 2px !important;
+          }
+          #touch-btn-scan {
+            width: 134px !important;
+            padding: 10px 0 !important;
+            font-size: 12px !important;
+            border-radius: 10px !important;
+          }
+          .touch-compact-btn {
+            width: 64px !important;
+            padding: 8px 0 !important;
+            font-size: 11px !important;
+            border-radius: 8px !important;
+          }
+          .touch-util-btn {
+            width: 64px !important;
+            padding: 7px 0 !important;
+            font-size: 10.5px !important;
+            border-radius: 8px !important;
+          }
+          #touch-throttle-track {
+            width: 44px !important;
+            height: 144px !important;
+            border-radius: 22px !important;
+          }
+          #touch-throttle-knob {
+            width: 34px !important;
+            height: 28px !important;
+            border-radius: 14px !important;
+            left: 3px !important;
+          }
+          #touch-throttle-label {
+            font-size: 10px !important;
+            margin-bottom: 4px !important;
+          }
+          #touch-btn-brake {
+            width: 44px !important;
+            padding: 6px 0 !important;
+            font-size: 9.5px !important;
+            margin-top: 6px !important;
+            border-radius: 8px !important;
+          }
+          #touch-emote-drawer {
+            padding: 6px 10px !important;
+            gap: 6px !important;
+            border-radius: 12px !important;
+          }
+          #touch-emote-drawer button {
+            width: 34px !important;
+            height: 30px !important;
+            font-size: 14px !important;
+          }
+        }
         @media (max-height: 520px), (max-width: 850px) {
+          #touch-top-bar {
+            margin-top: 18px !important;
+          }
           #touch-joystick-zone {
             width: 110px !important;
             height: 110px !important;
@@ -167,7 +260,7 @@ export class TouchControls {
       </style>
 
       <!-- Top Status & Toggle Bar -->
-      <div style="display: flex; justify-content: flex-start; align-items: center; width: 100%; pointer-events: none; margin-top: 22px;">
+      <div id="touch-top-bar" style="display: flex; justify-content: flex-start; align-items: center; width: 100%; pointer-events: none; margin-top: 32px;">
         <button id="touch-toggle-btn" style="
           pointer-events: auto;
           background: rgba(15, 23, 42, 0.75);
@@ -931,37 +1024,75 @@ export class TouchControls {
       if (mainControls) mainControls.style.display = 'flex';
       this.toggleBtnEl.textContent = 'TOUCH: ON';
       this.toggleBtnEl.style.color = '#38bdf8';
+      if (typeof document !== 'undefined') {
+        document.body?.classList?.add?.('touch-controls-active');
+      }
+      this.recalibrateMetrics();
     } else {
       if (mainControls) mainControls.style.display = 'none';
       this.toggleBtnEl.textContent = 'TOUCH: OFF';
       this.toggleBtnEl.style.color = '#64748b';
+      if (typeof document !== 'undefined') {
+        document.body?.classList?.remove?.('touch-controls-active');
+      }
     }
   }
 
   public show(): void {
     this.container.style.display = 'flex';
+    if (this.isVisible) {
+      if (typeof document !== 'undefined') {
+        document.body?.classList?.add?.('touch-controls-active');
+      }
+    }
+    this.recalibrateMetrics();
   }
 
   public hide(): void {
     this.container.style.display = 'none';
+    if (typeof document !== 'undefined') {
+      document.body?.classList?.remove?.('touch-controls-active');
+    }
   }
 
-  private setupResizeListener(): void {
-    window.addEventListener('resize', () => {
-      // Re-center joystick if pointer is not currently active
-      if (this.joystickPointerId === null && this.joystickBaseEl) {
-        const rect = this.joystickBaseEl.getBoundingClientRect();
+  private recalibrateMetrics(): void {
+    if (this.throttleTrackEl) {
+      const rect = this.throttleTrackEl.getBoundingClientRect();
+      if (rect && rect.height > 0) {
+        this.cachedThrottleTrackHeight = rect.height;
+        this.cachedThrottleTrackBottom = rect.bottom;
+      }
+    }
+    if (this.joystickPointerId === null && this.joystickBaseEl) {
+      const rect = this.joystickBaseEl.getBoundingClientRect();
+      if (rect && rect.width > 0) {
         this.joystickCenter = {
           x: rect.left + rect.width / 2,
           y: rect.top + rect.height / 2,
         };
+        const measuredRadius = (rect.width / 2) - 10;
+        if (measuredRadius > 20) {
+          this.joystickRadius = measuredRadius;
+        }
       }
+    }
+  }
+
+  private setupResizeListener(): void {
+    window.addEventListener('resize', () => {
+      this.recalibrateMetrics();
+    });
+    window.addEventListener('orientationchange', () => {
+      setTimeout(() => this.recalibrateMetrics(), 100);
     });
   }
 
   public dispose(): void {
     if (this.tractorTimer) {
       clearTimeout(this.tractorTimer);
+    }
+    if (typeof document !== 'undefined') {
+      document.body?.classList?.remove?.('touch-controls-active');
     }
     this.container.remove();
   }

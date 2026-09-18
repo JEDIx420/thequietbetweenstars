@@ -46,6 +46,13 @@ class MockHTMLElement {
     return MockHTMLElement.elementsMap.get(key);
   }
 
+  classList = {
+    classes: new Set<string>(),
+    add: (c: string) => this.classList.classes.add(c),
+    remove: (c: string) => this.classList.classes.delete(c),
+    contains: (c: string) => this.classList.classes.has(c),
+  };
+
   getBoundingClientRect() {
     return { left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100 };
   }
@@ -99,7 +106,29 @@ describe('Touch Controls & Mobile Flight Deck', () => {
     const scanBtn = container.querySelector('#touch-btn-scan');
     expect(scanBtn).toBeDefined();
 
+    const topBar = container.querySelector('#touch-top-bar');
+    expect(topBar).toBeDefined();
+
     controls.dispose();
+  });
+
+  it('manages touch-controls-active body class for tablet and touch responsive adaptations', () => {
+    const controls = new TouchControls(container, touchInput);
+    controls.show();
+    expect(document.body.classList.contains('touch-controls-active')).toBe(true);
+
+    controls.hide();
+    expect(document.body.classList.contains('touch-controls-active')).toBe(false);
+
+    controls.show();
+    controls.toggleVisibility(); // Turns off
+    expect(document.body.classList.contains('touch-controls-active')).toBe(false);
+
+    controls.toggleVisibility(); // Turns back on
+    expect(document.body.classList.contains('touch-controls-active')).toBe(true);
+
+    controls.dispose();
+    expect(document.body.classList.contains('touch-controls-active')).toBe(false);
   });
 
   it('sets throttle correctly and updates touch input state', () => {

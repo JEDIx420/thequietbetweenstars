@@ -32,6 +32,60 @@ export class DialoguePresenter {
         font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
         box-sizing: border-box;
       }
+      /* Tablet & Touch Devices: Center at top to ensure joystick at bottom-left is never obstructed */
+      @media (pointer: coarse), (max-width: 1366px) and (hover: none) {
+        #dialogue-presenter-container {
+          bottom: auto !important;
+          top: max(46px, env(safe-area-inset-top, 46px)) !important;
+          left: 50% !important;
+          transform: translateX(-50%) !important;
+          max-width: min(500px, 82vw) !important;
+          width: min(500px, 82vw) !important;
+        }
+        #dialogue-presenter-container .dialogue-bubble {
+          padding: 8px 14px !important;
+          gap: 5px !important;
+          border-radius: 8px !important;
+        }
+        #dialogue-presenter-container .dialogue-speaker {
+          font-size: 9.5px !important;
+          letter-spacing: 0.12em !important;
+        }
+        #dialogue-presenter-container .dialogue-text {
+          font-size: 11px !important;
+          line-height: 1.4 !important;
+        }
+        #dialogue-presenter-container button {
+          font-size: 10.5px !important;
+          padding: 5px 10px !important;
+        }
+      }
+      body.touch-controls-active #dialogue-presenter-container {
+        bottom: auto !important;
+        top: max(46px, env(safe-area-inset-top, 46px)) !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        max-width: min(500px, 82vw) !important;
+        width: min(500px, 82vw) !important;
+      }
+      body.touch-controls-active #dialogue-presenter-container .dialogue-bubble {
+        padding: 8px 14px !important;
+        gap: 5px !important;
+        border-radius: 8px !important;
+      }
+      body.touch-controls-active #dialogue-presenter-container .dialogue-speaker {
+        font-size: 9.5px !important;
+        letter-spacing: 0.12em !important;
+      }
+      body.touch-controls-active #dialogue-presenter-container .dialogue-text {
+        font-size: 11px !important;
+        line-height: 1.4 !important;
+      }
+      body.touch-controls-active #dialogue-presenter-container button {
+        font-size: 10.5px !important;
+        padding: 5px 10px !important;
+      }
+      /* Compact Phone Overrides */
       @media (max-width: 850px), (max-height: 520px) {
         #dialogue-presenter-container {
           bottom: auto !important;

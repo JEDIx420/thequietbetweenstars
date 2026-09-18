@@ -53,6 +53,44 @@ export class NavRadar {
         user-select: none;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       }
+      /* Tablet & Touch Devices: Move radar to top-right to keep bottom-right clear for throttle & action buttons */
+      @media (pointer: coarse), (max-width: 1366px) and (hover: none) {
+        #nav-radar-widget {
+          bottom: auto !important;
+          top: max(44px, env(safe-area-inset-top, 44px)) !important;
+          right: max(14px, env(safe-area-inset-right, 14px)) !important;
+          gap: 8px !important;
+          flex-direction: row-reverse !important;
+          align-items: flex-start !important;
+        }
+        #nav-radar-widget .radar-canvas {
+          width: 96px !important;
+          height: 96px !important;
+        }
+        #nav-radar-widget .radar-info {
+          max-width: 160px !important;
+          padding: 6px 10px !important;
+          font-size: 9.5px !important;
+        }
+      }
+      body.touch-controls-active #nav-radar-widget {
+        bottom: auto !important;
+        top: max(44px, env(safe-area-inset-top, 44px)) !important;
+        right: max(14px, env(safe-area-inset-right, 14px)) !important;
+        gap: 8px !important;
+        flex-direction: row-reverse !important;
+        align-items: flex-start !important;
+      }
+      body.touch-controls-active #nav-radar-widget .radar-canvas {
+        width: 96px !important;
+        height: 96px !important;
+      }
+      body.touch-controls-active #nav-radar-widget .radar-info {
+        max-width: 160px !important;
+        padding: 6px 10px !important;
+        font-size: 9.5px !important;
+      }
+      /* Compact Phone Overrides */
       @media (max-width: 850px), (max-height: 520px) {
         #nav-radar-widget {
           bottom: auto !important;
@@ -549,9 +587,17 @@ export class NavRadar {
       const chipKey = `${active.id}_${d}_${autoOn}`;
       if (chipKey !== this.lastChipKey) {
         this.lastChipKey = chipKey;
+        const isTouch = typeof window !== 'undefined' && (
+          'ontouchstart' in window ||
+          navigator.maxTouchPoints > 0 ||
+          (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+          document.body?.classList?.contains?.('touch-controls-active')
+        );
         const autoText = autoOn
           ? '<span style="color:#4ade80; font-weight: 700;">[AUTOPILOT ON]</span>'
-          : '<span style="color:#94a3b8;">[TAB: Cycle · T: Target Ahead]</span>';
+          : isTouch
+            ? '<span style="color:#94a3b8;">[Tap / TARGET: Cycle]</span>'
+            : '<span style="color:#94a3b8;">[TAB: Cycle · T: Target Ahead]</span>';
 
         const typeLabel = active.isAnomaly ? `⚡ ${active.type}` : active.type;
         this.targetInfoEl.innerHTML = `

@@ -1635,6 +1635,28 @@ export class DesktopApp {
         #desktop-emote-drawer button:hover {
           filter: brightness(1.2);
         }
+        /* Dedicated Tablet & iPad HUD Layout */
+        @media (min-width: 851px) and (pointer: coarse),
+               (min-width: 851px) and (max-width: 1366px) and (hover: none) {
+          #hud-telemetry-bar {
+            padding: 4px 10px !important;
+            gap: 8px !important;
+            font-size: 10px !important;
+          }
+          .hud-title-brand {
+            font-size: 10.5px !important;
+            letter-spacing: 0.18em !important;
+          }
+          #hud-notice {
+            font-size: 10px !important;
+            padding: 5px 12px !important;
+            max-width: min(480px, 80vw) !important;
+          }
+          #proximity-indicator {
+            padding: 5px 12px !important;
+            font-size: 9.5px !important;
+          }
+        }
         @media (max-width: 850px), (max-height: 520px) {
           #hud-telemetry-bar {
             padding: 3px 8px !important;
@@ -2189,6 +2211,24 @@ export class DesktopApp {
 
     this.uiContainer.innerHTML = `
       <style>
+        /* Dedicated Tablet Surface HUD */
+        @media (min-width: 851px) and (pointer: coarse),
+               (min-width: 851px) and (max-width: 1366px) and (hover: none) {
+          #surface-hud-container {
+            padding: 12px 18px !important;
+          }
+          #surface-hud-title {
+            font-size: 10.5px !important;
+          }
+          #btn-return-orbit {
+            padding: 5px 12px !important;
+            font-size: 10px !important;
+          }
+          #btn-surface-mute, #btn-surface-fullscreen {
+            padding: 5px 10px !important;
+            font-size: 11px !important;
+          }
+        }
         @media (max-height: 520px), (max-width: 850px) {
           #surface-hud-container {
             padding: 10px 14px !important;
