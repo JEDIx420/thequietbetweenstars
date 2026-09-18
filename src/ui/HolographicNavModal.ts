@@ -67,11 +67,7 @@ export class HolographicNavModal {
   private handleWindowKeydown = (e: KeyboardEvent): void => {
     if (!this.isVisible) return;
     if (e.key === 'Escape') {
-      if (this.countdownInterval !== null) {
-        this.abortCountdown();
-      } else {
-        this.close();
-      }
+      this.close();
     }
   };
 
@@ -102,7 +98,6 @@ export class HolographicNavModal {
 
   // Countdown timer state
   private countdownInterval: number | null = null;
-  private countdownValue = 5;
 
   constructor(
     parent: HTMLElement,
@@ -1126,46 +1121,14 @@ export class HolographicNavModal {
 
     const warpBtn = this.detailsPanel.querySelector('#holo-btn-warp-now') as HTMLElement;
     warpBtn?.addEventListener('click', () => {
-      this.startCountdown(sys);
-    });
-  }
-
-  /**
-   * Start the 5-second warp countdown sequence
-   */
-  private startCountdown(sys: StarSystemDescriptor): void {
-    if (this.countdownInterval !== null) return;
-
-    this.countdownValue = 5;
-    this.countdownOverlayEl.style.display = 'flex';
-
-    const destNameEl = this.container.querySelector('#holo-warp-dest-name');
-    const digitEl = this.container.querySelector('#holo-warp-digit') as HTMLElement;
-
-    if (destNameEl) destNameEl.textContent = sys.name.toUpperCase();
-    if (digitEl) digitEl.textContent = '5';
-
-    audio.playWarpCountdownTick(5);
-
-    this.countdownInterval = window.setInterval(() => {
-      this.countdownValue--;
-
-      if (this.countdownValue > 0) {
-        if (digitEl) {
-          digitEl.textContent = `${this.countdownValue}`;
-          digitEl.style.transform = 'scale(1.3)';
-          setTimeout(() => { if (digitEl) digitEl.style.transform = 'scale(1.0)'; }, 120);
-        }
-        audio.playWarpCountdownTick(this.countdownValue);
-      } else {
-        // Countdown reached 0 -> Launch warp!
-        this.abortCountdown();
-        this.activeCourseSystem = sys;
-        audio.playConnectChime();
-        this.close();
-        this.onSelectDestination(sys);
+      audio.playConnectChime();
+      this.activeCourseSystem = sys;
+      if (this.onCourseSetCallback) {
+        this.onCourseSetCallback(sys);
       }
-    }, 1000);
+      this.close();
+      this.onSelectDestination(sys);
+    });
   }
 
   /**
