@@ -22,6 +22,7 @@ export interface SpaceInteractionCallbacks {
   addSample: (cat: string) => void;
   saveJourney: () => void;
   dockCourierPod?: () => void;
+  onStageAdvanced?: (newStage: number, stageName: string, isFinal: boolean) => void;
   isHeld?: boolean;
   isTriggered?: boolean;
 }
@@ -250,9 +251,11 @@ export class SpaceInteractionController {
               callbacks.showNotice(`DISCOVERY COMPLETE // ${res.fragmentUnlocked.name.toUpperCase()} RECOVERED`);
               callbacks.addCredits(enc.rewardCredits);
               callbacks.saveJourney();
+              callbacks.onStageAdvanced?.(res.newStage, res.fragmentUnlocked.name, true);
             } else {
               const stage = StagedScanController.getCurrentStage(enc.anomalyDescriptor);
               callbacks.showNotice(`STAGE ADVANCED: ${stage.name.toUpperCase()} COMPLETED`);
+              callbacks.onStageAdvanced?.(res.newStage, stage.name, false);
             }
           }
         } else {

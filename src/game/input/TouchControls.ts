@@ -50,6 +50,10 @@ export class TouchControls {
   private isHoldingTractor = false;
   private tractorTimer: number | null = null;
 
+  public isTractorHeld(): boolean {
+    return this.isHoldingTractor;
+  }
+
   // Cached layout metrics to eliminate layout thrashing
   private cachedThrottleTrackHeight = 136;
   private cachedThrottleTrackBottom = 0;
@@ -827,45 +831,56 @@ export class TouchControls {
   }
 
   private setupActionEvents(): void {
-    // SCAN / TRACTOR button: tap to scan, hold to engage tractor beam
+    // SCAN / SENSOR / TRACTOR button: tap to scan, hold to continuously scan or tractor
     this.scanBtnEl.addEventListener('pointerdown', () => {
       this.isHoldingTractor = false;
       this.scanBtnEl.style.transform = 'scale(0.95)';
+      this.scanBtnEl.textContent = '📡 SCANNING...';
+      this.scanBtnEl.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.45), rgba(168, 85, 247, 0.35))';
+      this.scanBtnEl.style.borderColor = '#38bdf8';
+      this.scanBtnEl.style.boxShadow = '0 0 16px rgba(56, 189, 248, 0.7)';
 
-      this.tractorTimer = window.setTimeout(() => {
+      // Immediately set scan and interact state down
+      this.touchInput.setActionState('scan', true);
+      this.touchInput.setActionState('interact', true);
+      navigator.vibrate?.(25);
+
+      const timerFn = typeof window !== 'undefined' && window.setTimeout ? window.setTimeout.bind(window) : setTimeout;
+      this.tractorTimer = timerFn(() => {
         this.isHoldingTractor = true;
-        this.scanBtnEl.textContent = '⚡ TRACTOR ACTIVE';
-        this.scanBtnEl.style.background = 'linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(56, 189, 248, 0.4))';
+        this.scanBtnEl.textContent = '⚡ SCAN / TRACTOR';
+        this.scanBtnEl.style.background = 'linear-gradient(135deg, rgba(168, 85, 247, 0.5), rgba(56, 189, 248, 0.5))';
         this.scanBtnEl.style.borderColor = '#c084fc';
+        this.scanBtnEl.style.boxShadow = '0 0 18px rgba(192, 132, 252, 0.8)';
         this.touchInput.setActionState('tractor', true);
-        this.touchInput.setActionState('interact', true);
-        navigator.vibrate?.([30, 40, 30]);
-      }, 350);
+        navigator.vibrate?.([20, 30, 20]);
+      }, 350) as any;
     });
 
     const releaseScan = () => {
       this.scanBtnEl.style.transform = 'scale(1)';
+      this.scanBtnEl.style.boxShadow = 'none';
       if (this.tractorTimer !== null) {
         clearTimeout(this.tractorTimer);
         this.tractorTimer = null;
       }
 
-      if (this.isHoldingTractor) {
-        this.isHoldingTractor = false;
-        this.scanBtnEl.textContent = this.currentContext === 'surface' ? 'SCAN / SAMPLE' : 'SCAN / TRACTOR';
-        this.scanBtnEl.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.28), rgba(14, 165, 233, 0.16))';
-        this.scanBtnEl.style.borderColor = 'rgba(56, 189, 248, 0.65)';
-        this.touchInput.setActionState('tractor', false);
-        this.touchInput.setActionState('interact', false);
-      } else {
-        // Tap: Trigger pulse scan or sample collect
-        this.touchInput.triggerAction('scan');
-        navigator.vibrate?.(20);
-      }
+      this.touchInput.setActionState('scan', false);
+      this.touchInput.setActionState('tractor', false);
+      this.touchInput.setActionState('interact', false);
+
+      this.isHoldingTractor = false;
+      this.scanBtnEl.textContent = this.currentContext === 'surface' ? 'SCAN / SAMPLE' : 'SCAN / TRACTOR';
+      this.scanBtnEl.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.28), rgba(14, 165, 233, 0.16))';
+      this.scanBtnEl.style.borderColor = 'rgba(56, 189, 248, 0.65)';
+
+      // Trigger action tick for instant tap consumers
+      this.touchInput.triggerAction('scan');
     };
 
     this.scanBtnEl.addEventListener('pointerup', releaseScan);
     this.scanBtnEl.addEventListener('pointercancel', releaseScan);
+    this.scanBtnEl.addEventListener('pointerleave', releaseScan);
 
     // Map button (Left Thumb)
     this.mapBtnEl.addEventListener('click', () => {

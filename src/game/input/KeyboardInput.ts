@@ -142,6 +142,9 @@ export class KeyboardInput implements InputSource {
 
   public isActionPressed(action: GameAction): boolean {
     if (action === 'scan') return this.activeKeys.has('Space');
+    if (action === 'interact') return this.activeKeys.has('KeyE') || this.activeKeys.has('Space');
+    if (action === 'confirm') return this.activeKeys.has('Enter') || this.activeKeys.has('Space');
+    if (action === 'tractor') return this.activeKeys.has('Space');
     if (action === 'map') return this.activeKeys.has('KeyM');
     if (action === 'autopilot') return this.activeKeys.has('KeyX');
     if (action === 'pause') return this.activeKeys.has('KeyP') || this.activeKeys.has('Escape');

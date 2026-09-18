@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { StagedScanController } from '../src/game/scanning/StagedScanController';
+import { StagedScanHUD } from '../src/game/ui/StagedScanHUD';
 import { SpaceEncounterManager } from '../src/game/scenes/SpaceEncounterManager';
 import type { SpaceAnomalyDescriptor } from '../src/game/systems/PlanetDescriptor';
 
@@ -130,5 +131,61 @@ describe('Anomaly Consolidation & Staged Scanning', () => {
     expect(probeEnc).toBeDefined();
     expect(probeEnc!.type).toBe('derelict_probe');
     expect(probeEnc!.anomalyDescriptor).toBe(anomalies[1]);
+  });
+
+  it('applies a grace period before decaying scan progress when hold is released', () => {
+    const anomaly: SpaceAnomalyDescriptor = {
+      id: 'anom-test-grace',
+      name: 'Resonance Monolith',
+      type: 'RESONANCE_ECHO',
+      distanceFromStar: 1200,
+      angle: 0.5,
+      description: 'A test anomaly',
+      scanned: false,
+      hasResonance: true,
+    };
+
+    // Complete stage 0
+    StagedScanController.updateScan(anomaly, 2000, true, 0.6);
+    expect(anomaly.currentStage).toBe(1);
+
+    // Charge stage 1 to 50% (holdDurationSec = 1.5, 0.75s => 50%)
+    StagedScanController.updateScan(anomaly, 1400, true, 0.75);
+    expect(anomaly.scanProgress).toBeCloseTo(0.5, 2);
+
+    // Release scan for 0.2s (within 0.35s grace period)
+    const resAfterShortRelease = StagedScanController.updateScan(anomaly, 1400, false, 0.2);
+    expect(resAfterShortRelease.progress).toBeCloseTo(0.5, 2);
+
+    // Continue releasing for another 0.25s (cumulative release 0.45s > 0.35s grace period)
+    const resAfterLongRelease = StagedScanController.updateScan(anomaly, 1400, false, 0.25);
+    expect(resAfterLongRelease.progress).toBeLessThan(0.5);
+  });
+
+  it('renders StagedScanHUD with correct stage title and progress percentage', () => {
+    if (typeof document !== 'undefined') {
+      const parent = document.createElement('div');
+      const hud = new StagedScanHUD(parent);
+
+      const anomaly: SpaceAnomalyDescriptor = {
+        id: 'anom-hud-test',
+        name: 'Echo of the Ancients',
+        type: 'RESONANCE_ECHO',
+        distanceFromStar: 1200,
+        angle: 0.5,
+        description: 'Test echo',
+        scanned: false,
+        hasResonance: true,
+        currentStage: 1,
+        scanProgress: 0.64,
+      };
+
+      hud.update(anomaly, 600, true, false);
+
+      const banner = parent.querySelector('#hud-staged-scan-banner');
+      expect(banner).toBeDefined();
+
+      hud.dispose();
+    }
   });
 });

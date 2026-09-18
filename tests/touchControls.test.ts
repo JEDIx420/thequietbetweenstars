@@ -30,6 +30,12 @@ class MockHTMLElement {
     }
   }
 
+  trigger(event: string, evtData: any = {}) {
+    if (this.listeners[event]) {
+      this.listeners[event].forEach(cb => cb({ preventDefault: () => {}, ...evtData }));
+    }
+  }
+
   appendChild(child: MockHTMLElement) {
     child.parentElement = this;
     this.children.push(child);
@@ -74,6 +80,8 @@ if (typeof globalThis.window === 'undefined') {
     addEventListener: () => {},
     removeEventListener: () => {},
     matchMedia: () => ({ matches: false }),
+    setTimeout: setTimeout,
+    clearTimeout: clearTimeout,
   };
 }
 
@@ -257,6 +265,24 @@ describe('Touch Controls & Mobile Flight Deck', () => {
 
     expect(leftZone).toBeDefined();
     expect(rightZone).toBeDefined();
+
+    controls.dispose();
+  });
+
+  it('activates continuous scan action on pointerdown and releases on pointerup', () => {
+    const controls = new TouchControls(container, touchInput);
+    const scanBtn = container.querySelector('#touch-btn-scan') as any;
+
+    expect(touchInput.isActionPressed('scan')).toBe(false);
+
+    scanBtn.trigger('pointerdown');
+    expect(touchInput.isActionPressed('scan')).toBe(true);
+    expect(touchInput.isActionPressed('interact')).toBe(true);
+    expect(scanBtn.textContent).toContain('SCANNING');
+
+    scanBtn.trigger('pointerup');
+    expect(touchInput.isActionPressed('scan')).toBe(false);
+    expect(touchInput.isActionPressed('interact')).toBe(false);
 
     controls.dispose();
   });

@@ -109,15 +109,22 @@ export class StagedScanController {
 
     const currentStage = this.getCurrentStage(anomaly);
 
-    // If outside required distance, decay scan progress slightly
+    // If outside required distance or not holding, decay scan progress gently after grace period
     if (distance > currentStage.requiredMaxDistance || !isScanningHeld) {
-      anomaly.scanProgress = Math.max(0, (anomaly.scanProgress || 0) - dt * 0.4);
+      const grace = ((anomaly as any)._scanHoldGrace ?? 0) - dt;
+      (anomaly as any)._scanHoldGrace = Math.max(0, grace);
+      if (grace <= 0) {
+        anomaly.scanProgress = Math.max(0, (anomaly.scanProgress || 0) - dt * 0.25);
+      }
       return {
         stageAdvanced: false,
         newStage: anomaly.currentStage!,
-        progress: anomaly.scanProgress,
+        progress: anomaly.scanProgress ?? 0,
       };
     }
+
+    // Actively holding within range: refresh grace period
+    (anomaly as any)._scanHoldGrace = 0.35;
 
     // Progress scan
     const rate = currentStage.holdDurationSec > 0 ? 1 / currentStage.holdDurationSec : 2.0;

@@ -54,6 +54,8 @@ import { SpaceInteractionController } from '../game/interaction/SpaceInteraction
 import { StationInterfaceModal } from './StationInterfaceModal';
 import { StoryObjectiveHUD } from '../story/StoryObjectiveHUD';
 import { StoryPresentationDirector } from '../story/StoryPresentationDirector';
+import { StagedScanHUD } from '../game/ui/StagedScanHUD';
+import { StagedScanController } from '../game/scanning/StagedScanController';
 
 const scratchShipForward = new THREE.Vector3();
 
@@ -113,6 +115,7 @@ export class DesktopApp {
   public activeHarmonicRelay: HarmonicRelay | null = null;
   public storyObjectiveHud!: StoryObjectiveHUD;
   public storyPresentationDirector!: StoryPresentationDirector;
+  public stagedScanHud!: StagedScanHUD;
   private shownContextHints = new Set<string>();
 
   // Real journey stats & tracking
@@ -360,6 +363,7 @@ export class DesktopApp {
 
     // 6. Story Presentation & Objective HUD Subsystems
     this.storyObjectiveHud = new StoryObjectiveHUD(this.canvasContainer);
+    this.stagedScanHud = new StagedScanHUD(this.canvasContainer);
     this.storyPresentationDirector = new StoryPresentationDirector(
       this.storyDirector,
       this.dialoguePresenter,
@@ -969,9 +973,35 @@ export class DesktopApp {
         dockCourierPod: () => this.dockCourierPod(this.spaceScene.activeCourierPod!),
       });
 
-      const isScanHeld = this.inputManager.isActionPressed('scan');
-      const isScanTriggered = this.inputManager.consumeAction('scan');
-      if (isScanHeld || isScanTriggered) {
+      const isScanHeld = this.inputManager.isActionPressed('scan') ||
+        this.inputManager.isActionPressed('interact') ||
+        this.inputManager.isActionPressed('tractor') ||
+        this.inputManager.isActionPressed('confirm');
+      const isScanTriggered = this.inputManager.consumeAction('scan') ||
+        this.inputManager.consumeAction('interact') ||
+        this.inputManager.consumeAction('tractor') ||
+        this.inputManager.consumeAction('confirm');
+
+      const anomaly = (lockedTarget.data as any)?.anomalyDescriptor;
+      const isStagedScan = !!anomaly && !anomaly.scanned && (anomaly.currentStage ?? 0) < 4;
+      const dist = lockedTarget.distance ?? Math.round(shipPos.distanceTo(lockedTarget.position));
+      const canScan = isStagedScan && StagedScanController.canInitiateStage(anomaly, dist).canScan;
+      const isScanningActive = isStagedScan && canScan && isScanHeld;
+
+      // Real-time acoustic feedback: harmonic carrier hum while actively holding & scanning
+      audio.setScanningActive(isScanningActive, anomaly?.scanProgress ?? 0, anomaly?.currentStage ?? 0);
+
+      // Real-time HUD feedback: dedicated progress bar & stage telemetry
+      this.stagedScanHud.update(
+        isStagedScan ? anomaly : null,
+        dist,
+        isScanningActive,
+        isTouch
+      );
+
+      // Staged scans update every frame to process progress charging and decay;
+      // discrete actions (docking, hailing, relay, pod) only trigger on button press
+      if (isStagedScan || isScanHeld || isScanTriggered) {
         this.spaceInteractionController.handleSpaceAction(lockedTarget, shipPos, dt, {
           isHeld: isScanHeld,
           isTriggered: isScanTriggered,
@@ -981,9 +1011,16 @@ export class DesktopApp {
           addSample: (cat) => { this.sampleInventory[cat] = (this.sampleInventory[cat] || 0) + 1; },
           saveJourney: () => this.saveCurrentJourney(),
           dockCourierPod: () => this.dockCourierPod(this.spaceScene.activeCourierPod!),
+          onStageAdvanced: (_newStage, stageName, isFinal) => {
+            this.stagedScanHud.triggerFlash(
+              isFinal ? `RESONANCE HARMONIZED // ${stageName}` : `STAGE ADVANCED // ${stageName}`
+            );
+          },
         });
       }
     } else if (targetPlanet) {
+      audio.setScanningActive(false);
+      this.stagedScanHud?.hide();
       if (phase !== FlightPhase.PLANET_APPROACH) {
         this.stateMachine.transitionTo(FlightPhase.PLANET_APPROACH);
       }
@@ -1002,6 +1039,8 @@ export class DesktopApp {
         this.engageOrbit(targetPlanet);
       }
     } else {
+      audio.setScanningActive(false);
+      this.stagedScanHud?.hide();
       if (phase === FlightPhase.PLANET_APPROACH) {
         this.stateMachine.transitionTo(FlightPhase.SYSTEM_CRUISE);
       }
@@ -1126,12 +1165,25 @@ export class DesktopApp {
     }
 
     // Update Target Lock Reticle in Space
+    const currentLock = this.targetLockSystem.getLockedTarget();
+    const reticleAnomaly = (currentLock?.data as any)?.anomalyDescriptor;
+    const isReticleStagedScan = !!reticleAnomaly && !reticleAnomaly.scanned && (reticleAnomaly.currentStage ?? 0) < 4;
+    const reticleDist = currentLock?.distance ?? (currentLock ? Math.round(shipPos.distanceTo(currentLock.position)) : 9999);
+    const reticleCanScan = isReticleStagedScan && StagedScanController.canInitiateStage(reticleAnomaly, reticleDist).canScan;
+    const isReticleScanningActive = isReticleStagedScan && reticleCanScan && (
+      this.inputManager.isActionPressed('scan') ||
+      this.inputManager.isActionPressed('interact') ||
+      this.inputManager.isActionPressed('tractor') ||
+      this.inputManager.isActionPressed('confirm')
+    );
+
     this.targetLockReticle.update(
-      this.targetLockSystem.getLockedTarget(),
+      currentLock,
       this.renderer.camera,
       window.innerWidth,
       window.innerHeight,
-      isTouchDevice()
+      isTouchDevice(),
+      isReticleScanningActive
     );
 
     monitor.startTiming('render');
@@ -1202,6 +1254,8 @@ export class DesktopApp {
 
   private engageOrbit(target: TargetPlanetInfo): void {
     audio.playConnectChime();
+    audio.setScanningActive(false);
+    this.stagedScanHud?.hide();
     this.targetLockSystem.clearLockedTarget();
     this.targetLockReticle.update(null, this.renderer.camera, window.innerWidth, window.innerHeight);
     this.stateMachine.transitionTo(FlightPhase.ORBIT);
@@ -1222,6 +1276,8 @@ export class DesktopApp {
       return;
     }
 
+    audio.setScanningActive(false);
+    this.stagedScanHud?.hide();
     this.targetLockSystem.clearLockedTarget();
     this.targetLockReticle.update(null, this.renderer.camera, window.innerWidth, window.innerHeight);
 

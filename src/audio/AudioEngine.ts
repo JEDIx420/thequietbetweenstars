@@ -69,6 +69,13 @@ export class AudioDirector {
   private warpTachyonOsc: OscillatorNode | null = null;
   private warpTachyonGain: GainNode | null = null;
 
+  // Staged Harmonic Scan Audio Nodes
+  private scanDroneOsc: OscillatorNode | null = null;
+  private scanDroneOsc2: OscillatorNode | null = null;
+  private scanDroneGain: GainNode | null = null;
+  private scanDroneFilter: BiquadFilterNode | null = null;
+  private isScanningActive = false;
+
   private loopSequenceId: number | null = null;
   private stepIndex = 0;
   private isOverturePlaying = false;
@@ -839,6 +846,71 @@ export class AudioDirector {
 
     osc.start(now);
     osc.stop(now + 2.0);
+  }
+
+  public setScanningActive(active: boolean, progress = 0, stage = 0): void {
+    if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) {
+      if (this.scanDroneGain) {
+        this.scanDroneGain.gain.setValueAtTime(0, this.webAudioCtx?.currentTime || 0);
+      }
+      return;
+    }
+
+    const now = this.webAudioCtx.currentTime;
+
+    if (!active) {
+      if (this.scanDroneGain && this.isScanningActive) {
+        this.isScanningActive = false;
+        this.scanDroneGain.gain.cancelScheduledValues(now);
+        this.scanDroneGain.gain.setTargetAtTime(0.0001, now, 0.08);
+      }
+      return;
+    }
+
+    // Lazy init scanning nodes if needed
+    if (!this.scanDroneOsc || !this.scanDroneGain) {
+      this.scanDroneGain = this.webAudioCtx.createGain();
+      this.scanDroneGain.gain.setValueAtTime(0.0001, now);
+
+      this.scanDroneFilter = this.webAudioCtx.createBiquadFilter();
+      this.scanDroneFilter.type = 'bandpass';
+      this.scanDroneFilter.frequency.setValueAtTime(432, now);
+      this.scanDroneFilter.Q.setValueAtTime(3.0, now);
+
+      this.scanDroneOsc = this.webAudioCtx.createOscillator();
+      this.scanDroneOsc.type = 'sine';
+      this.scanDroneOsc.frequency.setValueAtTime(432, now);
+
+      this.scanDroneOsc2 = this.webAudioCtx.createOscillator();
+      this.scanDroneOsc2.type = 'triangle';
+      this.scanDroneOsc2.frequency.setValueAtTime(864, now);
+
+      this.scanDroneOsc.connect(this.scanDroneFilter);
+      this.scanDroneOsc2.connect(this.scanDroneFilter);
+      this.scanDroneFilter.connect(this.scanDroneGain);
+      this.scanDroneGain.connect(this.webAudioMasterGain);
+
+      this.scanDroneOsc.start(now);
+      this.scanDroneOsc2.start(now);
+    }
+
+    this.isScanningActive = true;
+
+    // Modulate pitch and resonance based on stage and progress (Harmonic tuning)
+    const baseFreq = 432 + stage * 54;
+    const targetFreq = baseFreq + progress * 140;
+
+    this.scanDroneOsc.frequency.setTargetAtTime(targetFreq, now, 0.05);
+    if (this.scanDroneOsc2) {
+      this.scanDroneOsc2.frequency.setTargetAtTime(targetFreq * 1.5, now, 0.05);
+    }
+    if (this.scanDroneFilter) {
+      this.scanDroneFilter.frequency.setTargetAtTime(targetFreq * 1.2, now, 0.05);
+    }
+
+    // Volume ramp: gentle onset (~0.12) rising with progress (~0.22)
+    const targetGain = 0.12 + Math.min(1, Math.max(0, progress)) * 0.1;
+    this.scanDroneGain.gain.setTargetAtTime(targetGain, now, 0.06);
   }
 
   public playCollisionDeflection(isDanger = false): void {
