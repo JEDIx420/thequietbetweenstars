@@ -9,6 +9,8 @@ export interface RadarTargetItem {
   position: THREE.Vector3;
   color: string;
   isAnomaly?: boolean;
+  isStoryTarget?: boolean;
+  storyTag?: string;
   descriptor?: PlanetDescriptor;
   anomaly?: SpaceAnomalyDescriptor;
 }
@@ -259,7 +261,7 @@ export class NavRadar {
       const pos = a.position
         ? new THREE.Vector3(a.position.x, a.position.y, a.position.z)
         : new THREE.Vector3(Math.cos(a.angle || 0) * (a.distanceFromStar || 1200), 0, Math.sin(a.angle || 0) * (a.distanceFromStar || 1200));
-      const isResonance = a.hasResonance || a.signature?.isResonanceAnomaly || a.type === 'RESONANCE_ECHO' || a.type === 'resonance_monolith';
+      const isResonance = a.hasResonance || a.signature?.isResonanceAnomaly || a.type === 'RESONANCE_ECHO' || a.type === 'resonance_monolith' || a.id.startsWith('story_');
       list.push({
         id: a.id,
         name: a.name,
@@ -267,6 +269,8 @@ export class NavRadar {
         position: pos,
         color: a.color || (isResonance ? '#38bdf8' : '#f59e0b'),
         isAnomaly: true,
+        isStoryTarget: isResonance,
+        storyTag: isResonance ? 'RESONANCE SIGNAL' : undefined,
         anomaly: a,
       });
     }
@@ -361,6 +365,19 @@ export class NavRadar {
 
   public hasTargetId(id: string): boolean {
     return this.targets.some((t) => t.id === id);
+  }
+
+  public get currentTarget(): RadarTargetItem | null {
+    return this.targets[this.selectedIndex] || null;
+  }
+
+  public selectTargetById(id: string): boolean {
+    const idx = this.targets.findIndex((t) => t.id === id);
+    if (idx >= 0) {
+      this.selectTargetIndex(idx);
+      return true;
+    }
+    return false;
   }
 
   public onRebase(offset: THREE.Vector3): void {
@@ -508,7 +525,8 @@ export class NavRadar {
         ctx.fill();
       } else if (t.isAnomaly) {
         // Space Anomaly: amber diamond with glow
-        ctx.fillStyle = '#f59e0b';
+        const isResonance = t.isStoryTarget || t.anomaly?.hasResonance || t.anomaly?.signature?.isResonanceAnomaly || t.id.startsWith('story_');
+        ctx.fillStyle = isResonance ? '#38bdf8' : '#f59e0b';
         ctx.beginPath();
         ctx.moveTo(data.px, data.py - 4);
         ctx.lineTo(data.px + 4, data.py);
@@ -516,8 +534,17 @@ export class NavRadar {
         ctx.lineTo(data.px - 4, data.py);
         ctx.closePath();
         ctx.fill();
-        ctx.strokeStyle = 'rgba(245, 158, 11, 0.45)';
+        ctx.strokeStyle = isResonance ? 'rgba(56, 189, 248, 0.7)' : 'rgba(245, 158, 11, 0.45)';
         ctx.lineWidth = 1;
+        ctx.stroke();
+      } else if (t.type === 'station' || t.type === 'vessel' || t.type === 'relay') {
+        // Story Station / Vessel / Relay: prominent glowing node
+        ctx.fillStyle = t.color || '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(data.px, data.py, 4.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#e0f2fe';
+        ctx.lineWidth = 1.2;
         ctx.stroke();
       } else if (t.type === 'gas-giant') {
         // Gas giant: larger sphere with horizontal ring slash
@@ -557,6 +584,28 @@ export class NavRadar {
         ctx.font = '8px ui-monospace, monospace';
         const glyph = data.dy > 0 ? '▲' : '▼';
         ctx.fillText(glyph, data.px - 3, data.dy > 0 ? data.py - 6 : data.py + 11);
+      }
+
+      // Dedicated Story / Resonance harmonic wave animation
+      const isStory = t.isStoryTarget || t.anomaly?.hasResonance || t.anomaly?.signature?.isResonanceAnomaly || t.type === 'station' || t.type === 'vessel' || t.type === 'relay' || t.id.startsWith('story_');
+      if (isStory) {
+        const pulseTime = Date.now() * 0.0035;
+        const pulseRadius = 5.2 + Math.sin(pulseTime) * 1.2;
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(data.px, data.py, pulseRadius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Second outer harmonic wave ripple
+        const ripplePhase = (Date.now() % 1600) / 1600;
+        const rippleRadius = 6.5 + ripplePhase * 5.0;
+        const rippleAlpha = 1.0 - ripplePhase;
+        ctx.strokeStyle = `rgba(129, 140, 248, ${rippleAlpha * 0.7})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(data.px, data.py, rippleRadius, 0, Math.PI * 2);
+        ctx.stroke();
       }
 
       // Selected Target Reticle with Animated Corner Brackets
@@ -606,9 +655,13 @@ export class NavRadar {
             ? '<span style="color:#94a3b8;">[Tap / TARGET: Cycle]</span>'
             : '<span style="color:#94a3b8;">[TAB: Cycle · T: Target Ahead]</span>';
 
+        const isStory = active.isStoryTarget || active.anomaly?.hasResonance || active.anomaly?.signature?.isResonanceAnomaly || active.id.startsWith('story_') || active.type === 'station' || active.type === 'vessel' || active.type === 'relay';
+        const storyBadge = isStory
+          ? '<span style="color:#a78bfa; font-size:8px; font-weight:700; letter-spacing:0.1em; border:1px solid rgba(167, 139, 250, 0.6); border-radius:3px; padding:1px 4px; margin-left:5px;">RESONANCE</span>'
+          : '';
         const typeLabel = active.isAnomaly ? `⚡ ${active.type}` : active.type;
         this.targetInfoEl.innerHTML = `
-          <div style="color: #38bdf8; font-weight: 600; font-size: 11px;">${active.name}</div>
+          <div style="color: #38bdf8; font-weight: 600; font-size: 11px;">${active.name}${storyBadge}</div>
           <div style="font-size: 9px; color: #cbd5e1; margin-top: 1px;">${typeLabel} · ${d}u</div>
           <div style="font-size: 9px; margin-top: 3px;">${autoText}</div>
         `;

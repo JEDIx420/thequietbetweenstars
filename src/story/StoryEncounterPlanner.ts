@@ -34,11 +34,8 @@ export class StoryEncounterPlanner {
       injectedAnomalies: [],
     };
 
-    // Beat 0 -> Beat 1 transition
-    if (state.currentBeat === 'beat_0_awakening') {
-      storyDirector.advanceBeat('beat_1_first_whisper');
-    }
-
+    // Entity planning is purely deterministic and based on the current beat.
+    // It does NOT advance narrative state.
     // Beat 1: First Resonance Whisper (Fragment Alpha)
     if (state.currentBeat === 'beat_1_first_whisper') {
       const alreadyHasResonance = (system.anomalies || []).some((a) => a.signature?.isResonanceAnomaly);

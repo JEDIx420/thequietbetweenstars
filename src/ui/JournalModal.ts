@@ -1,14 +1,17 @@
 import { saveManager, type DiscoveryRecord, type JournalEntry } from '../persistence/SaveManager';
 import { audio } from '../audio/AudioEngine';
+import { CHAPTER_1_BEATS } from '../story/chapters/Chapter1Resonance';
+import type { StoryState } from '../story/StoryTypes';
 
-export type JournalTab = 'WORLDS' | 'LIFE' | 'PEOPLES' | 'LORE' | 'SYSTEMS' | 'ANOMALIES' | 'RESOURCES' | 'NOTES';
+export type JournalTab = 'STORY' | 'WORLDS' | 'LIFE' | 'PEOPLES' | 'LORE' | 'SYSTEMS' | 'ANOMALIES' | 'RESOURCES' | 'NOTES';
 
 export class JournalModal {
   private container: HTMLElement;
   private isVisible = false;
-  private currentTab: JournalTab = 'WORLDS';
+  private currentTab: JournalTab = 'STORY';
   private discoveries: DiscoveryRecord[] = [];
   private journalEntries: JournalEntry[] = [];
+  private storyState: StoryState | null = null;
 
   constructor(parent: HTMLElement) {
     this.container = document.createElement('div');
@@ -64,6 +67,7 @@ export class JournalModal {
         white-space: nowrap;
         -webkit-overflow-scrolling: touch;
       ">
+        <button class="journal-tab-btn" data-tab="STORY" style="flex-shrink: 0; font-weight: 700;">MISSION LOG</button>
         <button class="journal-tab-btn" data-tab="WORLDS" style="flex-shrink: 0;">WORLDS</button>
         <button class="journal-tab-btn" data-tab="LIFE" style="flex-shrink: 0;">LIFE</button>
         <button class="journal-tab-btn" data-tab="PEOPLES" style="flex-shrink: 0;">PEOPLES</button>
@@ -113,9 +117,11 @@ export class JournalModal {
     this.isVisible = true;
     this.container.style.display = 'flex';
 
-    // Load discoveries & journal from IndexedDB
+    // Load discoveries, journal & story state from IndexedDB
     this.discoveries = await saveManager.getAllDiscoveries();
     this.journalEntries = await saveManager.getJournalEntries();
+    const slot = await saveManager.getSaveSlot();
+    this.storyState = slot?.story || null;
 
     this.render();
   }
@@ -161,6 +167,108 @@ export class JournalModal {
 
     const content = this.container.querySelector('#journal-content-list') as HTMLElement;
     if (!content) return;
+
+    if (this.currentTab === 'STORY') {
+      const state = this.storyState;
+      const beatId = state?.currentBeat || 'beat_0_awakening';
+      const beatDef = CHAPTER_1_BEATS[beatId];
+      const fragments = state?.resonanceFragments || [];
+      const hasAlpha = fragments.some((f) => f.id === 'fragment_alpha');
+      const hasBeta = fragments.some((f) => f.id === 'fragment_beta');
+      const visitedStations = state?.visitedStations || [];
+      const hasEpsilon = visitedStations.includes('station_epsilon_7');
+      const relayActivated = state?.harmonicRelayState?.activated;
+      const alignedPillars = state?.harmonicRelayState?.alignedPillars || [];
+
+      content.innerHTML = `
+        <div style="
+          grid-column: 1 / -1;
+          background: rgba(15, 23, 42, 0.85);
+          border: 1px solid rgba(56, 189, 248, 0.4);
+          border-left: 4px solid #38bdf8;
+          border-radius: 10px;
+          padding: 20px;
+          margin-bottom: 6px;
+        ">
+          <div style="font-size: 10px; color: #7dd3fc; letter-spacing: 0.2em; font-weight: 700; text-transform: uppercase;">
+            ACTIVE MISSION // CHAPTER 1: THE RESONANCE
+          </div>
+          <h3 style="font-size: 18px; margin: 6px 0 10px 0; color: #f8fafc; font-weight: 400;">
+            ${beatDef ? beatDef.title : 'Subcarrier Whisper'}
+          </h3>
+          <div style="
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 6px;
+            padding: 10px 14px;
+            font-size: 13px;
+            color: #e2e8f0;
+            line-height: 1.5;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          ">
+            <span style="color: #38bdf8; font-weight: bold;">CURRENT OBJECTIVE:</span>
+            <span>${beatDef ? beatDef.objective : 'Review long-range telemetry with Mnemosyne.'}</span>
+          </div>
+        </div>
+
+        <!-- Resonance Fragments Section -->
+        <div style="
+          background: rgba(15, 23, 42, 0.75);
+          border: 1px solid rgba(148, 163, 184, 0.2);
+          border-radius: 10px;
+          padding: 16px;
+        ">
+          <div style="font-size: 10px; color: #38bdf8; letter-spacing: 0.15em; font-weight: 700; margin-bottom: 8px;">
+            RESONANCE TELEMETRY FRAGMENTS (${fragments.length}/2)
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="padding: 8px 12px; background: rgba(30, 41, 59, 0.5); border-radius: 6px; border: 1px solid ${hasAlpha ? '#38bdf8' : 'rgba(255,255,255,0.06)'};">
+              <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: ${hasAlpha ? '#f8fafc' : '#64748b'};">
+                <span>Fragment α (432.8 Hz)</span>
+                <span style="color: ${hasAlpha ? '#4ade80' : '#64748b'};">${hasAlpha ? 'RECOVERED' : 'PENDING'}</span>
+              </div>
+              <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">Crystalline Monolith Echo Shard</div>
+            </div>
+            <div style="padding: 8px 12px; background: rgba(30, 41, 59, 0.5); border-radius: 6px; border: 1px solid ${hasBeta ? '#38bdf8' : 'rgba(255,255,255,0.06)'};">
+              <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: ${hasBeta ? '#f8fafc' : '#64748b'};">
+                <span>Fragment β (528.0 Hz)</span>
+                <span style="color: ${hasBeta ? '#4ade80' : '#64748b'};">${hasBeta ? 'RECOVERED' : 'PENDING'}</span>
+              </div>
+              <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">Survey Craft Alpha-9 Flight Core</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Key Locations & Contacts -->
+        <div style="
+          background: rgba(15, 23, 42, 0.75);
+          border: 1px solid rgba(148, 163, 184, 0.2);
+          border-radius: 10px;
+          padding: 16px;
+        ">
+          <div style="font-size: 10px; color: #38bdf8; letter-spacing: 0.15em; font-weight: 700; margin-bottom: 8px;">
+            KEY LOCATIONS & CONTACTS
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="padding: 8px 12px; background: rgba(30, 41, 59, 0.5); border-radius: 6px; font-size: 11.5px;">
+              <div style="font-weight: 600; color: #f8fafc;">Dr. Valeria Vance · Epsilon-7</div>
+              <div style="color: #94a3b8; font-size: 11px;">Status: ${hasEpsilon ? 'Station Docked · Signal Lab Contacted' : 'Awaiting Telemetry Congruence'}</div>
+            </div>
+            <div style="padding: 8px 12px; background: rgba(30, 41, 59, 0.5); border-radius: 6px; font-size: 11.5px;">
+              <div style="font-weight: 600; color: #f8fafc;">Captain Zephyr · The Wanderer-7</div>
+              <div style="color: #94a3b8; font-size: 11px;">Status: Nomad Avian Vessel · Roaming Wings</div>
+            </div>
+            <div style="padding: 8px 12px; background: rgba(30, 41, 59, 0.5); border-radius: 6px; font-size: 11.5px;">
+              <div style="font-weight: 600; color: #f8fafc;">First Harmonic Relay</div>
+              <div style="color: #94a3b8; font-size: 11px;">Spires Synchronized: [${alignedPillars.length}/3] ${relayActivated ? '· GATEWAY ACTIVE' : ''}</div>
+            </div>
+          </div>
+        </div>
+      `;
+      return;
+    }
 
     if (this.currentTab === 'NOTES') {
       if (this.journalEntries.length === 0) {

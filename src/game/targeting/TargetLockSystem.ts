@@ -48,6 +48,10 @@ export class TargetLockSystem {
     this.lockedTarget = target;
   }
 
+  public lockTarget(target: LockableTarget): void {
+    this.setLockedTarget(target);
+  }
+
   public clearLockedTarget(): void {
     this.lockedTarget = null;
     this.forwardCandidates = [];

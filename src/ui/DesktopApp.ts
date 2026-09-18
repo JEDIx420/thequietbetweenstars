@@ -52,6 +52,8 @@ import { NamedVessel } from '../game/vessels/NamedVesselDirector';
 import { HarmonicRelay } from '../game/structures/HarmonicRelay';
 import { SpaceInteractionController } from '../game/interaction/SpaceInteractionController';
 import { StationInterfaceModal } from './StationInterfaceModal';
+import { StoryObjectiveHUD } from '../story/StoryObjectiveHUD';
+import { StoryPresentationDirector } from '../story/StoryPresentationDirector';
 
 const scratchShipForward = new THREE.Vector3();
 
@@ -109,6 +111,9 @@ export class DesktopApp {
   public activeSpaceStation: SpaceStation | null = null;
   public activeNamedVessel: NamedVessel | null = null;
   public activeHarmonicRelay: HarmonicRelay | null = null;
+  public storyObjectiveHud!: StoryObjectiveHUD;
+  public storyPresentationDirector!: StoryPresentationDirector;
+  private shownContextHints = new Set<string>();
 
   // Real journey stats & tracking
   public visitedSystems = new Set<string>();
@@ -353,7 +358,26 @@ export class DesktopApp {
     );
     this.spaceInteractionController.setStationModal(this.stationModal);
 
-    // 6. Cinematic Director
+    // 6. Story Presentation & Objective HUD Subsystems
+    this.storyObjectiveHud = new StoryObjectiveHUD(this.canvasContainer);
+    this.storyPresentationDirector = new StoryPresentationDirector(
+      this.storyDirector,
+      this.dialoguePresenter,
+      this.storyObjectiveHud,
+      {
+        reconcileWorldState: () => this.reconcileStoryWorldState(),
+        highlightNavigationTarget: (targetId: string, _name: string) => {
+          this.navRadar.selectTargetById(targetId);
+          const candidate = this.collectSpaceLockCandidates().find((c) => c.id === targetId);
+          if (candidate) {
+            this.targetLockSystem.lockTarget(candidate);
+          }
+        },
+        showHudNotice: (text: string) => this.showHudNotice(text),
+      }
+    );
+
+    // 7. Cinematic Director
     this.newJourneyCinematic = new NewJourneyCinematic(this.container);
 
     // Wire music contexts to state machine
@@ -817,6 +841,65 @@ export class DesktopApp {
       this.targetLockSystem.updateTargetDistance(shipPos);
       if (lockedTarget.distance !== undefined && lockedTarget.distance > 8000) {
         this.targetLockSystem.clearLockedTarget();
+      }
+    }
+
+    // Contextual flight & interaction hints (reinforced on first use, non-intrusive)
+    const flightTimeSec = (Date.now() - this.journeyStartTime) / 1000;
+    const isTouch = this.currentControlMode === 'touch';
+
+    if (!this.shownContextHints.has('hint_flight_controls') && flightTimeSec > 4 && this.flightModel.getSpeed() < 8) {
+      this.shownContextHints.add('hint_flight_controls');
+      this.narrativeDirector.recordTriggeredEvent('hint_flight_controls');
+      this.showHudNotice(
+        isTouch
+          ? 'CONTROLS // Drag Left Stick to steer · Drag Throttle slider to accelerate'
+          : 'CONTROLS // [W/S] Pitch · [A/D] Yaw · [Q/E] Roll · [SHIFT/CTRL] Throttle'
+      );
+    }
+
+    if (!this.shownContextHints.has('hint_target_lock') && !lockedTarget) {
+      const forwardTarget = spaceCandidates.find((c) => {
+        const d = c.position.distanceTo(shipPos);
+        return d > 300 && d < 4500;
+      });
+      if (forwardTarget) {
+        this.shownContextHints.add('hint_target_lock');
+        this.narrativeDirector.recordTriggeredEvent('hint_target_lock');
+        this.showHudNotice(
+          isTouch
+            ? `CONTACT DETECTED // Tap ${forwardTarget.name.toUpperCase()} directly in space to acquire lock`
+            : `CONTACT DETECTED // Press [T] to lock onto ${forwardTarget.name.toUpperCase()}`
+        );
+      }
+    }
+
+    if (!this.shownContextHints.has('hint_autopilot') && (lockedTarget || this.navRadar.currentTarget)) {
+      const dist = lockedTarget?.distance ?? 2500;
+      if (dist > 1500 && !this.autopilotController.isActive) {
+        this.shownContextHints.add('hint_autopilot');
+        this.narrativeDirector.recordTriggeredEvent('hint_autopilot');
+        this.showHudNotice(
+          isTouch
+            ? 'AUTOPILOT // Tap Autopilot on radar or control bar to cruise to selected target'
+            : 'AUTOPILOT // Press [F] to engage sublight autopilot toward selected target'
+        );
+      }
+    }
+
+    if (
+      !this.shownContextHints.has('hint_staged_scan') &&
+      lockedTarget &&
+      (lockedTarget.id.startsWith('story_') || (lockedTarget.data as any)?.anomalyDescriptor?.hasResonance)
+    ) {
+      if ((lockedTarget.distance ?? 9999) < 2600) {
+        this.shownContextHints.add('hint_staged_scan');
+        this.narrativeDirector.recordTriggeredEvent('hint_staged_scan');
+        this.showHudNotice(
+          isTouch
+            ? 'RESONANCE CONTACT // Hold Sensor button to synchronize multi-stage harmonic scan'
+            : 'RESONANCE CONTACT // Hold [SPACE] to synchronize multi-stage harmonic scan'
+        );
       }
     }
 
@@ -1355,6 +1438,28 @@ export class DesktopApp {
         this.showHudNotice(`TARGET ACQUIRED // ${hit.name.toUpperCase()}`);
         if (hit.type === 'encounter') {
           const enc = hit.data as SpaceEncounter;
+          const isStoryAnomaly = enc.anomalyDescriptor?.hasResonance ||
+            enc.anomalyDescriptor?.signature?.isResonanceAnomaly ||
+            enc.id.startsWith('story_') ||
+            enc.type === 'resonance_echo';
+
+          if (isStoryAnomaly) {
+            // Mobile/touch tap acquires lock and guides player to hold sensor/scan button
+            this.targetLockSystem.lockTarget(hit);
+            this.navRadar.selectTargetById(hit.id);
+            audio.playScanEffect();
+            this.showHudNotice(`RESONANCE TARGET LOCKED // ${hit.name.toUpperCase()} · HOLD SCAN TO HARMONIZE`);
+            this.spaceInteractionController.updateInteractionPrompt(hit, this.flightModel.position, {
+              showNotice: (msg) => this.showHudNotice(msg),
+              setContextPrompt: (msg) => this.updateContextPrompt(msg),
+              addCredits: (amt) => { this.credits += amt; },
+              addSample: (cat) => { this.sampleInventory[cat] = (this.sampleInventory[cat] || 0) + 1; },
+              saveJourney: () => this.saveCurrentJourney(),
+              dockCourierPod: () => this.dockCourierPod(this.spaceScene.activeCourierPod!),
+            });
+            return;
+          }
+
           if (!enc.isScanned) {
             enc.isScanned = true;
             this.credits += enc.rewardCredits;
@@ -1786,6 +1891,7 @@ export class DesktopApp {
       // CRITICAL ISSUE 3 & 4 FIX:
       // Always reset persistent and in-memory state on New Journey
       await saveManager.clearJourney();
+      this.shownContextHints.clear();
       this.storyDirector.reset();
       this.npcMemories = { ...DEFAULT_SAVE_SLOT.npcMemories };
       this.storyDirector.setNpcMemories(this.npcMemories);
@@ -1805,12 +1911,12 @@ export class DesktopApp {
       // Establish origin star system (0, 0, 0)
       const originSystem = this.sectorManager.getFullSystem(0, 0, 0);
       this.spaceScene.loadSystem(originSystem);
-      this.syncStoryEntitiesForSystem(originSystem);
+      this.reconcileStoryWorldState();
       await this.saveCurrentJourney();
 
       await storage.updateSettings({ introSeen: true });
 
-      // Trigger 18-second in-engine New Journey Cinematic with shooting stars
+      // Trigger in-engine New Journey Cinematic
       this.uiState = 'cinematic';
       this.uiContainer.innerHTML = '';
       this.newJourneyCinematic.play(
@@ -1857,10 +1963,17 @@ export class DesktopApp {
         slot.narrative.resonanceFlags || []
       );
     }
+    this.shownContextHints.clear();
+    if (slot.narrative?.triggeredEventIds) {
+      for (const id of slot.narrative.triggeredEventIds) {
+        this.shownContextHints.add(id);
+      }
+    }
     if (slot.story) {
       this.storyDirector.loadState(slot.story);
     }
-    this.syncStoryEntitiesForSystem(slot.currentSystem);
+    this.reconcileStoryWorldState();
+    this.storyObjectiveHud?.update(this.storyDirector.getState());
     if (slot.targetSystem) {
       this.holographicNavModal.activeCourseSystem = slot.targetSystem;
     }
@@ -1966,22 +2079,6 @@ export class DesktopApp {
   }
 
   public syncStoryEntitiesForSystem(system: StarSystemDescriptor | null): void {
-    if (this.activeSpaceStation) {
-      this.spaceScene.worldRoot.remove(this.activeSpaceStation.group);
-      this.activeSpaceStation.dispose();
-      this.activeSpaceStation = null;
-    }
-    if (this.activeNamedVessel) {
-      this.spaceScene.worldRoot.remove(this.activeNamedVessel.group);
-      this.activeNamedVessel.dispose();
-      this.activeNamedVessel = null;
-    }
-    if (this.activeHarmonicRelay) {
-      this.spaceScene.worldRoot.remove(this.activeHarmonicRelay.group);
-      this.activeHarmonicRelay.dispose();
-      this.activeHarmonicRelay = null;
-    }
-
     if (!system) return;
 
     this.storyDirector.emit({
@@ -1990,10 +2087,16 @@ export class DesktopApp {
       timestamp: Date.now(),
     });
 
+    this.reconcileStoryWorldState();
+  }
+
+  public reconcileStoryWorldState(): void {
+    const system = this.spaceScene?.currentSystem;
+    if (!system) return;
+
     const plan = StoryEncounterPlanner.planSystem(system, this.storyDirector);
 
-    // CRITICAL ISSUE 1 & 2 FIX:
-    // Incorporate story-injected anomalies into runtime system descriptor
+    // 1. Incorporate story-injected anomalies into runtime system descriptor
     if (!system.anomalies) {
       system.anomalies = [];
     }
@@ -2009,44 +2112,80 @@ export class DesktopApp {
     // Synchronize physical 3D encounter layer with augmented runtime descriptors
     this.spaceScene.syncAnomalies(system.anomalies);
 
+    // 2. Station reconciliation
     if (plan.injectedStation) {
-      this.activeSpaceStation = new SpaceStation({
-        ...plan.injectedStation,
-        position: new THREE.Vector3(
-          plan.injectedStation.position.x,
-          plan.injectedStation.position.y,
-          plan.injectedStation.position.z
-        ),
-      });
-      this.spaceScene.worldRoot.add(this.activeSpaceStation.group);
+      if (!this.activeSpaceStation || this.activeSpaceStation.id !== plan.injectedStation.id) {
+        if (this.activeSpaceStation) {
+          this.spaceScene.worldRoot.remove(this.activeSpaceStation.group);
+          this.activeSpaceStation.dispose();
+          this.activeSpaceStation = null;
+        }
+        this.activeSpaceStation = new SpaceStation({
+          ...plan.injectedStation,
+          position: new THREE.Vector3(
+            plan.injectedStation.position.x,
+            plan.injectedStation.position.y,
+            plan.injectedStation.position.z
+          ),
+        });
+        this.spaceScene.worldRoot.add(this.activeSpaceStation.group);
+      }
+    } else if (this.activeSpaceStation) {
+      this.spaceScene.worldRoot.remove(this.activeSpaceStation.group);
+      this.activeSpaceStation.dispose();
+      this.activeSpaceStation = null;
     }
 
+    // 3. Named Vessel reconciliation
     if (plan.injectedVessel) {
-      this.activeNamedVessel = new NamedVessel({
-        ...plan.injectedVessel,
-        species: 'nomad_avian',
-        position: new THREE.Vector3(
-          plan.injectedVessel.position.x,
-          plan.injectedVessel.position.y,
-          plan.injectedVessel.position.z
-        ),
-      });
-      this.spaceScene.worldRoot.add(this.activeNamedVessel.group);
+      if (!this.activeNamedVessel || this.activeNamedVessel.id !== plan.injectedVessel.id) {
+        if (this.activeNamedVessel) {
+          this.spaceScene.worldRoot.remove(this.activeNamedVessel.group);
+          this.activeNamedVessel.dispose();
+          this.activeNamedVessel = null;
+        }
+        this.activeNamedVessel = new NamedVessel({
+          ...plan.injectedVessel,
+          species: 'nomad_avian',
+          position: new THREE.Vector3(
+            plan.injectedVessel.position.x,
+            plan.injectedVessel.position.y,
+            plan.injectedVessel.position.z
+          ),
+        });
+        this.spaceScene.worldRoot.add(this.activeNamedVessel.group);
+      }
+    } else if (this.activeNamedVessel) {
+      this.spaceScene.worldRoot.remove(this.activeNamedVessel.group);
+      this.activeNamedVessel.dispose();
+      this.activeNamedVessel = null;
     }
 
+    // 4. Harmonic Relay reconciliation
     if (plan.injectedRelay) {
-      this.activeHarmonicRelay = new HarmonicRelay({
-        ...plan.injectedRelay,
-        position: new THREE.Vector3(
-          plan.injectedRelay.position.x,
-          plan.injectedRelay.position.y,
-          plan.injectedRelay.position.z
-        ),
-      });
-      this.spaceScene.worldRoot.add(this.activeHarmonicRelay.group);
+      if (!this.activeHarmonicRelay || this.activeHarmonicRelay.id !== plan.injectedRelay.id) {
+        if (this.activeHarmonicRelay) {
+          this.spaceScene.worldRoot.remove(this.activeHarmonicRelay.group);
+          this.activeHarmonicRelay.dispose();
+          this.activeHarmonicRelay = null;
+        }
+        this.activeHarmonicRelay = new HarmonicRelay({
+          ...plan.injectedRelay,
+          position: new THREE.Vector3(
+            plan.injectedRelay.position.x,
+            plan.injectedRelay.position.y,
+            plan.injectedRelay.position.z
+          ),
+        });
+        this.spaceScene.worldRoot.add(this.activeHarmonicRelay.group);
+      }
+    } else if (this.activeHarmonicRelay) {
+      this.spaceScene.worldRoot.remove(this.activeHarmonicRelay.group);
+      this.activeHarmonicRelay.dispose();
+      this.activeHarmonicRelay = null;
     }
 
-    // Refresh radar targets including planets, anomalies, and active story entities
+    // 5. Radar Targets with Story Highlights
     const extraRadarTargets: any[] = [];
     if (this.activeSpaceStation) {
       extraRadarTargets.push({
@@ -2055,6 +2194,8 @@ export class DesktopApp {
         type: 'station',
         position: this.activeSpaceStation.position,
         color: '#38bdf8',
+        isStoryTarget: true,
+        storyTag: 'RESEARCH OUTPOST',
       });
     }
     if (this.activeNamedVessel) {
@@ -2064,6 +2205,8 @@ export class DesktopApp {
         type: 'vessel',
         position: this.activeNamedVessel.position,
         color: '#c084fc',
+        isStoryTarget: true,
+        storyTag: 'NOMAD VESSEL',
       });
     }
     if (this.activeHarmonicRelay) {
@@ -2073,9 +2216,11 @@ export class DesktopApp {
         type: 'relay',
         position: this.activeHarmonicRelay.position,
         color: '#38bdf8',
+        isStoryTarget: true,
+        storyTag: 'HARMONIC RELAY',
       });
     }
-    this.navRadar.setPlanets(
+    this.navRadar?.setPlanets(
       this.spaceScene.activePlanetList,
       system.anomalies,
       this.spaceScene.activeCourierPod?.position,
@@ -2297,6 +2442,13 @@ export class DesktopApp {
       this.tutorialDirector.start();
     }
     this.renderFlightHUD(activeMode);
+    this.storyObjectiveHud.show();
+    const storyState = this.storyDirector.getState();
+    if (storyState.currentBeat === 'beat_0_awakening') {
+      this.storyPresentationDirector.beginStoryOpening();
+    } else {
+      this.storyPresentationDirector.refresh();
+    }
 
     // Initialize & display on-screen touch controls if on mobile, tablet, or touch screen
     if (isTouch) {

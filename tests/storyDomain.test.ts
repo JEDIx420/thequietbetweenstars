@@ -189,7 +189,8 @@ describe('Story Domain & Save v5 Migration', () => {
       anomalies: [],
     };
 
-    // At beat 0, planning advances to beat 1 and injects fragment alpha anomaly
+    // Advance to beat 1 and verify resonance anomaly injection
+    director.advanceBeat('beat_1_first_whisper');
     const planBeat1 = StoryEncounterPlanner.planSystem(mockSystem, director);
     expect(planBeat1.injectedAnomalies.length).toBe(1);
     expect(planBeat1.injectedAnomalies[0].signature?.isResonanceAnomaly).toBe(true);

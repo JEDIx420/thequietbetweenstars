@@ -145,18 +145,30 @@ export class TargetLockReticle {
     const distStr = target.distance !== undefined ? ` · ${target.distance}m` : '';
     this.labelEl.textContent = `[${target.name.toUpperCase()}${distStr}]`;
 
+    const isStory = target.id.startsWith('story_') ||
+      target.type === 'station' ||
+      target.type === 'vessel' ||
+      target.type === 'relay' ||
+      (target.data as any)?.anomalyDescriptor?.hasResonance ||
+      (target.data as any)?.anomalyDescriptor?.signature?.isResonanceAnomaly;
+
     const action = TargetLockSystem.getActionVerb(target);
-    const keyHint = isTouchDevice ? 'TAP / SCAN' : `${action.keyHint}: ${action.verb}`;
+    let keyHint = isTouchDevice ? 'TAP / SCAN' : `${action.keyHint}: ${action.verb}`;
+    if (isStory && (target.type === 'encounter' || target.type === 'anomaly')) {
+      keyHint = isTouchDevice ? 'HOLD SENSOR: STAGED SCAN' : 'HOLD SPACE: STAGED RESONANCE SCAN';
+    }
     this.actionEl.textContent = keyHint;
 
     // Color theme based on target type
-    const accent = target.isSentient
-      ? '#4ade80' // Green for sentient giants/titans
-      : target.type === 'encounter' || target.type === 'anomaly'
-        ? '#f59e0b' // Amber for anomalies/encounters
-        : target.type === 'courier'
-          ? '#c084fc' // Purple for courier
-          : '#38bdf8'; // Blue for creatures/planets/landmarks
+    const accent = isStory
+      ? '#38bdf8' // Vibrant resonance cyan
+      : target.isSentient
+        ? '#4ade80' // Green for sentient giants/titans
+        : target.type === 'encounter' || target.type === 'anomaly'
+          ? '#f59e0b' // Amber for anomalies/encounters
+          : target.type === 'courier'
+            ? '#c084fc' // Purple for courier
+            : '#38bdf8'; // Blue for creatures/planets/landmarks
 
     this.labelEl.style.color = accent;
   }

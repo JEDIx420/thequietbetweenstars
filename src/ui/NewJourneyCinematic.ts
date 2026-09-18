@@ -55,14 +55,14 @@ export class NewJourneyCinematic {
 
     // Dynamic camera keyframes for high-drama sweep
     const kfs: CinematicKeyframe[] = [
-      // 0s - 4.5s: SCENE 1 - Beyond the Last Route
+      // 0s - 4.5s: SCENE 1 - The Quiet
       {
         timeSeconds: 0,
         cameraPosition: shipPosition.clone().add(new THREE.Vector3(140, 60, 210)),
         targetPosition: shipPosition.clone().add(new THREE.Vector3(0, -10, -60)),
         fov: 48,
-        captionTitle: 'BEYOND THE LAST ROUTE',
-        captionBody: 'The settled lanes end here. Ahead are star systems no one has surveyed, worlds no one has named, and signals no one has explained.',
+        captionTitle: 'THE QUIET',
+        captionBody: 'For generations, humanity mapped the bright lanes between settled worlds. But beyond those routes, the galaxy remains mostly silent.',
       },
       {
         timeSeconds: 4.5,
@@ -78,7 +78,7 @@ export class NewJourneyCinematic {
         targetPosition: shipPosition.clone().add(new THREE.Vector3(0, 4, 10)),
         fov: 46,
         captionTitle: 'YOUR ASSIGNMENT',
-        captionBody: 'Fly where you want. Scan distant worlds, descend to their surfaces, catalogue what lives there, and see what the maps have missed.',
+        captionBody: 'You are an independent deep-range survey pilot aboard the SC-1. You explore, you catalogue, and you investigate what other expeditions missed—from living planetary surfaces to uncharted anomalies.',
       },
       {
         timeSeconds: 9.0,
@@ -87,14 +87,14 @@ export class NewJourneyCinematic {
         fov: 52,
       },
 
-      // 9.0s - 13.5s: SCENE 3 - Your Ship
+      // 9.0s - 13.5s: SCENE 3 - Something in the Static
       {
         timeSeconds: 9.01,
         cameraPosition: shipPosition.clone().add(new THREE.Vector3(12, -3, 14)),
         targetPosition: shipPosition.clone().add(new THREE.Vector3(0, 0, -2)),
         fov: 44,
-        captionTitle: 'YOUR SHIP',
-        captionBody: 'The SC-1 is a survey craft, not a warship. Fly it by hand or let the autopilot hold a course. Everything else begins with curiosity.',
+        captionTitle: 'SOMETHING IN THE STATIC',
+        captionBody: 'For the first time, long-range instruments detect something beneath cosmic noise: a repeating harmonic carrier wave, mathematically structured and too precise to be natural.',
       },
       {
         timeSeconds: 13.5,
@@ -103,14 +103,14 @@ export class NewJourneyCinematic {
         fov: 58,
       },
 
-      // 13.5s - 17.0s: SCENE 4 - No Finish Line (Ignition)
+      // 13.5s - 17.0s: SCENE 4 - The Journey (Ignition)
       {
         timeSeconds: 13.51,
         cameraPosition: shipPosition.clone().add(new THREE.Vector3(0, 3.8, 14.5)),
         targetPosition: shipPosition.clone().add(new THREE.Vector3(0, 0, -50)),
         fov: 68,
-        captionTitle: 'NO FINISH LINE',
-        captionBody: 'Follow strange signals. Meet whatever is out there. Upgrade the ship as the journey grows. There is no battle to win — only more universe to find.',
+        captionTitle: 'THE JOURNEY',
+        captionBody: 'Follow the signal into the dark, or choose another star. The universe will still be there.',
       },
       {
         timeSeconds: 17.0,

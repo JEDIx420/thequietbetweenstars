@@ -39,6 +39,10 @@ export class NarrativeDirector {
     return Array.from(this.resonanceFlags);
   }
 
+  public recordTriggeredEvent(id: string): void {
+    this.triggeredEvents.add(id);
+  }
+
   public hasTriggered(type: NarrativeEventType, key = 'default'): boolean {
     return this.triggeredEvents.has(`${type}:${key}`);
   }
