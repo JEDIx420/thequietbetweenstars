@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { PlanetDescriptor } from '../systems/PlanetDescriptor';
 import type { LandingSite } from '../systems/LandingSiteGenerator';
+import { HapticFeedback } from '../input/HapticFeedback';
 
 export class AtmosphericEntrySequence {
   private container: HTMLElement;
@@ -51,12 +52,8 @@ export class AtmosphericEntrySequence {
       // Gracefully ignore if compile is unsupported in mock environments
     }
 
-    // Trigger subtle mobile vibration sequence if supported
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      try {
-        navigator.vibrate([40, 60, 80, 50, 30]);
-      } catch {}
-    }
+    // Trigger tactile entry shudder (hardware vibration + audio micro-haptic tick)
+    HapticFeedback.heavy();
 
     this.animate();
   }

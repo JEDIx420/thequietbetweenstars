@@ -1,5 +1,6 @@
 import type { TouchInput } from './TouchInput';
 import { clamp, applyDeadzone } from '../../protocol';
+import { HapticFeedback } from './HapticFeedback';
 
 export function isTouchDevice(): boolean {
   if (typeof window === 'undefined') return false;
@@ -23,6 +24,7 @@ export class TouchControls {
   private joystickRadius = 55;
   private joystickBaseEl!: HTMLElement;
   private joystickKnobEl!: HTMLElement;
+  private isJoystickEngaged = false;
 
   // Throttle state
   private throttlePointerId: number | null = null;
@@ -31,6 +33,7 @@ export class TouchControls {
   private throttleFillEl!: HTMLElement;
   private throttleKnobEl!: HTMLElement;
   private throttleLabelEl!: HTMLElement;
+  private lastThrottleDetent = -1; // 0: idle, 1: cruise 50%, 2: overdrive 100%
 
   // Action buttons
   private scanBtnEl!: HTMLElement;
@@ -82,6 +85,8 @@ export class TouchControls {
       user-select: none;
       -webkit-user-select: none;
       -webkit-touch-callout: none;
+      touch-action: none;
+      overscroll-behavior: none;
       z-index: 50;
       display: flex;
       flex-direction: column;
@@ -93,6 +98,11 @@ export class TouchControls {
 
     this.container.innerHTML = `
       <style>
+        #touch-controls-overlay,
+        #touch-controls-overlay * {
+          touch-action: none;
+          -webkit-touch-callout: none;
+        }
         #touch-controls-overlay button:active {
           transform: scale(0.94);
         }
@@ -694,10 +704,21 @@ export class TouchControls {
   private setupJoystickEvents(): void {
     const zone = this.container.querySelector('#touch-joystick-zone') as HTMLElement;
 
+    // Prevent iOS Safari gesture recognition & fullscreen cancellation on touch
+    const preventTouch = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+    };
+    zone.addEventListener('touchstart', preventTouch, { passive: false });
+    zone.addEventListener('touchmove', preventTouch, { passive: false });
+    zone.addEventListener('touchend', preventTouch, { passive: false });
+
     const handlePointerDown = (e: PointerEvent) => {
+      if (e.cancelable) e.preventDefault();
       if (this.joystickPointerId !== null) return;
       this.joystickPointerId = e.pointerId;
-      zone.setPointerCapture(e.pointerId);
+      try {
+        zone.setPointerCapture(e.pointerId);
+      } catch {}
 
       const rect = this.joystickBaseEl.getBoundingClientRect();
       this.joystickCenter = {
@@ -709,20 +730,28 @@ export class TouchControls {
         this.joystickRadius = measuredRadius;
       }
 
+      HapticFeedback.light();
       this.updateJoystick(e.clientX, e.clientY);
     };
 
     const handlePointerMove = (e: PointerEvent) => {
+      if (e.cancelable) e.preventDefault();
       if (e.pointerId !== this.joystickPointerId) return;
       this.updateJoystick(e.clientX, e.clientY);
     };
 
     const handlePointerUp = (e: PointerEvent) => {
+      if (e.cancelable) e.preventDefault();
       if (e.pointerId !== this.joystickPointerId) return;
       this.joystickPointerId = null;
       try {
         zone.releasePointerCapture(e.pointerId);
       } catch {}
+
+      if (this.isJoystickEngaged) {
+        this.isJoystickEngaged = false;
+        HapticFeedback.light();
+      }
 
       // Reset joystick knob with smooth center return
       this.joystickKnobEl.style.transform = 'translate(0px, 0px)';
@@ -748,6 +777,16 @@ export class TouchControls {
 
     this.joystickKnobEl.style.transform = `translate(${knobX}px, ${knobY}px)`;
 
+    // Detect engaging deflection beyond deadzone for tactile click
+    if (clampedDist > 12) {
+      if (!this.isJoystickEngaged) {
+        this.isJoystickEngaged = true;
+        HapticFeedback.light();
+      }
+    } else {
+      this.isJoystickEngaged = false;
+    }
+
     // Normalized axes (-1 to 1) with deadzone
     const normX = applyDeadzone(knobX / this.joystickRadius, 0.06);
     // Y is inverted for flight pitch (pushing forward = pitch down / nose down)
@@ -759,22 +798,36 @@ export class TouchControls {
   private setupThrottleEvents(): void {
     const track = this.container.querySelector('#touch-throttle-track') as HTMLElement;
 
+    // Prevent iOS Safari gesture recognition & fullscreen cancellation on touch
+    const preventTrackTouch = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+    };
+    track.addEventListener('touchstart', preventTrackTouch, { passive: false });
+    track.addEventListener('touchmove', preventTrackTouch, { passive: false });
+    track.addEventListener('touchend', preventTrackTouch, { passive: false });
+
     const handlePointerDown = (e: PointerEvent) => {
+      if (e.cancelable) e.preventDefault();
       if (this.throttlePointerId !== null) return;
       this.throttlePointerId = e.pointerId;
-      track.setPointerCapture(e.pointerId);
+      try {
+        track.setPointerCapture(e.pointerId);
+      } catch {}
       const rect = this.throttleTrackEl.getBoundingClientRect();
       this.cachedThrottleTrackHeight = rect.height || 136;
       this.cachedThrottleTrackBottom = rect.bottom;
+      HapticFeedback.light();
       this.updateThrottleFromPointer(e.clientY);
     };
 
     const handlePointerMove = (e: PointerEvent) => {
+      if (e.cancelable) e.preventDefault();
       if (e.pointerId !== this.throttlePointerId) return;
       this.updateThrottleFromPointer(e.clientY);
     };
 
     const handlePointerUp = (e: PointerEvent) => {
+      if (e.cancelable) e.preventDefault();
       if (e.pointerId !== this.throttlePointerId) return;
       this.throttlePointerId = null;
       try {
@@ -790,10 +843,11 @@ export class TouchControls {
 
     // Brake button
     const brakeBtn = this.container.querySelector('#touch-btn-brake') as HTMLElement;
-    brakeBtn.addEventListener('pointerdown', () => {
+    brakeBtn.addEventListener('pointerdown', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.setThrottle(0);
       this.touchInput.triggerAction('pause');
-      navigator.vibrate?.(20);
+      HapticFeedback.heavy();
     });
   }
 
@@ -808,6 +862,26 @@ export class TouchControls {
   public setThrottle(val: number): void {
     this.currentThrottle = clamp(val, 0, 1);
     const percent = Math.round(this.currentThrottle * 100);
+
+    // Detent notch haptics: idle (0%), cruise (50%), overdrive (100%)
+    if (this.currentThrottle <= 0.02) {
+      if (this.lastThrottleDetent !== 0) {
+        this.lastThrottleDetent = 0;
+        HapticFeedback.notch();
+      }
+    } else if (Math.abs(this.currentThrottle - 0.5) <= 0.035) {
+      if (this.lastThrottleDetent !== 1) {
+        this.lastThrottleDetent = 1;
+        HapticFeedback.notch();
+      }
+    } else if (this.currentThrottle >= 0.96) {
+      if (this.lastThrottleDetent !== 2) {
+        this.lastThrottleDetent = 2;
+        HapticFeedback.notch();
+      }
+    } else if ((this.currentThrottle > 0.06 && this.currentThrottle < 0.44) || (this.currentThrottle > 0.56 && this.currentThrottle < 0.92)) {
+      this.lastThrottleDetent = -1;
+    }
 
     // Update fill height & knob position using cached track height to avoid layout thrashing
     this.throttleFillEl.style.height = `${percent}%`;
@@ -832,7 +906,8 @@ export class TouchControls {
 
   private setupActionEvents(): void {
     // SCAN / SENSOR / TRACTOR button: tap to scan, hold to continuously scan or tractor
-    this.scanBtnEl.addEventListener('pointerdown', () => {
+    this.scanBtnEl.addEventListener('pointerdown', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.isHoldingTractor = false;
       this.scanBtnEl.style.transform = 'scale(0.95)';
       this.scanBtnEl.textContent = '📡 SCANNING...';
@@ -843,7 +918,7 @@ export class TouchControls {
       // Immediately set scan and interact state down
       this.touchInput.setActionState('scan', true);
       this.touchInput.setActionState('interact', true);
-      navigator.vibrate?.(25);
+      HapticFeedback.scan();
 
       const timerFn = typeof window !== 'undefined' && window.setTimeout ? window.setTimeout.bind(window) : setTimeout;
       this.tractorTimer = timerFn(() => {
@@ -853,11 +928,12 @@ export class TouchControls {
         this.scanBtnEl.style.borderColor = '#c084fc';
         this.scanBtnEl.style.boxShadow = '0 0 18px rgba(192, 132, 252, 0.8)';
         this.touchInput.setActionState('tractor', true);
-        navigator.vibrate?.([20, 30, 20]);
+        HapticFeedback.medium();
       }, 350) as any;
     });
 
-    const releaseScan = () => {
+    const releaseScan = (e?: Event) => {
+      if (e?.cancelable) e.preventDefault();
       this.scanBtnEl.style.transform = 'scale(1)';
       this.scanBtnEl.style.boxShadow = 'none';
       if (this.tractorTimer !== null) {
@@ -876,6 +952,7 @@ export class TouchControls {
 
       // Trigger action tick for instant tap consumers
       this.touchInput.triggerAction('scan');
+      HapticFeedback.light();
     };
 
     this.scanBtnEl.addEventListener('pointerup', releaseScan);
@@ -883,83 +960,97 @@ export class TouchControls {
     this.scanBtnEl.addEventListener('pointerleave', releaseScan);
 
     // Map button (Left Thumb)
-    this.mapBtnEl.addEventListener('click', () => {
+    this.mapBtnEl.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.touchInput.triggerAction('map');
-      navigator.vibrate?.(15);
+      HapticFeedback.light();
     });
 
     // Target button (Left Thumb: lock on target ahead / cycle lock)
-    this.targetBtnEl?.addEventListener('click', () => {
+    this.targetBtnEl?.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.touchInput.triggerAction('target_lock');
       this.touchInput.triggerAction('cycle_target');
-      navigator.vibrate?.(15);
+      HapticFeedback.medium();
     });
 
     // Orbit / Land button
-    this.orbitBtnEl.addEventListener('click', () => {
+    this.orbitBtnEl.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
       if (this.currentContext === 'surface') {
         this.touchInput.triggerAction('cancel'); // Return to orbit
       } else {
         this.touchInput.triggerAction('confirm'); // Land / engage orbit
       }
-      navigator.vibrate?.(15);
+      HapticFeedback.medium();
     });
 
     // Altitude controls (surface hover)
-    this.altUpBtnEl.addEventListener('click', () => {
+    this.altUpBtnEl.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.touchInput.triggerAction('altitude_up');
-      navigator.vibrate?.(10);
+      HapticFeedback.light();
     });
 
-    this.altDownBtnEl.addEventListener('click', () => {
+    this.altDownBtnEl.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.touchInput.triggerAction('altitude_down');
-      navigator.vibrate?.(10);
+      HapticFeedback.light();
     });
 
     // Modules / Store
-    this.upgradeBtnEl.addEventListener('click', () => {
+    this.upgradeBtnEl.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.touchInput.triggerAction('supply');
-      navigator.vibrate?.(15);
+      HapticFeedback.light();
     });
 
     // Journal
-    this.journalBtnEl.addEventListener('click', () => {
+    this.journalBtnEl.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.touchInput.triggerAction('journal');
-      navigator.vibrate?.(15);
+      HapticFeedback.light();
     });
 
     // Toggle touch controls visibility
-    this.toggleBtnEl.addEventListener('click', () => {
+    this.toggleBtnEl.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.toggleVisibility();
+      HapticFeedback.light();
     });
 
     // Emote Drawer Toggle & Close
-    this.container.querySelector('#touch-btn-emote-toggle')?.addEventListener('click', () => {
+    this.container.querySelector('#touch-btn-emote-toggle')?.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.toggleEmoteDrawer();
-      navigator.vibrate?.(10);
+      HapticFeedback.light();
     });
 
-    this.container.querySelector('#touch-btn-emote-close')?.addEventListener('click', () => {
+    this.container.querySelector('#touch-btn-emote-close')?.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.closeEmoteDrawer();
     });
 
     // In-Flight Radio Emote Actions (Auto-collapse drawer upon transmit)
-    this.container.querySelector('#touch-btn-emote-wave')?.addEventListener('click', () => {
+    this.container.querySelector('#touch-btn-emote-wave')?.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.onEmoteCallback?.('wave');
       this.closeEmoteDrawer();
-      navigator.vibrate?.(25);
+      HapticFeedback.medium();
     });
 
-    this.container.querySelector('#touch-btn-emote-heart')?.addEventListener('click', () => {
+    this.container.querySelector('#touch-btn-emote-heart')?.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.onEmoteCallback?.('heart');
       this.closeEmoteDrawer();
-      navigator.vibrate?.(25);
+      HapticFeedback.medium();
     });
 
-    this.container.querySelector('#touch-btn-emote-peace')?.addEventListener('click', () => {
+    this.container.querySelector('#touch-btn-emote-peace')?.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
       this.onEmoteCallback?.('peace');
       this.closeEmoteDrawer();
-      navigator.vibrate?.(25);
+      HapticFeedback.medium();
     });
   }
 

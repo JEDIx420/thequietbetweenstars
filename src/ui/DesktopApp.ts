@@ -3,6 +3,7 @@ import { audio } from '../audio/AudioEngine';
 import { storage } from '../persistence/StorageManager';
 import { InputManager } from '../game/input/InputManager';
 import { TouchControls, isTouchDevice } from '../game/input/TouchControls';
+import { HapticFeedback } from '../game/input/HapticFeedback';
 import { GameRenderer } from '../game/rendering/renderer';
 import { SpaceScene } from '../game/scenes/spaceScene';
 import { SurfaceScene } from '../game/surface/SurfaceScene';
@@ -197,7 +198,7 @@ export class DesktopApp {
 
     this.touchLayer = document.createElement('div');
     this.touchLayer.id = 'touch-controls-layer';
-    this.touchLayer.style.cssText = 'position: fixed; inset: 0; z-index: 40; pointer-events: none;';
+    this.touchLayer.style.cssText = 'position: fixed; inset: 0; z-index: 40; pointer-events: none; touch-action: none; overscroll-behavior: none;';
 
     this.container.appendChild(this.canvasContainer);
     this.container.appendChild(this.uiContainer);
@@ -208,6 +209,7 @@ export class DesktopApp {
     this.setupAudioUnlockListeners();
     this.setupOrientationHandler();
     this.setupVisibilityListener();
+    this.setupGesturePreventListeners();
     this.initTouchControls();
 
     // Seamlessly transition initial preloader into live space title sequence
@@ -1541,7 +1543,7 @@ export class DesktopApp {
       const hit = this.targetLockSystem.findTargetFromRay(raycaster.ray, candidates, 35);
       if (hit) {
         audio.playBlip();
-        navigator.vibrate?.([20, 30]);
+        HapticFeedback.medium();
         this.showHudNotice(`TARGET ACQUIRED // ${hit.name.toUpperCase()}`);
         if (hit.isSentient && hit.data?.npcData) {
           this.startGiantConversation(hit.data.npcData);
@@ -1563,7 +1565,7 @@ export class DesktopApp {
       const hit = this.targetLockSystem.findTargetFromRay(raycaster.ray, candidates, 50);
       if (hit) {
         audio.playBlip();
-        navigator.vibrate?.([20, 30]);
+        HapticFeedback.medium();
         this.showHudNotice(`TARGET ACQUIRED // ${hit.name.toUpperCase()}`);
         if (hit.type === 'encounter') {
           const enc = hit.data as SpaceEncounter;
@@ -1799,6 +1801,125 @@ export class DesktopApp {
       }
     };
     document.addEventListener('visibilitychange', this.boundVisibilityHandler);
+  }
+
+  private setupGesturePreventListeners(): void {
+    // Prevent iOS Safari rubber-band scrolling, overscroll navigation, and pull-to-refresh
+    document.addEventListener(
+      'touchmove',
+      (e: TouchEvent) => {
+        const target = e.target as HTMLElement | null;
+        if (target && target.closest('.modal-scrollable, .briefing-scroll, pre, textarea, [data-scrollable="true"]')) {
+          return;
+        }
+        if (e.cancelable) {
+          e.preventDefault();
+        }
+      },
+      { passive: false }
+    );
+
+    // Prevent Safari two-finger pinch/gesture navigation that cancels fullscreen on iPad
+    document.addEventListener(
+      'gesturestart',
+      (e: Event) => {
+        if (e.cancelable) e.preventDefault();
+      },
+      { passive: false }
+    );
+    document.addEventListener(
+      'gesturechange',
+      (e: Event) => {
+        if (e.cancelable) e.preventDefault();
+      },
+      { passive: false }
+    );
+  }
+
+  public isFullscreen(): boolean {
+    const doc = document as any;
+    return !!(
+      doc.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      document.documentElement.classList.contains('app-pseudo-fullscreen')
+    );
+  }
+
+  public updateFullscreenIcons(): void {
+    const isFs = this.isFullscreen();
+    const icon = isFs ? '🗗' : '⛶';
+    const title = isFs ? 'Exit Fullscreen' : 'Toggle Fullscreen';
+
+    const btn = this.uiContainer?.querySelector('#btn-toggle-fullscreen') as HTMLButtonElement | null;
+    if (btn) {
+      btn.innerHTML = icon;
+      btn.title = title;
+    }
+    const surfaceBtn = this.uiContainer?.querySelector('#btn-surface-fullscreen') as HTMLButtonElement | null;
+    if (surfaceBtn) {
+      surfaceBtn.innerHTML = icon;
+      surfaceBtn.title = title;
+    }
+  }
+
+  public async toggleFullscreen(): Promise<void> {
+    audio.playBlip();
+    HapticFeedback.medium();
+
+    const doc = document as any;
+    const docEl = document.documentElement as any;
+    const body = document.body;
+    const isNativeFs = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+    const isPseudoFs = docEl.classList.contains('app-pseudo-fullscreen');
+
+    if (isNativeFs || isPseudoFs) {
+      // Exit fullscreen
+      if (isPseudoFs) {
+        docEl.classList.remove('app-pseudo-fullscreen');
+        body.classList.remove('app-pseudo-fullscreen');
+      }
+      if (isNativeFs) {
+        try {
+          if (doc.exitFullscreen) {
+            await doc.exitFullscreen();
+          } else if (doc.webkitExitFullscreen) {
+            await doc.webkitExitFullscreen();
+          }
+        } catch (err) {
+          console.warn('[DesktopApp] Exit fullscreen error:', err);
+        }
+      }
+    } else {
+      // Enter fullscreen
+      let enteredNative = false;
+      if (docEl.requestFullscreen) {
+        try {
+          await docEl.requestFullscreen({ navigationUI: 'hide' });
+          enteredNative = true;
+        } catch (err) {
+          console.warn('[DesktopApp] requestFullscreen failed, using pseudo-fullscreen fallback:', err);
+        }
+      } else if (docEl.webkitRequestFullscreen) {
+        try {
+          await docEl.webkitRequestFullscreen();
+          enteredNative = true;
+        } catch (err) {
+          console.warn('[DesktopApp] webkitRequestFullscreen failed, using pseudo-fullscreen fallback:', err);
+        }
+      }
+
+      // If native fullscreen was not supported or failed (e.g. iOS iPhone Safari)
+      if (!enteredNative) {
+        docEl.classList.add('app-pseudo-fullscreen');
+        body.classList.add('app-pseudo-fullscreen');
+        window.scrollTo(0, 0);
+      }
+    }
+
+    setTimeout(() => {
+      this.renderer?.handleResize();
+      this.updateFullscreenIcons();
+    }, 100);
   }
 
   private updateControlContext(phase: FlightPhase): void {
@@ -3114,39 +3235,13 @@ export class DesktopApp {
     });
 
     // Minimal Fullscreen Toggle
-    const updateFsIcon = () => {
-      const isFs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
-      const btn = this.uiContainer.querySelector('#btn-toggle-fullscreen') as HTMLButtonElement;
-      if (btn) {
-        btn.innerHTML = isFs ? '🗗' : '⛶';
-        btn.title = isFs ? 'Exit Fullscreen' : 'Toggle Fullscreen';
-      }
-    };
-
-    this.uiContainer.querySelector('#btn-toggle-fullscreen')?.addEventListener('click', async () => {
-      audio.playBlip();
-      try {
-        if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
-          if (document.documentElement.requestFullscreen) {
-            await document.documentElement.requestFullscreen();
-          } else if ((document.documentElement as any).webkitRequestFullscreen) {
-            await (document.documentElement as any).webkitRequestFullscreen();
-          }
-        } else {
-          if (document.exitFullscreen) {
-            await document.exitFullscreen();
-          } else if ((document as any).webkitExitFullscreen) {
-            await (document as any).webkitExitFullscreen();
-          }
-        }
-      } catch (err) {
-        console.warn('[DesktopApp] Fullscreen error:', err);
-      }
-      updateFsIcon();
+    this.uiContainer.querySelector('#btn-toggle-fullscreen')?.addEventListener('click', () => {
+      this.toggleFullscreen();
     });
 
-    document.addEventListener('fullscreenchange', updateFsIcon);
-    document.addEventListener('webkitfullscreenchange', updateFsIcon);
+    document.addEventListener('fullscreenchange', () => this.updateFullscreenIcons());
+    document.addEventListener('webkitfullscreenchange', () => this.updateFullscreenIcons());
+    this.updateFullscreenIcons();
     this.cacheHudElements();
   }
 
@@ -3438,39 +3533,13 @@ export class DesktopApp {
       if (btn) btn.textContent = isMuted ? '🔇' : '🔊';
     });
 
-    const updateSurfaceFsIcon = () => {
-      const isFs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
-      const btn = this.uiContainer.querySelector('#btn-surface-fullscreen') as HTMLButtonElement;
-      if (btn) {
-        btn.innerHTML = isFs ? '🗗' : '⛶';
-        btn.title = isFs ? 'Exit Fullscreen' : 'Toggle Fullscreen';
-      }
-    };
-
-    this.uiContainer.querySelector('#btn-surface-fullscreen')?.addEventListener('click', async () => {
-      audio.playBlip();
-      try {
-        if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
-          if (document.documentElement.requestFullscreen) {
-            await document.documentElement.requestFullscreen();
-          } else if ((document.documentElement as any).webkitRequestFullscreen) {
-            await (document.documentElement as any).webkitRequestFullscreen();
-          }
-        } else {
-          if (document.exitFullscreen) {
-            await document.exitFullscreen();
-          } else if ((document as any).webkitExitFullscreen) {
-            await (document as any).webkitExitFullscreen();
-          }
-        }
-      } catch (err) {
-        console.warn('[DesktopApp] Fullscreen error:', err);
-      }
-      updateSurfaceFsIcon();
+    this.uiContainer.querySelector('#btn-surface-fullscreen')?.addEventListener('click', () => {
+      this.toggleFullscreen();
     });
 
-    document.addEventListener('fullscreenchange', updateSurfaceFsIcon);
-    document.addEventListener('webkitfullscreenchange', updateSurfaceFsIcon);
+    document.addEventListener('fullscreenchange', () => this.updateFullscreenIcons());
+    document.addEventListener('webkitfullscreenchange', () => this.updateFullscreenIcons());
+    this.updateFullscreenIcons();
     this.cacheHudElements();
   }
 

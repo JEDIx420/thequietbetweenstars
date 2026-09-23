@@ -951,6 +951,27 @@ export class AudioDirector {
     osc.stop(now + 0.09);
   }
 
+  public playHapticTick(frequency = 120, duration = 0.02, volume = 0.08): void {
+    if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
+    try {
+      const now = this.webAudioCtx.currentTime;
+      const osc = this.webAudioCtx.createOscillator();
+      const gain = this.webAudioCtx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(frequency, now);
+      osc.frequency.exponentialRampToValueAtTime(35, now + duration);
+
+      gain.gain.setValueAtTime(volume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+      osc.connect(gain);
+      gain.connect(this.webAudioMasterGain);
+      osc.start(now);
+      osc.stop(now + duration + 0.005);
+    } catch {}
+  }
+
   public playConnectChime(): void {
     if (!this.webAudioCtx || !this.webAudioMasterGain || this.isMuted) return;
     const now = this.webAudioCtx.currentTime;
