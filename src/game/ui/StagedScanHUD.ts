@@ -32,20 +32,20 @@ export class StagedScanHUD {
       user-select: none;
       display: none;
       opacity: 0;
-      transition: opacity 0.25s ease, transform 0.25s ease;
+      transition: opacity 0.2s ease, transform 0.2s ease;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      width: min(92vw, 420px);
+      width: min(88vw, 290px);
     `;
 
     const style = document.createElement('style');
     style.textContent = `
       #hud-staged-scan-banner .scan-card {
-        background: rgba(10, 16, 28, 0.92);
-        border: 1px solid rgba(56, 189, 248, 0.45);
-        border-radius: 10px;
-        padding: 10px 14px;
-        backdrop-filter: blur(14px);
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7), 0 0 20px rgba(56, 189, 248, 0.15);
+        background: rgba(10, 16, 28, 0.88);
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        border-radius: 6px;
+        padding: 6px 10px;
+        backdrop-filter: blur(12px);
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6), 0 0 12px rgba(56, 189, 248, 0.12);
         position: relative;
         overflow: hidden;
       }
@@ -56,7 +56,7 @@ export class StagedScanHUD {
         left: -100%;
         width: 100%;
         height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.15), transparent);
+        background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.12), transparent);
         animation: hud-scan-sweep 3s infinite linear;
         pointer-events: none;
       }
@@ -65,23 +65,23 @@ export class StagedScanHUD {
         100% { left: 100%; }
       }
       @keyframes hud-scan-pulse {
-        0%, 100% { opacity: 0.9; filter: drop-shadow(0 0 4px #38bdf8); }
-        50% { opacity: 1; filter: drop-shadow(0 0 12px #c084fc); }
+        0%, 100% { opacity: 0.9; filter: drop-shadow(0 0 3px #38bdf8); }
+        50% { opacity: 1; filter: drop-shadow(0 0 8px #c084fc); }
       }
       #hud-staged-scan-banner.scanning-active .scan-bar-fill {
         animation: hud-scan-pulse 0.8s infinite ease-in-out;
       }
       #hud-staged-scan-banner.stage-flash .scan-card {
         border-color: #38bdf8;
-        box-shadow: 0 0 35px rgba(56, 189, 248, 0.8);
+        box-shadow: 0 0 24px rgba(56, 189, 248, 0.7);
       }
       @media (pointer: coarse), (max-width: 768px) {
         #hud-staged-scan-banner {
-          bottom: max(68px, env(safe-area-inset-bottom, 68px));
-          width: min(94vw, 360px);
+          bottom: max(64px, env(safe-area-inset-bottom, 64px));
+          width: min(90vw, 270px);
         }
         #hud-staged-scan-banner .scan-card {
-          padding: 8px 10px;
+          padding: 5px 8px;
         }
       }
     `;
@@ -90,81 +90,108 @@ export class StagedScanHUD {
     this.cardEl = document.createElement('div');
     this.cardEl.className = 'scan-card';
 
-    // Header Row: Target Name / Frequency
+    // Header Row: Target Name / Stage Pips + Frequency
     const headerRow = document.createElement('div');
     headerRow.style.cssText = `
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     `;
 
     this.titleEl = document.createElement('div');
     this.titleEl.style.cssText = `
-      font-size: 11px;
+      font-size: 9.5px;
       font-weight: 700;
-      letter-spacing: 0.12em;
+      letter-spacing: 0.08em;
       color: #38bdf8;
       text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 170px;
     `;
     this.titleEl.textContent = 'HARMONIC RESONANCE SCANNER';
 
+    const headerRight = document.createElement('div');
+    headerRight.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    `;
+
+    this.stagePipsEl = document.createElement('div');
+    this.stagePipsEl.style.cssText = `
+      display: flex;
+      gap: 3px;
+      align-items: center;
+    `;
+
     this.freqBadgeEl = document.createElement('div');
     this.freqBadgeEl.style.cssText = `
-      font-size: 9px;
+      font-size: 8px;
       font-weight: 600;
-      color: #a855f7;
+      color: #c084fc;
       background: rgba(168, 85, 247, 0.15);
-      border: 1px solid rgba(168, 85, 247, 0.4);
-      border-radius: 4px;
-      padding: 1px 6px;
-      letter-spacing: 0.05em;
+      border: 1px solid rgba(168, 85, 247, 0.35);
+      border-radius: 3px;
+      padding: 1px 4px;
+      letter-spacing: 0.04em;
     `;
     this.freqBadgeEl.textContent = '432.8 Hz';
 
+    headerRight.appendChild(this.stagePipsEl);
+    headerRight.appendChild(this.freqBadgeEl);
     headerRow.appendChild(this.titleEl);
-    headerRow.appendChild(this.freqBadgeEl);
+    headerRow.appendChild(headerRight);
     this.cardEl.appendChild(headerRow);
 
-    // Stage Info Row
+    // Stage Subtitle & Percent Row
     const stageRow = document.createElement('div');
     stageRow.style.cssText = `
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 6px;
+      margin-bottom: 3px;
     `;
 
     this.stageTitleEl = document.createElement('div');
     this.stageTitleEl.style.cssText = `
-      font-size: 10px;
+      font-size: 8.5px;
       font-weight: 600;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.04em;
       color: #94a3b8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 210px;
     `;
-    this.stageTitleEl.textContent = 'STAGE 1/4: FREQUENCY SYNCHRONIZATION';
+    this.stageTitleEl.textContent = 'STAGE 1/3: FREQ SYNC';
 
-    this.stagePipsEl = document.createElement('div');
-    this.stagePipsEl.style.cssText = `
-      display: flex;
-      gap: 4px;
-      align-items: center;
+    this.progressPercentEl = document.createElement('div');
+    this.progressPercentEl.style.cssText = `
+      font-size: 8.5px;
+      font-weight: 700;
+      color: #38bdf8;
+      letter-spacing: 0.04em;
     `;
+    this.progressPercentEl.textContent = '0%';
+
     stageRow.appendChild(this.stageTitleEl);
-    stageRow.appendChild(this.stagePipsEl);
+    stageRow.appendChild(this.progressPercentEl);
     this.cardEl.appendChild(stageRow);
 
-    // Progress Bar Track & Fill
+    // Slim Progress Bar Track & Fill (4px height)
     const barWrap = document.createElement('div');
     barWrap.style.cssText = `
       position: relative;
       width: 100%;
-      height: 10px;
-      background: rgba(15, 23, 42, 0.95);
-      border: 1px solid rgba(56, 189, 248, 0.35);
-      border-radius: 5px;
+      height: 4px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      border-radius: 2px;
       overflow: hidden;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     `;
 
     this.progressBarFillEl = document.createElement('div');
@@ -174,72 +201,48 @@ export class StagedScanHUD {
       height: 100%;
       background: linear-gradient(90deg, #38bdf8, #818cf8, #c084fc);
       transition: width 0.08s linear;
-      box-shadow: 0 0 10px #38bdf8;
+      box-shadow: 0 0 6px #38bdf8;
     `;
-
-    this.progressPercentEl = document.createElement('div');
-    this.progressPercentEl.style.cssText = `
-      position: absolute;
-      top: 50%;
-      right: 6px;
-      transform: translateY(-50%);
-      font-size: 8px;
-      font-weight: 800;
-      color: #ffffff;
-      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
-      letter-spacing: 0.05em;
-    `;
-    this.progressPercentEl.textContent = '0%';
 
     barWrap.appendChild(this.progressBarFillEl);
-    barWrap.appendChild(this.progressPercentEl);
     this.cardEl.appendChild(barWrap);
 
-    // Footer Telemetry: Distance / Range Status / Action Instruction
+    // Telemetry Footer: Distance & Compact Status / Action Hint
     const footerRow = document.createElement('div');
     footerRow.style.cssText = `
       display: flex;
       justify-content: space-between;
       align-items: center;
-      flex-wrap: wrap;
-      gap: 4px;
+      gap: 6px;
     `;
 
     this.distanceTextEl = document.createElement('div');
     this.distanceTextEl.style.cssText = `
-      font-size: 9px;
+      font-size: 8px;
       color: #94a3b8;
+      white-space: nowrap;
     `;
-    this.distanceTextEl.textContent = 'RANGE: 620m / MAX 1500m';
+    this.distanceTextEl.textContent = '620m / 1500m';
 
     this.statusBadgeEl = document.createElement('div');
     this.statusBadgeEl.style.cssText = `
-      font-size: 8px;
-      font-weight: 700;
-      padding: 1px 6px;
-      border-radius: 3px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      background: rgba(34, 197, 94, 0.15);
-      color: #4ade80;
-      border: 1px solid rgba(34, 197, 94, 0.4);
+      display: none;
     `;
-    this.statusBadgeEl.textContent = 'IN RANGE';
 
     this.actionHintEl = document.createElement('div');
     this.actionHintEl.style.cssText = `
-      width: 100%;
-      font-size: 9px;
+      font-size: 8px;
       font-weight: 600;
       color: #7dd3fc;
-      margin-top: 2px;
-      letter-spacing: 0.04em;
-      text-align: center;
+      letter-spacing: 0.03em;
+      text-align: right;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     `;
-    this.actionHintEl.textContent = 'HOLD [SPACE] TO SYNCHRONIZE';
+    this.actionHintEl.textContent = 'HOLD [SPACE] TO SCAN';
 
     footerRow.appendChild(this.distanceTextEl);
-    footerRow.appendChild(this.statusBadgeEl);
     footerRow.appendChild(this.actionHintEl);
     this.cardEl.appendChild(footerRow);
 
@@ -267,10 +270,15 @@ export class StagedScanHUD {
 
     if (!this.isVisible) {
       this.container.style.display = 'block';
-      requestAnimationFrame(() => {
+      if (typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(() => {
+          this.container.style.opacity = '1';
+          this.container.style.transform = 'translateX(-50%) translateY(0)';
+        });
+      } else {
         this.container.style.opacity = '1';
         this.container.style.transform = 'translateX(-50%) translateY(0)';
-      });
+      }
       this.isVisible = true;
     }
 
@@ -318,31 +326,23 @@ export class StagedScanHUD {
 
     // Distance & Range Status
     const distRounded = Math.round(distance);
-    this.distanceTextEl.textContent = `RANGE: ${distRounded}m / MAX ${stage.requiredMaxDistance}m`;
+    this.distanceTextEl.textContent = `${distRounded}m / ${stage.requiredMaxDistance}m`;
 
     if (canScan) {
       this.statusBadgeEl.textContent = 'IN RANGE';
-      this.statusBadgeEl.style.background = 'rgba(34, 197, 94, 0.15)';
-      this.statusBadgeEl.style.color = '#4ade80';
-      this.statusBadgeEl.style.borderColor = 'rgba(34, 197, 94, 0.4)';
-
       if (isScanningActive) {
-        this.actionHintEl.textContent = `⚡ HARMONIZING DEFLECTORS [${pct}%] · MAINTAIN HOLD`;
+        this.actionHintEl.textContent = `⚡ SYNCHRONIZING [${pct}%]`;
         this.actionHintEl.style.color = '#38bdf8';
       } else {
         this.actionHintEl.textContent = isTouch
-          ? 'HOLD SENSOR BUTTON TO SCAN'
+          ? 'HOLD SENSOR TO SCAN'
           : 'HOLD [SPACE] TO SCAN';
         this.actionHintEl.style.color = '#7dd3fc';
       }
     } else {
       this.statusBadgeEl.textContent = 'OUT OF RANGE';
-      this.statusBadgeEl.style.background = 'rgba(239, 68, 68, 0.15)';
-      this.statusBadgeEl.style.color = '#f87171';
-      this.statusBadgeEl.style.borderColor = 'rgba(239, 68, 68, 0.4)';
-
       const diff = distRounded - stage.requiredMaxDistance;
-      this.actionHintEl.textContent = `APPROACH TARGET (CLOSE ${diff}m TO SYNCHRONIZE)`;
+      this.actionHintEl.textContent = `APPROACH (-${diff}m)`;
       this.actionHintEl.style.color = '#fbbf24';
     }
   }
@@ -352,11 +352,11 @@ export class StagedScanHUD {
     let html = '';
     for (let i = 1; i <= totalPips; i++) {
       if (i < currentStage) {
-        html += `<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; box-shadow:0 0 6px #10b981;"></span>`;
+        html += `<span style="display:inline-block; width:5px; height:5px; border-radius:50%; background:#10b981; box-shadow:0 0 4px #10b981;"></span>`;
       } else if (i === currentStage) {
-        html += `<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#38bdf8; box-shadow:0 0 8px #38bdf8; border:1px solid #ffffff;"></span>`;
+        html += `<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#38bdf8; box-shadow:0 0 6px #38bdf8; border:1px solid #ffffff;"></span>`;
       } else {
-        html += `<span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:rgba(148, 163, 184, 0.25); border:1px solid rgba(148, 163, 184, 0.4);"></span>`;
+        html += `<span style="display:inline-block; width:5px; height:5px; border-radius:50%; background:rgba(148, 163, 184, 0.25); border:1px solid rgba(148, 163, 184, 0.4);"></span>`;
       }
     }
     this.stagePipsEl.innerHTML = html;

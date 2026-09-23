@@ -56,6 +56,7 @@ import { StoryObjectiveHUD } from '../story/StoryObjectiveHUD';
 import { StoryPresentationDirector } from '../story/StoryPresentationDirector';
 import { StagedScanHUD } from '../game/ui/StagedScanHUD';
 import { StagedScanController } from '../game/scanning/StagedScanController';
+import { MissionHelpModal } from './MissionHelpModal';
 
 const scratchShipForward = new THREE.Vector3();
 
@@ -99,6 +100,7 @@ export class DesktopApp {
   public helpModal!: HelpModal;
   public supplyModal!: SupplyModal;
   public settingsModal!: SettingsModal;
+  public missionHelpModal!: MissionHelpModal;
 
   // Narrative & Tutorial Systems
   public dialoguePresenter!: DialoguePresenter;
@@ -318,6 +320,11 @@ export class DesktopApp {
     this.helpModal.setOnOpenSettings(() => {
       this.helpModal.hide();
       this.settingsModal.open();
+    });
+
+    this.missionHelpModal = new MissionHelpModal(this.container);
+    this.missionHelpModal.setOnOpenJournal(() => {
+      this.journalModal.open();
     });
 
     this.supplyModal = new SupplyModal(this.container, {
@@ -745,6 +752,7 @@ export class DesktopApp {
       }
       this.renderSurfaceHUD();
       this.updateControlContext(FlightPhase.SURFACE_FLIGHT);
+      this.storyObjectiveHud?.show();
       this.showHudNotice(`ATMOSPHERIC PENETRATION COMPLETE // COMMENCING HOVER RECONNAISSANCE`);
     }
   }
@@ -1311,6 +1319,11 @@ export class DesktopApp {
     this.targetLockSystem.clearLockedTarget();
     this.targetLockReticle.update(null, this.renderer.camera, window.innerWidth, window.innerHeight);
 
+    // Hide mobile touch controls and story HUD during descent for a clean plasma view
+    this.touchControls?.hide();
+    this.storyObjectiveHud?.hide();
+    this.uiContainer.innerHTML = '';
+
     const selectedSite = this.activeOrbitSites[this.selectedSiteIndex];
     this.stateMachine.transitionTo(FlightPhase.ENTRY);
     this.entryElapsed = 0;
@@ -1768,7 +1781,10 @@ export class DesktopApp {
     } else if (phase === FlightPhase.ORBIT) {
       // In orbital reconnaissance survey, hide sticks so landing site picker is unobstructed
       this.touchControls.hide();
-    } else if (phase === FlightPhase.ENTRY || phase === FlightPhase.ASCENT) {
+    } else if (phase === FlightPhase.ENTRY) {
+      // Atmospheric entry descent: hide touch controls so player can clearly see plasma animation
+      this.touchControls.hide();
+    } else if (phase === FlightPhase.ASCENT) {
       this.touchControls.show();
     } else {
       // Space cruise / approach / deep space
@@ -2814,6 +2830,24 @@ export class DesktopApp {
               touch-action: manipulation;
             ">${audio.getIsMuted() ? '🔇' : '🔊'}</button>
 
+            <!-- Minimal Mission Guidance / Tips button near volume -->
+            <button id="btn-mission-help" style="
+              background: rgba(15, 23, 42, 0.75);
+              border: 1px solid rgba(56, 189, 248, 0.35);
+              border-radius: 8px;
+              color: #38bdf8;
+              padding: 5px 10px;
+              font-size: 10.5px;
+              cursor: pointer;
+              touch-action: manipulation;
+              display: flex;
+              align-items: center;
+              gap: 4px;
+            " title="Mission Guidance & Context Tips">
+              <span style="font-size: 11px;">✦</span>
+              <span>${isTouch ? 'TIPS' : 'TIPS'}</span>
+            </button>
+
             <!-- Minimal Non-Intrusive Fullscreen Toggle -->
             <button id="btn-toggle-fullscreen" style="
               background: rgba(15, 23, 42, 0.75);
@@ -2970,6 +3004,13 @@ export class DesktopApp {
       const isMuted = audio.toggleMute();
       const btn = this.uiContainer.querySelector('#btn-audio-mute') as HTMLButtonElement;
       if (btn) btn.textContent = isMuted ? '🔇' : '🔊';
+    });
+
+    this.uiContainer.querySelector('#btn-mission-help')?.addEventListener('click', () => {
+      this.missionHelpModal?.toggle(
+        this.storyDirector.getState(),
+        this.currentControlMode === 'touch' || isTouchDevice()
+      );
     });
 
     // Minimal Fullscreen Toggle
@@ -3700,6 +3741,7 @@ export class DesktopApp {
     this.abortInSpaceWarpCountdown();
     if (this.inSpaceWarpCountdownEl) this.inSpaceWarpCountdownEl.remove();
     if (this.touchControls) this.touchControls.dispose();
+    if (this.missionHelpModal) this.missionHelpModal.dispose();
     if (this.atmosphericEntrySequence) this.atmosphericEntrySequence.dispose();
     if (this.debugTelemetryEl) this.debugTelemetryEl.remove();
     if (this.surfaceScene) {

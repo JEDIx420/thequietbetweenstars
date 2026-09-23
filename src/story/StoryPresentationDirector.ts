@@ -80,13 +80,13 @@ export class StoryPresentationDirector {
           this.dialoguePresenter.enqueue([
             {
               speaker: 'Ship Interface: Mnemosyne',
-              text: 'Navigational vector extracted from Fragment α. Coordinates point toward Frontier Research Outpost Epsilon-7.',
+              text: 'Navigational vector extracted from Fragment α. Coordinates point toward Research Outpost Epsilon-7.',
               durationMs: 5500,
               audioTone: 'chime',
             },
             {
               speaker: 'Ship Interface: Mnemosyne',
-              text: 'Course plotted. Approach the station and dock at bay 3 to confer with Dr. Valeria Vance.',
+              text: 'Course plotted. Approach the station and dock at Bay 03 to confer with Dr. Valeria Vance.',
               durationMs: 5000,
               audioTone: 'chime',
             },
@@ -112,7 +112,7 @@ export class StoryPresentationDirector {
           }
         } else if (beat === 'beat_4_decryption') {
           this.callbacks.showHudNotice(
-            'OBJECTIVE: Return to Epsilon-7 Signal Lab to synthesize fragments'
+            'OBJECTIVE: Return to Research Outpost Epsilon-7 Signal Lab to synthesize fragments'
           );
           this.callbacks.highlightNavigationTarget(
             'station_epsilon_7',
@@ -128,14 +128,14 @@ export class StoryPresentationDirector {
             },
             {
               speaker: 'Ship Interface: Mnemosyne',
-              text: 'Dock with Epsilon-7 and access the Signal Lab to execute dual harmonic synthesis.',
+              text: 'Dock with Research Outpost Epsilon-7 and access the Signal Lab to execute dual harmonic synthesis.',
               durationMs: 5000,
               audioTone: 'chime',
             },
           ]);
         } else if (beat === 'beat_5_relay_coordinates') {
           this.callbacks.showHudNotice(
-            'COORDINATES DECRYPTED: First Harmonic Relay revealed in deep space'
+            'COORDINATES DECRYPTED: First Harmonic Relay: Spires of the Quiet revealed in deep space'
           );
           this.callbacks.highlightNavigationTarget(
             'harmonic_relay_prime',

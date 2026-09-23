@@ -51,6 +51,16 @@ export class StoryObjectiveHUD {
         0% { border-color: #38bdf8; box-shadow: 0 0 25px rgba(56, 189, 248, 0.6); }
         100% { border-color: rgba(56, 189, 248, 0.3); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); }
       }
+      #story-objective-hud.is-collapsed .hud-card {
+        padding: 5px 10px;
+        background: rgba(10, 16, 28, 0.75);
+        border-radius: 6px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+        max-width: 220px;
+      }
+      #story-objective-hud.is-collapsed .hud-header {
+        margin-bottom: 0 !important;
+      }
       /* Tablet & Touch Adaptation */
       @media (pointer: coarse), (max-width: 1024px) {
         #story-objective-hud {
@@ -81,6 +91,7 @@ export class StoryObjectiveHUD {
 
     // Header with chapter & update badge
     const headerEl = document.createElement('div');
+    headerEl.className = 'hud-header';
     headerEl.style.cssText = `
       display: flex;
       justify-content: space-between;
@@ -95,6 +106,9 @@ export class StoryObjectiveHUD {
       color: #7dd3fc;
       text-transform: uppercase;
       font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     `;
     this.chapterEl.textContent = 'CHAPTER 1 // THE RESONANCE';
 
@@ -115,7 +129,7 @@ export class StoryObjectiveHUD {
     controlsWrapper.style.cssText = `
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
     `;
 
     const freeRoamBtn = document.createElement('button');
@@ -140,8 +154,28 @@ export class StoryObjectiveHUD {
       }
     });
 
+    const collapseBtn = document.createElement('button');
+    collapseBtn.id = 'hud-btn-collapse-toggle';
+    collapseBtn.title = 'Collapse/Expand Mission Panel';
+    collapseBtn.style.cssText = `
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 10px;
+      padding: 0 2px;
+      cursor: pointer;
+      font-family: inherit;
+      line-height: 1;
+    `;
+    collapseBtn.textContent = '▴';
+    collapseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleCollapse();
+    });
+
     controlsWrapper.appendChild(this.badgeEl);
     controlsWrapper.appendChild(freeRoamBtn);
+    controlsWrapper.appendChild(collapseBtn);
 
     headerEl.appendChild(this.chapterEl);
     headerEl.appendChild(controlsWrapper);
@@ -182,7 +216,8 @@ export class StoryObjectiveHUD {
     `;
     card.appendChild(this.fragmentsEl);
 
-    card.addEventListener('click', () => {
+    card.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).tagName === 'BUTTON') return;
       this.toggleCollapse();
     });
 
@@ -207,7 +242,7 @@ export class StoryObjectiveHUD {
     }
 
     if (isFree) {
-      this.chapterEl.textContent = 'EXPLORATION // FREE ROAM';
+      this.chapterEl.textContent = '🧭 FREE ROAM';
       this.chapterEl.style.color = '#4ade80';
       this.titleEl.textContent = 'SANDBOX CRUISE';
       this.titleEl.style.color = '#86efac';
@@ -228,7 +263,7 @@ export class StoryObjectiveHUD {
     // Fragment status
     const fragCount = state.resonanceFragments.length;
     if (fragCount > 0) {
-      this.fragmentsEl.style.display = 'block';
+      this.fragmentsEl.style.display = this.isCollapsed ? 'none' : 'block';
       this.fragmentsEl.textContent = `RESONANCE FRAGMENTS: ${fragCount}/2`;
     } else {
       this.fragmentsEl.style.display = 'none';
@@ -256,10 +291,18 @@ export class StoryObjectiveHUD {
     audio.playConnectChime();
   }
 
-  public toggleCollapse(): void {
-    this.isCollapsed = !this.isCollapsed;
+  public toggleCollapse(force?: boolean): void {
+    this.isCollapsed = force !== undefined ? force : !this.isCollapsed;
+    this.container.classList.toggle('is-collapsed', this.isCollapsed);
+    this.titleEl.style.display = this.isCollapsed ? 'none' : 'block';
     this.objectiveEl.style.display = this.isCollapsed ? 'none' : 'block';
-    this.fragmentsEl.style.display = (this.isCollapsed || this.fragmentsEl.textContent === '') ? 'none' : 'block';
+    this.fragmentsEl.style.display =
+      this.isCollapsed || !this.fragmentsEl.textContent ? 'none' : 'block';
+
+    const collapseBtn = this.container.querySelector('#hud-btn-collapse-toggle') as HTMLElement;
+    if (collapseBtn) {
+      collapseBtn.textContent = this.isCollapsed ? '▾' : '▴';
+    }
     audio.playBlip();
   }
 
