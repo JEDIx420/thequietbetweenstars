@@ -318,6 +318,52 @@ export class FlightModel {
     }
   }
 
+  public resetCamera(camera?: THREE.PerspectiveCamera): void {
+    this.isCameraInitialized = false;
+    this.currentFov = 60;
+
+    if (this.shipPhysicsRoot) {
+      this.position.copy(this.shipPhysicsRoot.position);
+      this.quaternion.copy(this.shipPhysicsRoot.quaternion);
+    }
+
+    const forward = FlightModel.scratchForward.set(0, 0, -1).applyQuaternion(this.quaternion).normalize();
+    FlightModel.scratchUp.set(0, 1, 0).applyQuaternion(this.quaternion).normalize();
+
+    const camDistance = 3.6;
+    const camHeight = 1.1;
+
+    FlightModel.scratchDesiredCamPos
+      .copy(this.position)
+      .addScaledVector(forward, -camDistance)
+      .addScaledVector(FlightModel.scratchUp, camHeight);
+
+    const lookAheadDist = 6.0;
+    const lookHeight = 0.6;
+    FlightModel.scratchDesiredLookTarget
+      .copy(this.position)
+      .addScaledVector(forward, lookAheadDist)
+      .addScaledVector(FlightModel.scratchUp, lookHeight);
+
+    FlightModel.scratchDesiredUp
+      .copy(FlightModel.scratchUp)
+      .lerp(FlightModel.scratchWorldUp, 0.15)
+      .normalize();
+
+    this.cameraTargetPos.copy(FlightModel.scratchDesiredCamPos);
+    this.cameraLookTarget.copy(FlightModel.scratchDesiredLookTarget);
+    this.currentCameraUp.copy(FlightModel.scratchDesiredUp);
+    this.isCameraInitialized = true;
+
+    if (camera) {
+      camera.position.copy(this.cameraTargetPos);
+      camera.up.copy(this.currentCameraUp);
+      camera.lookAt(this.cameraLookTarget);
+      camera.fov = 60;
+      camera.updateProjectionMatrix();
+    }
+  }
+
   public getSpeed(): number {
     return this.velocity.length();
   }

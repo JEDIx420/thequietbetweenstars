@@ -21,24 +21,27 @@ export class GameRenderer {
       ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0) || window.innerWidth < 800);
     const maxDpr = isMobile ? 1.5 : 2;
 
+    const width = container.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 1280);
+    const height = Math.max(1, container.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 720));
+
     this.renderer.setClearColor(0x030307, 1);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
-    this.renderer.setSize(container.clientWidth, container.clientHeight);
+    this.renderer.setSize(width, height);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
 
     container.appendChild(this.renderer.domElement);
 
-    const aspect = container.clientWidth / Math.max(1, container.clientHeight);
+    const aspect = width / height;
     this.camera = new THREE.PerspectiveCamera(65, aspect, 0.1, 8000);
     this.camera.position.set(0, 3, 10);
 
     this.setupListeners();
   }
 
-  private handleResize = (): void => {
-    const width = this.container.clientWidth;
-    const height = Math.max(1, this.container.clientHeight);
+  public handleResize = (): void => {
+    const width = this.container.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 1280);
+    const height = Math.max(1, this.container.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 720));
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
@@ -50,6 +53,18 @@ export class GameRenderer {
 
   private setupListeners(): void {
     window.addEventListener('resize', this.handleResize);
+    window.addEventListener('orientationchange', () => {
+      setTimeout(this.handleResize, 100);
+    });
+    if (typeof window !== 'undefined' && window.visualViewport) {
+      window.visualViewport.addEventListener('resize', this.handleResize);
+    }
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.handleResize();
+      });
+      this.resizeObserver.observe(this.container);
+    }
     document.addEventListener('visibilitychange', this.handleVisibilityChange);
   }
 
@@ -71,6 +86,9 @@ export class GameRenderer {
     window.removeEventListener('resize', this.handleResize);
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
 
+    if (typeof window !== 'undefined' && window.visualViewport) {
+      window.visualViewport.removeEventListener('resize', this.handleResize);
+    }
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
     }

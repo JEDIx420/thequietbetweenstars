@@ -378,6 +378,16 @@ export class DesktopApp {
     this.storyObjectiveHud.setOnToggleFreeRoam(() => {
       const next = !this.storyDirector.isFreeExploration();
       this.storyDirector.setFreeExploration(next);
+      this.storyObjectiveHud.toggleCollapse(next);
+      if (!next) {
+        this.showHudNotice('STORY OBJECTIVES ACTIVE // CHAPTER 1 ONLINE');
+        const state = this.storyDirector.getState();
+        if (state.currentBeat === 'beat_0_awakening') {
+          this.storyPresentationDirector.beginStoryOpening();
+        }
+      } else {
+        this.showHudNotice('FREE ROAM ACTIVE // Story paused. Explore systems freely.');
+      }
       audio.playBlip();
     });
     this.storyObjectiveHud.setOnTrackObjective(() => {
@@ -401,6 +411,7 @@ export class DesktopApp {
         saveJourney: () => this.saveCurrentJourney(),
       }
     );
+    this.storyDirector.setFreeExploration(true);
 
     // 7. Cinematic Director
     this.newJourneyCinematic = new NewJourneyCinematic(this.container);
@@ -517,11 +528,13 @@ export class DesktopApp {
     this.tutorialDirector.update();
     this.shipEmoteDirector.update(dt);
 
-    if (this.uiState === 'cinematic' && this.newJourneyCinematic.getIsPlaying()) {
+    if (this.uiState === 'cinematic') {
       // Cinematic Intro Camera Directing
-      this.newJourneyCinematic.update(dt, this.renderer.camera);
-      const shipPos = this.flightModel.position;
-      this.spaceScene.updateSpaceFlight(dt, shipPos, this.renderer.camera.position, 0.2, 0, 0, tick.didSimTick);
+      if (this.newJourneyCinematic.getIsPlaying()) {
+        this.newJourneyCinematic.update(dt, this.renderer.camera);
+        const shipPos = this.flightModel.position;
+        this.spaceScene.updateSpaceFlight(dt, shipPos, this.renderer.camera.position, 0.2, 0, 0, tick.didSimTick);
+      }
       this.renderer.render(this.spaceScene.scene);
       requestAnimationFrame((t) => this.gameLoop(t));
       return;
@@ -697,7 +710,9 @@ export class DesktopApp {
       this.renderer.camera,
       window.innerWidth,
       window.innerHeight,
-      isTouchDevice()
+      isTouchDevice(),
+      false,
+      this.storyDirector.isFreeExploration()
     );
 
     monitor.startTiming('render');
@@ -1235,7 +1250,8 @@ export class DesktopApp {
       window.innerWidth,
       window.innerHeight,
       isTouchDevice(),
-      isReticleScanningActive
+      isReticleScanningActive,
+      this.storyDirector.isFreeExploration()
     );
 
     monitor.startTiming('render');
@@ -2009,6 +2025,7 @@ export class DesktopApp {
       await saveManager.clearJourney();
       this.shownContextHints.clear();
       this.storyDirector.reset();
+      this.storyDirector.setFreeExploration(true);
       this.npcMemories = { ...DEFAULT_SAVE_SLOT.npcMemories };
       this.storyDirector.setNpcMemories(this.npcMemories);
       this.credits = 250;
@@ -2596,6 +2613,12 @@ export class DesktopApp {
     audio.stopTitleOverture();
     audio.setContext('cruise');
 
+    // Force canvas and camera projection matrix to match viewport
+    this.renderer.handleResize();
+
+    // Snap camera directly into chase position behind ship
+    this.flightModel.resetCamera(this.renderer.camera);
+
     const isTouch = isTouchDevice() || (typeof window !== 'undefined' && window.innerWidth <= 1024);
     const activeMode = isTouch ? 'touch' : mode;
     this.currentControlMode = activeMode;
@@ -2606,8 +2629,19 @@ export class DesktopApp {
     }
     this.renderFlightHUD(activeMode);
     this.storyObjectiveHud.show();
+
     const storyState = this.storyDirector.getState();
-    if (storyState.currentBeat === 'beat_0_awakening') {
+    const isFree = this.storyDirector.isFreeExploration();
+
+    if (isFree) {
+      // In Free Roam, keep mission HUD collapsed on start to prevent mobile screen clutter
+      this.storyObjectiveHud.toggleCollapse(true);
+      this.storyPresentationDirector.refresh();
+      // Inform player clearly how to start missions
+      setTimeout(() => {
+        this.showHudNotice('FREE ROAM ACTIVE // Tap [MISSIONS] on top-left to enable story objectives');
+      }, 900);
+    } else if (storyState.currentBeat === 'beat_0_awakening') {
       this.storyPresentationDirector.beginStoryOpening();
     } else if (
       storyState.currentBeat === 'beat_7_chapter1_climax' &&

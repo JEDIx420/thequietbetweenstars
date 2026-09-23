@@ -41,6 +41,10 @@ export class NavRadar {
     this.freeExplorationMode = enabled;
   }
 
+  public isFreeExplorationMode(): boolean {
+    return this.freeExplorationMode;
+  }
+
   public setActiveStoryObjective(id: string | null, label?: string | null): void {
     this.activeStoryObjectiveId = id;
     this.activeStoryObjectiveLabel = label || null;
@@ -567,7 +571,7 @@ export class NavRadar {
         ctx.fill();
       } else if (t.isAnomaly) {
         // Space Anomaly: amber diamond with glow
-        const isResonance = t.isStoryTarget || t.anomaly?.hasResonance || t.anomaly?.signature?.isResonanceAnomaly || t.id.startsWith('story_');
+        const isResonance = !this.freeExplorationMode && (t.isStoryTarget || t.anomaly?.hasResonance || t.anomaly?.signature?.isResonanceAnomaly || t.id.startsWith('story_'));
         ctx.fillStyle = isResonance ? '#38bdf8' : '#f59e0b';
         ctx.beginPath();
         ctx.moveTo(data.px, data.py - 4);

@@ -267,14 +267,27 @@ export class StoryObjectiveHUD {
     const isFree = !!state.freeExplorationMode;
     const btn = this.container.querySelector('#hud-btn-toggle-freeroam') as HTMLElement;
     if (btn) {
-      btn.textContent = isFree ? '▶ RESUME' : '⏸ ROAM';
+      btn.textContent = isFree ? '▶ MISSIONS' : '⏸ ROAM';
+      btn.title = isFree ? 'Enable Story Missions' : 'Switch to Free Roam';
       btn.style.color = isFree ? '#4ade80' : '#94a3b8';
-      btn.style.borderColor = isFree ? 'rgba(74, 222, 128, 0.4)' : 'rgba(255, 255, 255, 0.2)';
-      btn.style.background = isFree ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255, 255, 255, 0.08)';
+      btn.style.borderColor = isFree ? 'rgba(74, 222, 128, 0.45)' : 'rgba(255, 255, 255, 0.2)';
+      btn.style.background = isFree ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 255, 255, 0.08)';
     }
 
     if (this.trackBtn) {
       this.trackBtn.style.display = isFree ? 'none' : 'inline-block';
+    }
+
+    if (state.currentBeat === 'beat_7_chapter1_climax' && state.completedBeats.includes('beat_7_chapter1_climax')) {
+      if (this.trackBtn) this.trackBtn.style.display = 'none';
+      this.chapterEl.textContent = 'CHAPTER 1 // THE RESONANCE: COMPLETE';
+      this.chapterEl.style.color = '#4ade80';
+      this.titleEl.textContent = 'THE GALAXY AWAKENS';
+      this.titleEl.style.color = '#86efac';
+      this.objectiveEl.textContent = '● First Harmonic Relay active. The quiet is no longer empty. Explore uncharted systems freely.';
+      this.fragmentsEl.style.display = 'none';
+      if (showNotification) this.flashUpdate();
+      return;
     }
 
     if (isFree) {
@@ -282,23 +295,9 @@ export class StoryObjectiveHUD {
       this.chapterEl.style.color = '#4ade80';
       this.titleEl.textContent = 'SANDBOX CRUISE';
       this.titleEl.style.color = '#86efac';
-      this.objectiveEl.textContent = 'Story paused. Explore uncharted star systems at your own pace.';
+      this.objectiveEl.textContent = 'Story paused. Tap [▶ MISSIONS] to enable story objectives.';
       this.fragmentsEl.style.display = 'none';
       return;
-    }
-
-    if (state.currentBeat === 'beat_7_chapter1_climax') {
-      if (this.trackBtn) this.trackBtn.style.display = 'none';
-      if (state.completedBeats.includes('beat_7_chapter1_climax')) {
-        this.chapterEl.textContent = 'CHAPTER 1 // THE RESONANCE: COMPLETE';
-        this.chapterEl.style.color = '#4ade80';
-        this.titleEl.textContent = 'THE GALAXY AWAKENS';
-        this.titleEl.style.color = '#86efac';
-        this.objectiveEl.textContent = '● First Harmonic Relay active. The quiet is no longer empty. Explore uncharted systems freely.';
-        this.fragmentsEl.style.display = 'none';
-        if (showNotification) this.flashUpdate();
-        return;
-      }
     }
 
     this.chapterEl.style.color = '#7dd3fc';

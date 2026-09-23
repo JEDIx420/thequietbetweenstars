@@ -37,7 +37,8 @@ export class ExpeditionBriefing {
     this.currentStep = 0;
     this.render();
 
-    requestAnimationFrame(() => {
+    const raf = typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : (cb: FrameRequestCallback) => setTimeout(cb, 16);
+    raf(() => {
       this.container.style.opacity = '1';
     });
 
@@ -75,9 +76,9 @@ export class ExpeditionBriefing {
 
   private isTouchDevice(): boolean {
     return (
-      'ontouchstart' in window ||
-      navigator.maxTouchPoints > 0 ||
-      window.matchMedia('(pointer: coarse)').matches
+      (typeof window !== 'undefined' && 'ontouchstart' in window) ||
+      (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) ||
+      (typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)')?.matches)
     );
   }
 
@@ -244,7 +245,7 @@ export class ExpeditionBriefing {
             cursor: pointer;
             transition: all 0.15s ease;
             touch-action: manipulation;
-          ">SKIP [ESC]</button>
+          ">${isTouch ? '✕ SKIP' : 'SKIP [ESC]'}</button>
         </div>
 
         <!-- Main Title -->
@@ -333,7 +334,19 @@ export class ExpeditionBriefing {
                 cursor: pointer;
                 touch-action: manipulation;
               ">← PREV</button>
-            ` : ''}
+            ` : `
+              <button id="btn-briefing-quickstart" style="
+                background: rgba(34, 197, 94, 0.15);
+                border: 1px solid rgba(74, 222, 128, 0.4);
+                border-radius: 6px;
+                color: #86efac;
+                font-size: 11.5px;
+                font-weight: 600;
+                padding: 10px 16px;
+                cursor: pointer;
+                touch-action: manipulation;
+              ">START FLYING →</button>
+            `}
           </div>
 
           <div style="display: flex; align-items: center; gap: 10px;">
@@ -359,6 +372,11 @@ export class ExpeditionBriefing {
 
     this.container.querySelector('#btn-skip-briefing')?.addEventListener('click', () => {
       audio.playBlip();
+      this.finish();
+    });
+
+    this.container.querySelector('#btn-briefing-quickstart')?.addEventListener('click', () => {
+      audio.playConnectChime();
       this.finish();
     });
 
@@ -402,6 +420,10 @@ export class ExpeditionBriefing {
         { passive: true }
       );
     }
+  }
+
+  public dispose(): void {
+    this.finish();
   }
 
   private finish(): void {

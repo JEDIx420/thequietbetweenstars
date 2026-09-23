@@ -168,7 +168,7 @@ export const DEFAULT_SAVE_SLOT: PlayerSaveSlot = {
     triggeredEventIds: [],
     resonanceFlags: [],
   },
-  story: cloneStoryState(DEFAULT_STORY_STATE),
+  story: { ...cloneStoryState(DEFAULT_STORY_STATE), freeExplorationMode: true },
 };
 
 const DB_NAME = 'thequietbetweenstars_db';

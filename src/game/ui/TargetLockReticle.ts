@@ -147,7 +147,8 @@ export class TargetLockReticle {
     screenWidth: number,
     screenHeight: number,
     isTouchDevice = false,
-    isScanningActive = false
+    isScanningActive = false,
+    freeExplorationMode = false
   ): void {
     if (!target) {
       if (this.isVisible) {
@@ -177,7 +178,7 @@ export class TargetLockReticle {
     const isOffScreen = screenX < 24 || screenX > screenWidth - 24 || screenY < 24 || screenY > screenHeight - 24;
 
     if (isBehind || isOffScreen) {
-      if (isStory) {
+      if (isStory && !freeExplorationMode) {
         // Reverse coordinates when behind camera so direction points to actual bearing
         if (isBehind) {
           screenX = screenWidth - screenX;
@@ -223,7 +224,7 @@ export class TargetLockReticle {
     }
 
     const distStr = target.distance !== undefined ? ` · ${target.distance}m` : '';
-    const isEdgeClamped = isStory && (isBehind || isOffScreen);
+    const isEdgeClamped = isStory && !freeExplorationMode && (isBehind || isOffScreen);
     const prefix = isEdgeClamped ? '✦ ' : '';
     this.labelEl.textContent = `${prefix}[${target.name.toUpperCase()}${distStr}]`;
 
@@ -296,7 +297,7 @@ export class TargetLockReticle {
     // Color theme based on target type
     const accent = isEdgeClamped
       ? '#fbbf24' // Vibrant gold waypoint indicator for off-screen objective
-      : isStory
+      : isStory && !freeExplorationMode
         ? '#38bdf8' // Vibrant resonance cyan
         : target.isSentient
           ? '#4ade80' // Green for sentient giants/titans
