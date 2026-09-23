@@ -53,6 +53,26 @@ export class StoryDirector {
     });
   }
 
+  public getActiveObjectiveTarget(): { targetId: string; label: string } | null {
+    if (this.state.freeExplorationMode) return null;
+    switch (this.state.currentBeat) {
+      case 'beat_1_first_whisper':
+        return { targetId: 'story_anom_resonance_alpha', label: 'Resonance Monolith Prime' };
+      case 'beat_2_station_contact':
+        return { targetId: 'station_epsilon_7', label: 'Research Outpost Epsilon-7' };
+      case 'beat_3_fragment_alpha':
+        return { targetId: 'story_anom_derelict_beta', label: 'Derelict Survey Craft Alpha-9' };
+      case 'beat_4_decryption':
+        return { targetId: 'station_epsilon_7', label: 'Research Outpost Epsilon-7' };
+      case 'beat_5_relay_coordinates':
+        return { targetId: 'harmonic_relay_prime', label: 'First Harmonic Relay: Spires of the Quiet' };
+      case 'beat_6_relay_alignment':
+        return { targetId: 'harmonic_relay_prime', label: 'First Harmonic Relay: Spires of the Quiet' };
+      default:
+        return null;
+    }
+  }
+
   public subscribe(listener: StoryEventListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

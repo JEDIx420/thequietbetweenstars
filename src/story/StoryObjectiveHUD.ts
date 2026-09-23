@@ -9,8 +9,14 @@ export class StoryObjectiveHUD {
   private objectiveEl: HTMLElement;
   private badgeEl: HTMLElement;
   private fragmentsEl: HTMLElement;
+  private trackBtn!: HTMLElement;
   private flashTimeout: number | null = null;
   private isCollapsed = false;
+  private onTrackObjectiveCallback: (() => void) | null = null;
+
+  public setOnTrackObjective(cb: () => void): void {
+    this.onTrackObjectiveCallback = cb;
+  }
 
   constructor(parent: HTMLElement) {
     this.container = document.createElement('div');
@@ -132,6 +138,31 @@ export class StoryObjectiveHUD {
       gap: 5px;
     `;
 
+    const trackBtn = document.createElement('button');
+    trackBtn.id = 'hud-btn-track-objective';
+    trackBtn.title = 'Lock and Track Active Story Objective';
+    trackBtn.style.cssText = `
+      background: rgba(251, 191, 36, 0.16);
+      border: 1px solid rgba(251, 191, 36, 0.5);
+      color: #fbbf24;
+      font-size: 8px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s ease;
+      display: inline-block;
+    `;
+    trackBtn.textContent = '🎯 TRACK';
+    trackBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.onTrackObjectiveCallback) {
+        this.onTrackObjectiveCallback();
+      }
+    });
+    this.trackBtn = trackBtn;
+
     const freeRoamBtn = document.createElement('button');
     freeRoamBtn.id = 'hud-btn-toggle-freeroam';
     freeRoamBtn.title = 'Toggle Free Exploration Mode';
@@ -174,6 +205,7 @@ export class StoryObjectiveHUD {
     });
 
     controlsWrapper.appendChild(this.badgeEl);
+    controlsWrapper.appendChild(trackBtn);
     controlsWrapper.appendChild(freeRoamBtn);
     controlsWrapper.appendChild(collapseBtn);
 
@@ -239,6 +271,10 @@ export class StoryObjectiveHUD {
       btn.style.color = isFree ? '#4ade80' : '#94a3b8';
       btn.style.borderColor = isFree ? 'rgba(74, 222, 128, 0.4)' : 'rgba(255, 255, 255, 0.2)';
       btn.style.background = isFree ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255, 255, 255, 0.08)';
+    }
+
+    if (this.trackBtn) {
+      this.trackBtn.style.display = isFree ? 'none' : 'inline-block';
     }
 
     if (isFree) {

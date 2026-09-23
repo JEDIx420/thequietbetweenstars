@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import * as THREE from 'three';
+import { NavRadar } from '../src/game/ui/NavRadar';
+import { AutopilotController } from '../src/game/flight/AutopilotController';
+import { FlightModel } from '../src/game/core/flightModel';
 import { StagedScanHUD } from '../src/game/ui/StagedScanHUD';
 import { StoryObjectiveHUD } from '../src/story/StoryObjectiveHUD';
 import { MissionHelpModal } from '../src/ui/MissionHelpModal';
@@ -16,6 +20,32 @@ class MockDOMElement {
   public style: Record<string, any> = {};
   public children: any[] = [];
   public classSet = new Set<string>();
+  public width = 140;
+  public height = 140;
+
+  getContext() {
+    return {
+      clearRect: () => {},
+      beginPath: () => {},
+      arc: () => {},
+      stroke: () => {},
+      strokeRect: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      closePath: () => {},
+      fill: () => {},
+      createRadialGradient: () => ({
+        addColorStop: () => {},
+      }),
+      fillText: () => {},
+      drawImage: () => {},
+      setLineDash: () => {},
+      save: () => {},
+      restore: () => {},
+      translate: () => {},
+      rotate: () => {},
+    };
+  }
 
   public get classList() {
     return {
@@ -220,4 +250,112 @@ describe('Mission Help and UI UX Improvements', () => {
       expect(plan3.injectedAnomalies[0].name).toBe('Derelict Survey Craft Alpha-9');
     });
   });
+
+  describe('5. Story Objective Minimap Markers and Autopilot Tracking', () => {
+    it('retrieves active objective target dynamically across beats and suppresses in free roam', () => {
+      const director = StoryDirector.getInstance();
+      director.reset();
+
+      // Beat 0: no active objective
+      expect(director.getActiveObjectiveTarget()).toBeNull();
+
+      // Beat 1: Monolith
+      director.advanceBeat('beat_1_first_whisper');
+      const beat1Target = director.getActiveObjectiveTarget();
+      expect(beat1Target?.targetId).toBe('story_anom_resonance_alpha');
+      expect(beat1Target?.label).toBe('Resonance Monolith Prime');
+
+      // Beat 2: Station Epsilon-7
+      director.advanceBeat('beat_2_station_contact');
+      const beat2Target = director.getActiveObjectiveTarget();
+      expect(beat2Target?.targetId).toBe('station_epsilon_7');
+      expect(beat2Target?.label).toBe('Research Outpost Epsilon-7');
+
+      // Free roam suppresses active objective
+      director.setFreeExploration(true);
+      expect(director.getActiveObjectiveTarget()).toBeNull();
+      director.setFreeExploration(false);
+      expect(director.getActiveObjectiveTarget()?.targetId).toBe('station_epsilon_7');
+    });
+
+    it('manages active story objective on NavRadar and fires track callback', () => {
+      const shipGroup = new THREE.Group();
+      const flightModel = new FlightModel(shipGroup);
+      const autopilot = new AutopilotController(flightModel);
+      const radar = new NavRadar(parentEl, autopilot);
+
+      radar.setActiveStoryObjective('story_anom_resonance_alpha', 'Resonance Monolith Prime');
+      expect(radar.getActiveStoryObjectiveId()).toBe('story_anom_resonance_alpha');
+      expect(radar.getActiveStoryObjectiveLabel()).toBe('Resonance Monolith Prime');
+
+      const anomaly: SpaceAnomalyDescriptor = {
+        id: 'story_anom_resonance_alpha',
+        name: 'Resonance Monolith Prime',
+        type: 'RESONANCE_ECHO',
+        distanceFromStar: 1200,
+        angle: 1.0,
+        position: { x: 1200, y: 150, z: -1800 },
+        color: '#38bdf8',
+        radius: 45,
+        description: 'Harmonic resonance monolith.',
+        scanned: false,
+        hasResonance: true,
+        discovered: false,
+      };
+
+      radar.setPlanets([], [anomaly]);
+      expect(radar.hasTargetId('story_anom_resonance_alpha')).toBe(true);
+
+      const selected = radar.selectActiveStoryObjective();
+      expect(selected).toBe(true);
+      expect(radar.getSelectedTarget()?.id).toBe('story_anom_resonance_alpha');
+
+      let trackFiredWith: string | null = null;
+      radar.setOnTrackObjective((targetId: string) => {
+        trackFiredWith = targetId;
+      });
+
+      // Update radar rendering
+      radar.update(new THREE.Vector3(0, 0, 0), new THREE.Quaternion(), new THREE.Vector3(0, 0, 5000));
+
+      const infoHtml = (radar as any).targetInfoEl.innerHTML;
+      expect(infoHtml).toContain('✦ MISSION');
+      expect(infoHtml).toContain('TRACK OBJECTIVE');
+
+      // Trigger track callback
+      (radar as any).onTrackObjectiveCallback?.('story_anom_resonance_alpha');
+      expect(trackFiredWith).toBe('story_anom_resonance_alpha');
+
+      radar.dispose();
+    });
+
+    it('provides track button on StoryObjectiveHUD during story and triggers callback', () => {
+      const hud = new StoryObjectiveHUD(parentEl);
+      const director = StoryDirector.getInstance();
+      director.reset();
+      director.advanceBeat('beat_1_first_whisper');
+
+      let trackClicked = false;
+      hud.setOnTrackObjective(() => {
+        trackClicked = true;
+      });
+
+      hud.update(director.getState());
+      const trackBtn = (hud as any).trackBtn;
+      expect(trackBtn).toBeDefined();
+      expect(trackBtn.style.display).not.toBe('none');
+
+      // In free roam mode, track button is hidden
+      director.setFreeExploration(true);
+      hud.update(director.getState());
+      expect(trackBtn.style.display).toBe('none');
+
+      // Click callback
+      (hud as any).onTrackObjectiveCallback?.();
+      expect(trackClicked).toBe(true);
+
+      hud.dispose();
+    });
+  });
 });
+

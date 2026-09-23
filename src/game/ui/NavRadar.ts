@@ -33,9 +33,34 @@ export class NavRadar {
   private bgCanvas: HTMLCanvasElement;
   private lastChipKey = '';
   private freeExplorationMode = false;
+  private activeStoryObjectiveId: string | null = null;
+  private activeStoryObjectiveLabel: string | null = null;
+  private onTrackObjectiveCallback: ((targetId: string) => void) | null = null;
 
   public setFreeExplorationMode(enabled: boolean): void {
     this.freeExplorationMode = enabled;
+  }
+
+  public setActiveStoryObjective(id: string | null, label?: string | null): void {
+    this.activeStoryObjectiveId = id;
+    this.activeStoryObjectiveLabel = label || null;
+  }
+
+  public getActiveStoryObjectiveId(): string | null {
+    return this.activeStoryObjectiveId;
+  }
+
+  public getActiveStoryObjectiveLabel(): string | null {
+    return this.activeStoryObjectiveLabel;
+  }
+
+  public setOnTrackObjective(cb: (targetId: string) => void): void {
+    this.onTrackObjectiveCallback = cb;
+  }
+
+  public selectActiveStoryObjective(): boolean {
+    if (!this.activeStoryObjectiveId) return false;
+    return this.selectTargetById(this.activeStoryObjectiveId);
   }
 
   constructor(parent: HTMLElement, autopilot: AutopilotController) {
@@ -170,6 +195,18 @@ export class NavRadar {
 
     this.canvas.addEventListener('dblclick', () => {
       if (this.onOpenSystemMapCallback) this.onOpenSystemMapCallback();
+    });
+
+    this.targetInfoEl.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('#radar-btn-track-objective') || target.closest('.radar-objective-badge')) {
+        e.stopPropagation();
+        if (this.activeStoryObjectiveId && this.onTrackObjectiveCallback) {
+          this.onTrackObjectiveCallback(this.activeStoryObjectiveId);
+        } else if (this.activeStoryObjectiveId) {
+          this.selectActiveStoryObjective();
+        }
+      }
     });
   }
 
@@ -630,6 +667,103 @@ export class NavRadar {
       ctx.restore();
     }
 
+    // 5.5 Active Story Objective Minimap Beacon & Perimeter Rim Waypoint Pointer
+    if (!this.freeExplorationMode && this.activeStoryObjectiveId) {
+      const objTarget = this.targets.find((t) => t.id === this.activeStoryObjectiveId);
+      if (objTarget) {
+        const objData = computeRadarPos(objTarget.position);
+        const pulseTime = Date.now() * 0.004;
+        const pulseAlpha = 0.7 + Math.sin(pulseTime) * 0.3;
+
+        ctx.save();
+
+        // 1. Radar Map Diamond Beacon & Ripple Rings
+        ctx.strokeStyle = `rgba(251, 191, 36, ${pulseAlpha})`;
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.arc(objData.px, objData.py, 7.5 + Math.sin(pulseTime * 1.6) * 2, 0, Math.PI * 2);
+        ctx.stroke();
+
+        const ripplePhase = (Date.now() % 1400) / 1400;
+        const rippleRad = 7.5 + ripplePhase * 10;
+        const rippleOpacity = (1.0 - ripplePhase) * 0.7;
+        ctx.strokeStyle = `rgba(245, 158, 11, ${rippleOpacity})`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(objData.px, objData.py, rippleRad, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Glowing gold diamond core
+        ctx.fillStyle = '#fbbf24';
+        ctx.beginPath();
+        ctx.moveTo(objData.px, objData.py - 5);
+        ctx.lineTo(objData.px + 5, objData.py);
+        ctx.lineTo(objData.px, objData.py + 5);
+        ctx.lineTo(objData.px - 5, objData.py);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#fffbeb';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        // Text tag on minimap
+        ctx.fillStyle = '#fef08a';
+        ctx.font = 'bold 7.5px ui-monospace, SFMono-Regular, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('✦ MISSION', objData.px, objData.py - 8);
+
+        ctx.restore();
+
+        // 2. Animated Perimeter Rim Waypoint Chevron (Compass Pointer)
+        const rimAngle = objData.relAngle;
+        const rimRadius = rMax + 1;
+        const rimPx = cx + Math.sin(rimAngle) * rimRadius;
+        const rimPy = cy - Math.cos(rimAngle) * rimRadius;
+
+        ctx.save();
+        ctx.translate(rimPx, rimPy);
+        ctx.rotate(rimAngle);
+
+        // Pulsing background glow on the rim
+        ctx.fillStyle = `rgba(251, 191, 36, ${pulseAlpha * 0.45})`;
+        ctx.beginPath();
+        ctx.arc(0, 0, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Golden directional chevron arrow pointing along bearing
+        ctx.fillStyle = '#fbbf24';
+        ctx.strokeStyle = '#fffbeb';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(0, -6.5);
+        ctx.lineTo(4.5, 3);
+        ctx.lineTo(0, 1.2);
+        ctx.lineTo(-4.5, 3);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.restore();
+
+        // Objective distance readout on radar rim when distant (> 600m)
+        if (objData.dist3D > 600) {
+          ctx.save();
+          const distKm = objData.dist3D >= 1000
+            ? `${(objData.dist3D / 1000).toFixed(1)}k`
+            : `${Math.round(objData.dist3D)}m`;
+          const textDist = rMax - 11;
+          const textPx = cx + Math.sin(rimAngle) * textDist;
+          const textPy = cy - Math.cos(rimAngle) * textDist;
+          ctx.fillStyle = '#fef08a';
+          ctx.font = 'bold 7px ui-monospace, monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(distKm, textPx, textPy);
+          ctx.restore();
+        }
+      }
+    }
+
     // 6. Ship Center Chevron (Pointing Up along heading)
     ctx.fillStyle = '#38bdf8';
     ctx.beginPath();
@@ -645,7 +779,8 @@ export class NavRadar {
     if (active) {
       const d = Math.round(active.position.distanceTo(shipPos));
       const autoOn = this.autopilotController.isActive;
-      const chipKey = `${active.id}_${d}_${autoOn}`;
+      const isObjective = !this.freeExplorationMode && (active.id === this.activeStoryObjectiveId);
+      const chipKey = `${active.id}_${d}_${autoOn}_${isObjective}`;
       if (chipKey !== this.lastChipKey) {
         this.lastChipKey = chipKey;
         const isTouch = typeof window !== 'undefined' && (
@@ -661,14 +796,21 @@ export class NavRadar {
             : '<span style="color:#94a3b8;">[TAB: Cycle · T: Target Ahead]</span>';
 
         const isStory = active.isStoryTarget || active.anomaly?.hasResonance || active.anomaly?.signature?.isResonanceAnomaly || active.id.startsWith('story_') || active.type === 'station' || active.type === 'vessel' || active.type === 'relay';
-        const storyBadge = isStory
-          ? '<span style="color:#a78bfa; font-size:8px; font-weight:700; letter-spacing:0.1em; border:1px solid rgba(167, 139, 250, 0.6); border-radius:3px; padding:1px 4px; margin-left:5px;">RESONANCE</span>'
-          : '';
+        const storyBadge = isObjective
+          ? '<span class="radar-objective-badge" style="color:#fbbf24; font-size:8px; font-weight:700; letter-spacing:0.1em; border:1px solid rgba(251, 191, 36, 0.7); background:rgba(251, 191, 36, 0.18); border-radius:3px; padding:1px 4px; margin-left:5px; cursor:pointer;">✦ MISSION</span>'
+          : isStory
+            ? '<span style="color:#a78bfa; font-size:8px; font-weight:700; letter-spacing:0.1em; border:1px solid rgba(167, 139, 250, 0.6); border-radius:3px; padding:1px 4px; margin-left:5px;">RESONANCE</span>'
+            : '';
         const typeLabel = active.isAnomaly ? `⚡ ${active.type}` : active.type;
+        const objectiveActionHtml = isObjective && !autoOn
+          ? '<div style="margin-top: 3px;"><button id="radar-btn-track-objective" style="background: rgba(251, 191, 36, 0.18); border: 1px solid rgba(251, 191, 36, 0.7); color: #fbbf24; font-size: 8px; font-weight: 700; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-family: inherit;">🎯 TRACK OBJECTIVE</button></div>'
+          : '';
+
         this.targetInfoEl.innerHTML = `
-          <div style="color: #38bdf8; font-weight: 600; font-size: 11px;">${active.name}${storyBadge}</div>
+          <div style="color: ${isObjective ? '#fbbf24' : '#38bdf8'}; font-weight: 600; font-size: 11px;">${active.name}${storyBadge}</div>
           <div style="font-size: 9px; color: #cbd5e1; margin-top: 1px;">${typeLabel} · ${d}u</div>
           <div style="font-size: 9px; margin-top: 3px;">${autoText}</div>
+          ${objectiveActionHtml}
         `;
       }
     } else if (this.lastChipKey !== '__none__') {

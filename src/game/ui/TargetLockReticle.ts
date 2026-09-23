@@ -161,25 +161,52 @@ export class TargetLockReticle {
     TargetLockReticle.scratchPos.copy(target.position);
     TargetLockReticle.scratchPos.project(camera);
 
-    // Behind camera check: normalized device coordinate z must be < 1.0
-    if (TargetLockReticle.scratchPos.z >= 1.0) {
-      if (this.isVisible) {
-        this.container.style.display = 'none';
-        this.isVisible = false;
-      }
-      return;
-    }
+    const anomaly = (target.data as any)?.anomalyDescriptor;
+    const isStagedScan = !!anomaly && !anomaly.scanned && (anomaly.currentStage ?? 0) < 4;
+    const isStory = target.id.startsWith('story_') ||
+      target.type === 'station' ||
+      target.type === 'vessel' ||
+      target.type === 'relay' ||
+      isStagedScan ||
+      anomaly?.hasResonance ||
+      anomaly?.signature?.isResonanceAnomaly;
 
-    const screenX = (TargetLockReticle.scratchPos.x * 0.5 + 0.5) * screenWidth;
-    const screenY = (-TargetLockReticle.scratchPos.y * 0.5 + 0.5) * screenHeight;
+    let screenX = (TargetLockReticle.scratchPos.x * 0.5 + 0.5) * screenWidth;
+    let screenY = (-TargetLockReticle.scratchPos.y * 0.5 + 0.5) * screenHeight;
+    const isBehind = TargetLockReticle.scratchPos.z >= 1.0;
+    const isOffScreen = screenX < 24 || screenX > screenWidth - 24 || screenY < 24 || screenY > screenHeight - 24;
 
-    // Off screen check with margin
-    if (screenX < -100 || screenX > screenWidth + 100 || screenY < -100 || screenY > screenHeight + 100) {
-      if (this.isVisible) {
-        this.container.style.display = 'none';
-        this.isVisible = false;
+    if (isBehind || isOffScreen) {
+      if (isStory) {
+        // Reverse coordinates when behind camera so direction points to actual bearing
+        if (isBehind) {
+          screenX = screenWidth - screenX;
+          screenY = screenHeight - screenY;
+        }
+
+        // Clamp to screen perimeter with margin
+        const margin = 50;
+        const centerX = screenWidth / 2;
+        const centerY = screenHeight / 2;
+        let dx = screenX - centerX;
+        let dy = screenY - centerY;
+        if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) dy = -1;
+
+        const halfW = centerX - margin;
+        const halfH = centerY - margin;
+        const scaleX = halfW / Math.max(0.001, Math.abs(dx));
+        const scaleY = halfH / Math.max(0.001, Math.abs(dy));
+        const scale = Math.min(scaleX, scaleY);
+
+        screenX = centerX + dx * scale;
+        screenY = centerY + dy * scale;
+      } else {
+        if (this.isVisible) {
+          this.container.style.display = 'none';
+          this.isVisible = false;
+        }
+        return;
       }
-      return;
     }
 
     if (!this.isVisible) {
@@ -196,18 +223,9 @@ export class TargetLockReticle {
     }
 
     const distStr = target.distance !== undefined ? ` · ${target.distance}m` : '';
-    this.labelEl.textContent = `[${target.name.toUpperCase()}${distStr}]`;
-
-    const anomaly = (target.data as any)?.anomalyDescriptor;
-    const isStagedScan = !!anomaly && !anomaly.scanned && (anomaly.currentStage ?? 0) < 4;
-
-    const isStory = target.id.startsWith('story_') ||
-      target.type === 'station' ||
-      target.type === 'vessel' ||
-      target.type === 'relay' ||
-      isStagedScan ||
-      anomaly?.hasResonance ||
-      anomaly?.signature?.isResonanceAnomaly;
+    const isEdgeClamped = isStory && (isBehind || isOffScreen);
+    const prefix = isEdgeClamped ? '✦ ' : '';
+    this.labelEl.textContent = `${prefix}[${target.name.toUpperCase()}${distStr}]`;
 
     if (isStagedScan) {
       StagedScanController.ensureScanStages(anomaly);
@@ -276,15 +294,17 @@ export class TargetLockReticle {
     }
 
     // Color theme based on target type
-    const accent = isStory
-      ? '#38bdf8' // Vibrant resonance cyan
-      : target.isSentient
-        ? '#4ade80' // Green for sentient giants/titans
-        : target.type === 'encounter' || target.type === 'anomaly'
-          ? '#f59e0b' // Amber for anomalies/encounters
-          : target.type === 'courier'
-            ? '#c084fc' // Purple for courier
-            : '#38bdf8'; // Blue for creatures/planets/landmarks
+    const accent = isEdgeClamped
+      ? '#fbbf24' // Vibrant gold waypoint indicator for off-screen objective
+      : isStory
+        ? '#38bdf8' // Vibrant resonance cyan
+        : target.isSentient
+          ? '#4ade80' // Green for sentient giants/titans
+          : target.type === 'encounter' || target.type === 'anomaly'
+            ? '#f59e0b' // Amber for anomalies/encounters
+            : target.type === 'courier'
+              ? '#c084fc' // Purple for courier
+              : '#38bdf8'; // Blue for creatures/planets/landmarks
 
     this.labelEl.style.color = accent;
   }

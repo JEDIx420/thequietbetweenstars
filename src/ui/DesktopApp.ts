@@ -25,7 +25,7 @@ import { StructuredConversationProvider } from '../narrative/ConversationDirecto
 import { NarrativeDirector } from '../narrative/NarrativeDirector';
 import { TutorialDirector } from '../tutorial/TutorialDirector';
 import type { NarrativeContext } from '../narrative/NarrativeTypes';
-import { NavRadar } from '../game/ui/NavRadar';
+import { NavRadar, type RadarTargetItem } from '../game/ui/NavRadar';
 import { DeepCruiseController } from '../game/flight/DeepCruiseController';
 import { AutopilotController } from '../game/flight/AutopilotController';
 import { saveManager, DEFAULT_SAVE_SLOT, type PlayerSaveSlot, type ShipModule } from '../persistence/SaveManager';
@@ -276,6 +276,9 @@ export class DesktopApp {
       this.holographicNavModal.setScale('SYSTEM');
       this.holographicNavModal.open();
     });
+    this.navRadar.setOnTrackObjective(() => {
+      this.lockAndTrackActiveStoryObjective();
+    });
 
     // Target Lock HUD Reticle & Touch Raycasting
     this.targetLockReticle = new TargetLockReticle(this.canvasContainer);
@@ -376,6 +379,9 @@ export class DesktopApp {
       const next = !this.storyDirector.isFreeExploration();
       this.storyDirector.setFreeExploration(next);
       audio.playBlip();
+    });
+    this.storyObjectiveHud.setOnTrackObjective(() => {
+      this.lockAndTrackActiveStoryObjective();
     });
     this.stagedScanHud = new StagedScanHUD(this.canvasContainer);
     this.storyPresentationDirector = new StoryPresentationDirector(
@@ -1156,11 +1162,18 @@ export class DesktopApp {
     // Update Local Nav Radar
     if (this.navRadar && this.uiState === 'playing') {
       this.navRadar.setFreeExplorationMode(this.storyDirector.isFreeExploration());
+      const activeObj = this.storyDirector.getActiveObjectiveTarget();
+      this.navRadar.setActiveStoryObjective(activeObj?.targetId || null, activeObj?.label || null);
       const podId = this.spaceScene.activeCourierPod ? this.spaceScene.activeCourierPod.order.orderId : null;
       if (podId !== this.lastCourierPodState) {
         this.lastCourierPodState = podId;
         const podPos = this.spaceScene.activeCourierPod ? this.spaceScene.activeCourierPod.position : undefined;
-        this.navRadar.setPlanets(this.spaceScene.activePlanetList, this.spaceScene.currentSystem?.anomalies || [], podPos);
+        this.navRadar.setPlanets(
+          this.spaceScene.activePlanetList,
+          this.spaceScene.currentSystem?.anomalies || [],
+          podPos,
+          this.collectExtraRadarTargets()
+        );
       }
       this.navRadar.update(shipPos, this.flightModel.quaternion, this.spaceScene.sunPos);
     }
@@ -2288,7 +2301,18 @@ export class DesktopApp {
     }
 
     // 5. Radar Targets with Story Highlights
-    const extraRadarTargets: any[] = [];
+    const activeObj = this.storyDirector.getActiveObjectiveTarget();
+    this.navRadar?.setActiveStoryObjective(activeObj?.targetId || null, activeObj?.label || null);
+    this.navRadar?.setPlanets(
+      this.spaceScene.activePlanetList,
+      system.anomalies,
+      this.spaceScene.activeCourierPod?.position,
+      this.collectExtraRadarTargets()
+    );
+  }
+
+  public collectExtraRadarTargets(): RadarTargetItem[] {
+    const extraRadarTargets: RadarTargetItem[] = [];
     if (this.activeSpaceStation) {
       extraRadarTargets.push({
         id: this.activeSpaceStation.id,
@@ -2322,12 +2346,43 @@ export class DesktopApp {
         storyTag: 'HARMONIC RELAY',
       });
     }
-    this.navRadar?.setPlanets(
-      this.spaceScene.activePlanetList,
-      system.anomalies,
-      this.spaceScene.activeCourierPod?.position,
-      extraRadarTargets
-    );
+    return extraRadarTargets;
+  }
+
+  public lockAndTrackActiveStoryObjective(): boolean {
+    const objective = this.storyDirector.getActiveObjectiveTarget();
+    if (!objective) {
+      this.showHudNotice('NO ACTIVE STORY OBJECTIVE IN CURRENT SYSTEM');
+      return false;
+    }
+
+    // 1. Ensure world state has latest story entities and synchronize nav radar
+    this.reconcileStoryWorldState();
+    let selected = this.navRadar.selectTargetById(objective.targetId);
+
+    // 2. Lock candidate in TargetLockSystem
+    const candidate = this.collectSpaceLockCandidates().find((c) => c.id === objective.targetId);
+    if (candidate) {
+      this.targetLockSystem.lockTarget(candidate);
+    }
+
+    // 3. Engage autopilot towards the target
+    const activeTarget = this.navRadar.getSelectedTarget();
+    if (activeTarget) {
+      const heading = activeTarget.position.clone().sub(this.flightModel.position).normalize();
+      this.autopilotController.setTarget({
+        type: 'vector',
+        heading,
+        name: activeTarget.name,
+      });
+      this.autopilotController.engage();
+      audio.playConnectChime();
+      this.showHudNotice(`✦ LOCKED MISSION OBJECTIVE: ${objective.label.toUpperCase()} · AUTOPILOT ENGAGED`);
+      return true;
+    }
+
+    this.showHudNotice(`✦ TARGETED MISSION OBJECTIVE: ${objective.label.toUpperCase()}`);
+    return selected;
   }
 
   public recordArrivalDiscovery(system: StarSystemDescriptor): void {
