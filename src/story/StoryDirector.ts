@@ -6,6 +6,7 @@ import type {
   ResonanceFragment,
 } from './StoryTypes';
 import { DEFAULT_STORY_STATE, cloneStoryState } from './StoryState';
+import { CHAPTER_1_BEATS } from './chapters/Chapter1Resonance';
 
 export class StoryDirector {
   private static instance: StoryDirector | null = null;
@@ -36,8 +37,67 @@ export class StoryDirector {
     return this.state;
   }
 
-  public loadState(state: StoryState): void {
+  public loadState(state: StoryState): boolean {
     this.state = cloneStoryState(state);
+    return this.reconcileState();
+  }
+
+  public reconcileState(): boolean {
+    let repaired = false;
+    const relay = this.state.harmonicRelayState;
+    if (relay) {
+      if (Array.isArray(relay.alignedPillars)) {
+        // Sanitize and deduplicate pillar indices
+        relay.alignedPillars = Array.from(
+          new Set(relay.alignedPillars.filter((p) => p === 0 || p === 1 || p === 2))
+        ).sort((a, b) => a - b);
+      } else {
+        relay.alignedPillars = [];
+      }
+
+      if (relay.alignedPillars.length >= 3) {
+        relay.activated = true;
+      }
+
+      // Canonical condition: if all 3 pillars aligned OR relay activated,
+      // and player is on Beat 5 or Beat 6, advance to Beat 7
+      if (relay.activated || relay.alignedPillars.length >= 3) {
+        if (
+          this.state.currentBeat === 'beat_5_relay_coordinates' ||
+          this.state.currentBeat === 'beat_6_relay_alignment'
+        ) {
+          if (!this.state.completedBeats.includes('beat_5_relay_coordinates')) {
+            this.state.completedBeats.push('beat_5_relay_coordinates');
+          }
+          if (!this.state.completedBeats.includes('beat_6_relay_alignment')) {
+            this.state.completedBeats.push('beat_6_relay_alignment');
+          }
+          this.state.currentBeat = 'beat_7_chapter1_climax';
+          repaired = true;
+        }
+      }
+    }
+    return repaired;
+  }
+
+  public isChapter1Complete(): boolean {
+    return (
+      this.state.completedBeats.includes('beat_7_chapter1_climax') ||
+      (this.state.currentBeat === 'beat_7_chapter1_climax' &&
+        !!this.state.harmonicRelayState?.activated &&
+        this.state.completedBeats.includes('beat_6_relay_alignment'))
+    );
+  }
+
+  public markBeatCompleted(beat: StoryBeatId): void {
+    if (!this.state.completedBeats.includes(beat)) {
+      this.state.completedBeats.push(beat);
+      this.emit({
+        type: 'STORY_BEAT_TRIGGERED',
+        payload: { newBeat: this.state.currentBeat, completedBeats: this.state.completedBeats },
+        timestamp: Date.now(),
+      });
+    }
   }
 
   public isFreeExploration(): boolean {
@@ -67,7 +127,11 @@ export class StoryDirector {
       case 'beat_5_relay_coordinates':
         return { targetId: 'harmonic_relay_prime', label: 'First Harmonic Relay: Spires of the Quiet' };
       case 'beat_6_relay_alignment':
+        if (this.state.harmonicRelayState.activated || this.state.harmonicRelayState.alignedPillars.length >= 3) {
+          return null;
+        }
         return { targetId: 'harmonic_relay_prime', label: 'First Harmonic Relay: Spires of the Quiet' };
+      case 'beat_7_chapter1_climax':
       default:
         return null;
     }
@@ -183,7 +247,14 @@ export class StoryDirector {
             zephyr.familiarity = Math.min(1.0, zephyr.familiarity + 0.35);
           }
           if (this.state.currentBeat === 'beat_5_relay_coordinates') {
-            this.advanceBeat('beat_6_relay_alignment');
+            if (
+              this.state.harmonicRelayState.activated ||
+              this.state.harmonicRelayState.alignedPillars.length >= 3
+            ) {
+              this.advanceBeat('beat_7_chapter1_climax');
+            } else {
+              this.advanceBeat('beat_6_relay_alignment');
+            }
           }
         }
         break;
@@ -191,14 +262,25 @@ export class StoryDirector {
 
       case 'RELAY_PILLAR_ALIGNED': {
         const pillarIndex: number = event.payload?.pillarIndex;
-        if (typeof pillarIndex === 'number' && !this.state.harmonicRelayState.alignedPillars.includes(pillarIndex)) {
+        if (
+          typeof pillarIndex === 'number' &&
+          !this.state.harmonicRelayState.alignedPillars.includes(pillarIndex)
+        ) {
           this.state.harmonicRelayState.alignedPillars.push(pillarIndex);
-          if (this.state.harmonicRelayState.alignedPillars.length >= 3) {
-            this.emit({
-              type: 'RELAY_ACTIVATED',
-              payload: { systemSeed: this.state.harmonicRelayState.systemSeed },
-              timestamp: Date.now(),
-            });
+          this.state.harmonicRelayState.alignedPillars.sort((a, b) => a - b);
+        }
+        if (this.state.harmonicRelayState.alignedPillars.length >= 3) {
+          this.state.harmonicRelayState.activated = true;
+          this.emit({
+            type: 'RELAY_ACTIVATED',
+            payload: { systemSeed: this.state.harmonicRelayState.systemSeed },
+            timestamp: Date.now(),
+          });
+          if (
+            this.state.currentBeat === 'beat_5_relay_coordinates' ||
+            this.state.currentBeat === 'beat_6_relay_alignment'
+          ) {
+            this.advanceBeat('beat_7_chapter1_climax');
           }
         }
         break;
@@ -206,7 +288,10 @@ export class StoryDirector {
 
       case 'RELAY_ACTIVATED': {
         this.state.harmonicRelayState.activated = true;
-        if (this.state.currentBeat === 'beat_6_relay_alignment') {
+        if (
+          this.state.currentBeat === 'beat_5_relay_coordinates' ||
+          this.state.currentBeat === 'beat_6_relay_alignment'
+        ) {
           this.advanceBeat('beat_7_chapter1_climax');
         }
         break;
@@ -220,6 +305,12 @@ export class StoryDirector {
       this.state.completedBeats.push(this.state.currentBeat);
     }
     this.state.currentBeat = nextBeat;
+
+    const beatDef = CHAPTER_1_BEATS[nextBeat];
+    if (beatDef?.codexReward && !this.state.unlockedCodexEntries.includes(beatDef.codexReward.id)) {
+      this.state.unlockedCodexEntries.push(beatDef.codexReward.id);
+    }
+
     this.emit({
       type: 'STORY_BEAT_TRIGGERED',
       payload: { newBeat: nextBeat, completedBeats: this.state.completedBeats },

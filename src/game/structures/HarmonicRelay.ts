@@ -122,6 +122,10 @@ export class HarmonicRelay {
     }
   }
 
+  public get alignedCount(): number {
+    return this.pillars.filter((p) => p.isAligned).length;
+  }
+
   public getNearbyUnalignedPillar(shipPos: THREE.Vector3, threshold = 220): RelayPillar | null {
     for (const pillar of this.pillars) {
       if (!pillar.isAligned && pillar.position.distanceTo(shipPos) <= threshold) {
@@ -131,9 +135,35 @@ export class HarmonicRelay {
     return null;
   }
 
+  public setPillarAlignedSilently(index: number): void {
+    const pillar = this.pillars[index];
+    if (!pillar || pillar.isAligned) return;
+    pillar.isAligned = true;
+    pillar.mesh.material = this.pillarMaterialActive;
+    pillar.light.color.setHex(0x38bdf8);
+    pillar.light.intensity = 5.0;
+  }
+
+  public setActivatedSilently(): void {
+    if (this.isActivated) return;
+    this.activateRelay();
+  }
+
+  public restoreFromState(state: { alignedPillars?: number[]; activated?: boolean }): void {
+    if (!state) return;
+    if (Array.isArray(state.alignedPillars)) {
+      for (const idx of state.alignedPillars) {
+        this.setPillarAlignedSilently(idx);
+      }
+    }
+    if (state.activated || this.pillars.every((p) => p.isAligned)) {
+      this.setActivatedSilently();
+    }
+  }
+
   public alignPillar(index: number, storyDirector?: StoryDirector): boolean {
     const pillar = this.pillars[index];
-    if (!pillar || pillar.isAligned) return false;
+    if (!pillar || pillar.isAligned || this.isActivated) return false;
 
     pillar.isAligned = true;
     pillar.mesh.material = this.pillarMaterialActive;
@@ -150,30 +180,46 @@ export class HarmonicRelay {
 
     const allAligned = this.pillars.every((p) => p.isAligned);
     if (allAligned && !this.isActivated) {
-      this.activateRelay();
+      this.activateRelay(storyDirector);
     }
 
     return true;
   }
 
-  private activateRelay(): void {
+  public activateRelay(storyDirector?: StoryDirector): void {
+    if (this.isActivated) return;
     this.isActivated = true;
 
-    // Create spectacular energy beam firing toward deep space
-    const beamGeo = new THREE.CylinderGeometry(18, 26, 3200, 16, 1, true);
-    const beamMat = new THREE.MeshBasicMaterial({
-      color: 0x67e8f9,
-      transparent: true,
-      opacity: 0.8,
-      side: THREE.DoubleSide,
-    });
-    this.energyBeam = new THREE.Mesh(beamGeo, beamMat);
-    this.energyBeam.rotation.x = Math.PI / 2;
-    this.energyBeam.position.set(0, 0, 1600);
-    this.group.add(this.energyBeam);
+    // Ensure all pillars are visually aligned when activated
+    for (let i = 0; i < this.pillars.length; i++) {
+      this.setPillarAlignedSilently(i);
+    }
 
-    const beamLight = new THREE.PointLight(0x38bdf8, 8.0, 600);
-    this.group.add(beamLight);
+    // Create spectacular energy beam firing toward deep space
+    if (!this.energyBeam) {
+      const beamGeo = new THREE.CylinderGeometry(18, 26, 3200, 16, 1, true);
+      const beamMat = new THREE.MeshBasicMaterial({
+        color: 0x67e8f9,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide,
+      });
+      this.energyBeam = new THREE.Mesh(beamGeo, beamMat);
+      this.energyBeam.rotation.x = Math.PI / 2;
+      this.energyBeam.position.set(0, 0, 1600);
+      this.group.add(this.energyBeam);
+
+      const beamLight = new THREE.PointLight(0x38bdf8, 8.0, 600);
+      this.group.add(beamLight);
+    }
+
+    if (storyDirector) {
+      storyDirector.emit({
+        type: 'RELAY_ACTIVATED',
+        payload: { systemSeed: this.id },
+        timestamp: Date.now(),
+      });
+    }
   }
 
   public onRebase(offset: THREE.Vector3): void {

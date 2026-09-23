@@ -211,6 +211,11 @@ export class SpaceInteractionController {
       case 'relay': {
         if (callbacks.isTriggered === false) break;
         const relay = lockedTarget.data as HarmonicRelay;
+        if (relay.isActivated || this.storyDirector.getState().harmonicRelayState.activated) {
+          callbacks.showNotice('FIRST HARMONIC RELAY // STATUS: SYNCHRONIZED · TACHYON GATEWAY HUMS');
+          audio.playConnectChime();
+          break;
+        }
         const unaligned = relay.getNearbyUnalignedPillar(shipPos);
         if (unaligned) {
           const aligned = relay.alignPillar(unaligned.index, this.storyDirector);

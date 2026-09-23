@@ -287,6 +287,20 @@ export class StoryObjectiveHUD {
       return;
     }
 
+    if (state.currentBeat === 'beat_7_chapter1_climax') {
+      if (this.trackBtn) this.trackBtn.style.display = 'none';
+      if (state.completedBeats.includes('beat_7_chapter1_climax')) {
+        this.chapterEl.textContent = 'CHAPTER 1 // THE RESONANCE: COMPLETE';
+        this.chapterEl.style.color = '#4ade80';
+        this.titleEl.textContent = 'THE GALAXY AWAKENS';
+        this.titleEl.style.color = '#86efac';
+        this.objectiveEl.textContent = '● First Harmonic Relay active. The quiet is no longer empty. Explore uncharted systems freely.';
+        this.fragmentsEl.style.display = 'none';
+        if (showNotification) this.flashUpdate();
+        return;
+      }
+    }
+
     this.chapterEl.style.color = '#7dd3fc';
     this.titleEl.style.color = '#f1f5f9';
     const beatDef = CHAPTER_1_BEATS[state.currentBeat];
@@ -320,9 +334,9 @@ export class StoryObjectiveHUD {
 
     this.badgeEl.style.display = 'inline-block';
     if (this.flashTimeout) clearTimeout(this.flashTimeout);
-    this.flashTimeout = window.setTimeout(() => {
+    this.flashTimeout = setTimeout(() => {
       this.badgeEl.style.display = 'none';
-    }, 4500);
+    }, 4500) as any;
 
     audio.playConnectChime();
   }

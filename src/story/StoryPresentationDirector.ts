@@ -9,6 +9,7 @@ export interface StoryPresentationCallbacks {
   reconcileWorldState: () => void;
   highlightNavigationTarget: (targetId: string, name: string) => void;
   showHudNotice: (text: string) => void;
+  saveJourney?: () => void;
 }
 
 export class StoryPresentationDirector {
@@ -168,27 +169,7 @@ export class StoryPresentationDirector {
             );
           }
         } else if (beat === 'beat_7_chapter1_climax') {
-          this.callbacks.showHudNotice(
-            'GATEWAY AWAKENED // CHAPTER 1 COMPLETE: THE RESONANCE'
-          );
-
-          if (beatDef && beatDef.dialogueLines.length > 0) {
-            this.dialoguePresenter.enqueue(
-              beatDef.dialogueLines.map((line) => ({
-                speaker: beatDef.dialogueSpeaker,
-                text: line,
-                durationMs: 6000,
-                audioTone: 'mystery',
-              }))
-            );
-          }
-
-          // Subtle concluding notification
-          setTimeout(() => {
-            this.callbacks.showHudNotice(
-              'CHAPTER 1 COMPLETE // The galaxy is vast. Your journey continues.'
-            );
-          }, 7000);
+          this.playChapter1ClimaxPresentation();
         }
         break;
       }
@@ -290,6 +271,39 @@ export class StoryPresentationDirector {
     setTimeout(() => {
       deliverNext();
     }, 800);
+  }
+
+  public playChapter1ClimaxPresentation(): void {
+    const beatDef = CHAPTER_1_BEATS['beat_7_chapter1_climax'];
+
+    this.callbacks.showHudNotice(
+      'GATEWAY AWAKENED // CHAPTER 1 COMPLETE: THE RESONANCE'
+    );
+    audio.playConnectChime();
+
+    if (beatDef && beatDef.dialogueLines.length > 0) {
+      this.dialoguePresenter.enqueue(
+        beatDef.dialogueLines.map((line) => ({
+          speaker: beatDef.dialogueSpeaker,
+          text: line,
+          durationMs: 6000,
+          audioTone: 'mystery',
+        }))
+      );
+    }
+
+    // Mark Beat 7 as completed and trigger save
+    this.storyDirector.markBeatCompleted('beat_7_chapter1_climax');
+    this.objectiveHud.update(this.storyDirector.getState());
+    this.callbacks.saveJourney?.();
+
+    // Concluding notification
+    setTimeout(() => {
+      this.callbacks.showHudNotice(
+        'CHAPTER 1 COMPLETE // The galaxy is vast. Your journey continues.'
+      );
+      this.callbacks.saveJourney?.();
+    }, 7000);
   }
 
   public refresh(): void {

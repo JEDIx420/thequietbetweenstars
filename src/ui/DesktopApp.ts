@@ -398,6 +398,7 @@ export class DesktopApp {
           }
         },
         showHudNotice: (text: string) => this.showHudNotice(text),
+        saveJourney: () => this.saveCurrentJourney(),
       }
     );
 
@@ -2084,11 +2085,15 @@ export class DesktopApp {
         this.shownContextHints.add(id);
       }
     }
+    let storyRepaired = false;
     if (slot.story) {
-      this.storyDirector.loadState(slot.story);
+      storyRepaired = this.storyDirector.loadState(slot.story);
     }
     this.reconcileStoryWorldState();
     this.storyObjectiveHud?.update(this.storyDirector.getState());
+    if (storyRepaired) {
+      await this.saveCurrentJourney();
+    }
     if (slot.targetSystem) {
       this.holographicNavModal.activeCourseSystem = slot.targetSystem;
     }
@@ -2294,6 +2299,7 @@ export class DesktopApp {
         });
         this.spaceScene.worldRoot.add(this.activeHarmonicRelay.group);
       }
+      this.activeHarmonicRelay.restoreFromState(this.storyDirector.getState().harmonicRelayState);
     } else if (this.activeHarmonicRelay) {
       this.spaceScene.worldRoot.remove(this.activeHarmonicRelay.group);
       this.activeHarmonicRelay.dispose();
@@ -2603,6 +2609,11 @@ export class DesktopApp {
     const storyState = this.storyDirector.getState();
     if (storyState.currentBeat === 'beat_0_awakening') {
       this.storyPresentationDirector.beginStoryOpening();
+    } else if (
+      storyState.currentBeat === 'beat_7_chapter1_climax' &&
+      !storyState.completedBeats.includes('beat_7_chapter1_climax')
+    ) {
+      this.storyPresentationDirector.playChapter1ClimaxPresentation();
     } else {
       this.storyPresentationDirector.refresh();
     }
