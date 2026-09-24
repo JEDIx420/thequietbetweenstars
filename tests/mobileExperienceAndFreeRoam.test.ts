@@ -291,14 +291,24 @@ describe('Mobile Experience & Free Roam Clean UX', () => {
   });
 
   describe('5. StoryObjectiveHUD Free Roam Toggle & Collapse Controls', () => {
-    it('displays [▶ MISSIONS] in free roam and [⏸ ROAM] in story mode', () => {
+    it('relies on top bar for mode toggle and keeps card streamlined without internal roam button', () => {
       const hud = new StoryObjectiveHUD(parentEl);
       let toggleFired = false;
       hud.setOnToggleFreeRoam(() => {
         toggleFired = true;
       });
 
-      // 1. In free roam
+      // Internal toggle button was removed in favor of top responsive button
+      const toggleBtn = parentEl.querySelector('#hud-btn-toggle-freeroam');
+      expect(toggleBtn).toBeNull();
+
+      // Track button and collapse button still exist
+      const trackBtn = parentEl.querySelector('#hud-btn-track-objective');
+      const collapseBtn = parentEl.querySelector('#hud-btn-collapse-toggle');
+      expect(trackBtn).toBeTruthy();
+      expect(collapseBtn).toBeTruthy();
+
+      // 1. In free roam, track button is hidden and chapter reflects free roam
       hud.update({
         freeExplorationMode: true,
         currentChapter: 1,
@@ -312,12 +322,10 @@ describe('Mobile Experience & Free Roam Clean UX', () => {
         storyCompleted: false,
       } as any);
 
-      const toggleBtn = parentEl.querySelector('#hud-btn-toggle-freeroam');
-      expect(toggleBtn).toBeTruthy();
-      expect(toggleBtn.textContent).toContain('MISSIONS');
-      expect(toggleBtn.title).toBe('Enable Story Missions');
+      expect((trackBtn as HTMLElement).style.display).toBe('none');
+      expect((hud as any).chapterEl.textContent).toContain('FREE ROAM');
 
-      // 2. In story mode
+      // 2. In story mode, track button is visible and chapter reflects story
       hud.update({
         freeExplorationMode: false,
         currentChapter: 1,
@@ -331,8 +339,8 @@ describe('Mobile Experience & Free Roam Clean UX', () => {
         storyCompleted: false,
       } as any);
 
-      expect(toggleBtn.textContent).toContain('ROAM');
-      expect(toggleBtn.title).toBe('Switch to Free Roam');
+      expect((trackBtn as HTMLElement).style.display).toBe('inline-block');
+      expect((hud as any).chapterEl.textContent).toContain('CHAPTER');
 
       (hud as any).onToggleFreeRoamCallback?.();
       expect(toggleFired).toBe(true);
@@ -352,12 +360,8 @@ describe('Mobile Experience & Free Roam Clean UX', () => {
       expect((hud as any).objectiveEl.style.display).toBe('block');
     });
 
-    it('activates missions when tapping the collapsed Free Roam card directly', () => {
+    it('taps on the card to toggle collapse/expand state rather than toggling game modes', () => {
       const hud = new StoryObjectiveHUD(parentEl);
-      let toggleCount = 0;
-      hud.setOnToggleFreeRoam(() => {
-        toggleCount++;
-      });
 
       hud.update({
         freeExplorationMode: true,
@@ -375,12 +379,16 @@ describe('Mobile Experience & Free Roam Clean UX', () => {
       hud.toggleCollapse(true);
       expect((hud as any).isCollapsed).toBe(true);
 
-      const card = (hud as any).container.querySelector('.hud-card');
+      const card = (hud as any).container.querySelector('.hud-card') as HTMLElement;
       expect(card).toBeTruthy();
 
-      // Simulate tapping the card in collapsed Free Roam mode
+      // Tapping the card expands it
       card.click();
-      expect(toggleCount).toBe(1);
+      expect((hud as any).isCollapsed).toBe(false);
+
+      // Tapping again collapses it
+      card.click();
+      expect((hud as any).isCollapsed).toBe(true);
     });
   });
 

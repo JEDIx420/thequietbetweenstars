@@ -89,61 +89,61 @@ export class NavRadar {
         user-select: none;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       }
-      /* Tablet & Touch Devices: Move radar to top-right to keep bottom-right clear for throttle & action buttons */
+      /* Tablet & Touch Devices: Move radar below top header bar and keep bottom-right clear for throttle & action buttons */
       @media (pointer: coarse), (max-width: 1366px) and (hover: none) {
         #nav-radar-widget {
           bottom: auto !important;
-          top: max(44px, env(safe-area-inset-top, 44px)) !important;
+          top: max(54px, calc(env(safe-area-inset-top, 0px) + 48px)) !important;
           right: max(14px, env(safe-area-inset-right, 14px)) !important;
           gap: 8px !important;
           flex-direction: row-reverse !important;
           align-items: flex-start !important;
         }
         #nav-radar-widget .radar-canvas {
-          width: 96px !important;
-          height: 96px !important;
+          width: 90px !important;
+          height: 90px !important;
         }
         #nav-radar-widget .radar-info {
-          max-width: 160px !important;
-          padding: 6px 10px !important;
-          font-size: 9.5px !important;
+          max-width: 150px !important;
+          padding: 5px 8px !important;
+          font-size: 9px !important;
         }
       }
       body.touch-controls-active #nav-radar-widget {
         bottom: auto !important;
-        top: max(44px, env(safe-area-inset-top, 44px)) !important;
+        top: max(54px, calc(env(safe-area-inset-top, 0px) + 48px)) !important;
         right: max(14px, env(safe-area-inset-right, 14px)) !important;
         gap: 8px !important;
         flex-direction: row-reverse !important;
         align-items: flex-start !important;
       }
       body.touch-controls-active #nav-radar-widget .radar-canvas {
-        width: 96px !important;
-        height: 96px !important;
+        width: 90px !important;
+        height: 90px !important;
       }
       body.touch-controls-active #nav-radar-widget .radar-info {
-        max-width: 160px !important;
-        padding: 6px 10px !important;
-        font-size: 9.5px !important;
+        max-width: 150px !important;
+        padding: 5px 8px !important;
+        font-size: 9px !important;
       }
       /* Compact Phone Overrides */
       @media (max-width: 850px), (max-height: 520px) {
         #nav-radar-widget {
           bottom: auto !important;
-          top: max(40px, env(safe-area-inset-top, 40px)) !important;
+          top: max(50px, calc(env(safe-area-inset-top, 0px) + 44px)) !important;
           right: max(10px, env(safe-area-inset-right, 10px)) !important;
           gap: 6px !important;
           flex-direction: row-reverse !important;
           align-items: flex-start !important;
         }
         #nav-radar-widget .radar-canvas {
-          width: 80px !important;
-          height: 80px !important;
+          width: 78px !important;
+          height: 78px !important;
         }
         #nav-radar-widget .radar-info {
-          max-width: 135px !important;
-          padding: 4px 8px !important;
-          font-size: 8.5px !important;
+          max-width: 130px !important;
+          padding: 3px 6px !important;
+          font-size: 8px !important;
           text-align: right;
           background: rgba(10, 16, 28, 0.9) !important;
         }

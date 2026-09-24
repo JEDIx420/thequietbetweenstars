@@ -71,22 +71,6 @@ export class StoryObjectiveHUD {
       #story-objective-hud.is-collapsed .hud-header {
         margin-bottom: 0 !important;
       }
-      #hud-btn-toggle-freeroam {
-        font-size: 10px !important;
-        font-weight: 700 !important;
-        padding: 4px 9px !important;
-        min-height: 28px !important;
-        border-radius: 6px !important;
-        cursor: pointer !important;
-        touch-action: manipulation !important;
-        transition: all 0.15s ease !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-      }
-      #hud-btn-toggle-freeroam:active {
-        transform: scale(0.94);
-      }
       /* Tablet & Touch Adaptation */
       @media (pointer: coarse), (max-width: 1024px) {
         #story-objective-hud {
@@ -96,11 +80,6 @@ export class StoryObjectiveHUD {
         }
         #story-objective-hud .hud-card {
           padding: 8px 12px;
-        }
-        #hud-btn-toggle-freeroam {
-          min-height: 34px !important;
-          padding: 6px 12px !important;
-          font-size: 10.5px !important;
         }
       }
       /* Compact Phone Overrides */
@@ -188,33 +167,6 @@ export class StoryObjectiveHUD {
     });
     this.trackBtn = trackBtn;
 
-    const freeRoamBtn = document.createElement('button');
-    freeRoamBtn.id = 'hud-btn-toggle-freeroam';
-    freeRoamBtn.title = 'Toggle Free Exploration Mode';
-    freeRoamBtn.style.cssText = `
-      background: rgba(34, 197, 94, 0.2);
-      border: 1px solid rgba(74, 222, 128, 0.45);
-      color: #4ade80;
-      font-size: 10px;
-      font-weight: 700;
-      padding: 4px 9px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-family: inherit;
-      transition: all 0.15s ease;
-      touch-action: manipulation;
-    `;
-    freeRoamBtn.textContent = '▶ MISSIONS';
-    const triggerToggle = (e: Event) => {
-      e.stopPropagation();
-      HapticFeedback.medium();
-      if (this.onToggleFreeRoamCallback) {
-        this.onToggleFreeRoamCallback();
-      }
-    };
-    freeRoamBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
-    freeRoamBtn.addEventListener('click', triggerToggle);
-
     const collapseBtn = document.createElement('button');
     collapseBtn.id = 'hud-btn-collapse-toggle';
     collapseBtn.title = 'Collapse/Expand Mission Panel';
@@ -236,7 +188,6 @@ export class StoryObjectiveHUD {
 
     controlsWrapper.appendChild(this.badgeEl);
     controlsWrapper.appendChild(trackBtn);
-    controlsWrapper.appendChild(freeRoamBtn);
     controlsWrapper.appendChild(collapseBtn);
 
     headerEl.appendChild(this.chapterEl);
@@ -280,14 +231,6 @@ export class StoryObjectiveHUD {
 
     card.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).tagName === 'BUTTON') return;
-      if (this.isCollapsed && this.isFreeExplorationActive) {
-        // Tapping the collapsed Free Roam pill activates missions directly
-        HapticFeedback.medium();
-        if (this.onToggleFreeRoamCallback) {
-          this.onToggleFreeRoamCallback();
-          return;
-        }
-      }
       this.toggleCollapse();
     });
 
@@ -301,20 +244,22 @@ export class StoryObjectiveHUD {
     this.onToggleFreeRoamCallback = cb;
   }
 
+  public triggerToggleFreeRoam(): void {
+    if (this.onToggleFreeRoamCallback) {
+      this.onToggleFreeRoamCallback();
+    }
+  }
+
+  public isFree(): boolean {
+    return this.isFreeExplorationActive;
+  }
+
   public update(state: StoryState, showNotification = false): void {
     const isFree = !!state.freeExplorationMode;
     this.isFreeExplorationActive = isFree;
     const card = this.container.querySelector('.hud-card') as HTMLElement;
     if (card) {
       card.style.borderLeftColor = isFree ? '#4ade80' : '#38bdf8';
-    }
-    const btn = this.container.querySelector('#hud-btn-toggle-freeroam') as HTMLElement;
-    if (btn) {
-      btn.textContent = isFree ? '▶ MISSIONS' : '⏸ ROAM';
-      btn.title = isFree ? 'Enable Story Missions' : 'Switch to Free Roam';
-      btn.style.color = isFree ? '#4ade80' : '#94a3b8';
-      btn.style.borderColor = isFree ? 'rgba(74, 222, 128, 0.45)' : 'rgba(255, 255, 255, 0.2)';
-      btn.style.background = isFree ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 255, 255, 0.08)';
     }
 
     if (this.trackBtn) {
@@ -338,7 +283,7 @@ export class StoryObjectiveHUD {
       this.chapterEl.style.color = '#4ade80';
       this.titleEl.textContent = 'SANDBOX CRUISE';
       this.titleEl.style.color = '#86efac';
-      this.objectiveEl.textContent = 'Story paused. Tap [▶ MISSIONS] to enable story objectives.';
+      this.objectiveEl.textContent = 'Story paused. Tap top [🎯 MISSIONS] button to enable story objectives.';
       this.fragmentsEl.style.display = 'none';
       return;
     }
@@ -384,6 +329,7 @@ export class StoryObjectiveHUD {
   }
 
   public toggleCollapse(force?: boolean): void {
+    HapticFeedback.light();
     this.isCollapsed = force !== undefined ? force : !this.isCollapsed;
     this.container.classList.toggle('is-collapsed', this.isCollapsed);
     this.titleEl.style.display = this.isCollapsed ? 'none' : 'block';

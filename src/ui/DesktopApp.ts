@@ -2887,6 +2887,14 @@ export class DesktopApp {
             padding: 2px 8px !important;
             font-size: 8px !important;
           }
+          #top-right-utilities {
+            gap: 4px !important;
+          }
+          #top-right-utilities button {
+            padding: 3px 6px !important;
+            font-size: 8.5px !important;
+            height: 25px !important;
+          }
         }
       </style>
       <div style="
@@ -3027,7 +3035,7 @@ export class DesktopApp {
           </div>
 
           <!-- Top-Right Actions & Utilities -->
-          <div style="display: flex; gap: 6px; align-items: center; flex-wrap: nowrap;">
+          <div id="top-right-utilities" style="display: flex; gap: 6px; align-items: center; flex-wrap: nowrap;">
             <div id="hud-save-indicator" style="
               font-family: ui-monospace, monospace;
               font-size: 10px;
@@ -3337,11 +3345,11 @@ export class DesktopApp {
       btn.style.background = 'rgba(15, 23, 42, 0.85)';
       btn.title = 'Switch to Story Missions';
     } else {
-      btn.innerHTML = '⏸ ROAM';
+      btn.innerHTML = '⏸ FREE ROAM';
       btn.style.color = '#94a3b8';
       btn.style.borderColor = 'rgba(148, 163, 184, 0.35)';
       btn.style.background = 'rgba(15, 23, 42, 0.65)';
-      btn.title = 'Switch to Free Roam';
+      btn.title = 'Switch to Free Exploration Mode';
     }
   }
 
