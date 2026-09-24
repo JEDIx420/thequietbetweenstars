@@ -89,17 +89,20 @@ export class DialoguePresenter {
       /* Compact Phone Overrides */
       @media (max-width: 850px), (max-height: 520px) {
         #dialogue-presenter-container {
-          bottom: auto !important;
-          top: max(44px, env(safe-area-inset-top, 44px)) !important;
+          top: auto !important;
+          bottom: max(16px, env(safe-area-inset-bottom, 16px)) !important;
           left: 50% !important;
           transform: translateX(-50%) !important;
-          max-width: min(380px, 86vw) !important;
-          width: min(380px, 86vw) !important;
+          max-width: min(360px, 50vw) !important;
+          width: min(360px, 50vw) !important;
+          z-index: 120 !important;
         }
         #dialogue-presenter-container .dialogue-bubble {
-          padding: 6px 10px !important;
+          padding: 6px 12px !important;
           gap: 4px !important;
-          border-radius: 6px !important;
+          border-radius: 8px !important;
+          background: rgba(10, 16, 28, 0.95) !important;
+          box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6) !important;
         }
         #dialogue-presenter-container .dialogue-speaker {
           font-size: 8.5px !important;

@@ -21,8 +21,12 @@ export class GameRenderer {
       ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0) || window.innerWidth < 800);
     const maxDpr = isMobile ? 1.5 : 2;
 
-    const width = container.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 1280);
-    const height = Math.max(1, container.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 720));
+    const width = typeof window !== 'undefined'
+      ? Math.max(window.innerWidth, container.clientWidth || 0)
+      : (container.clientWidth || 1280);
+    const height = typeof window !== 'undefined'
+      ? Math.max(1, Math.max(window.innerHeight, container.clientHeight || 0))
+      : Math.max(1, container.clientHeight || 720);
 
     this.renderer.setClearColor(0x030307, 1);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
@@ -30,6 +34,7 @@ export class GameRenderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
 
+    this.renderer.domElement.style.cssText = 'position: absolute; inset: 0; width: 100% !important; height: 100% !important; display: block;';
     container.appendChild(this.renderer.domElement);
 
     const aspect = width / height;
@@ -40,8 +45,12 @@ export class GameRenderer {
   }
 
   public handleResize = (): void => {
-    const width = this.container.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 1280);
-    const height = Math.max(1, this.container.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 720));
+    const width = typeof window !== 'undefined'
+      ? Math.max(window.innerWidth, this.container.clientWidth || 0)
+      : (this.container.clientWidth || 1280);
+    const height = typeof window !== 'undefined'
+      ? Math.max(1, Math.max(window.innerHeight, this.container.clientHeight || 0))
+      : Math.max(1, this.container.clientHeight || 720);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);

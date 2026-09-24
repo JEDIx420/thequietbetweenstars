@@ -1,6 +1,7 @@
 import { CHAPTER_1_BEATS } from './chapters/Chapter1Resonance';
 import type { StoryState } from './StoryTypes';
 import { audio } from '../audio/AudioEngine';
+import { HapticFeedback } from '../game/input/HapticFeedback';
 
 export class StoryObjectiveHUD {
   private container: HTMLElement;
@@ -12,6 +13,7 @@ export class StoryObjectiveHUD {
   private trackBtn!: HTMLElement;
   private flashTimeout: number | null = null;
   private isCollapsed = false;
+  private isFreeExplorationActive = false;
   private onTrackObjectiveCallback: (() => void) | null = null;
 
   public setOnTrackObjective(cb: () => void): void {
@@ -58,30 +60,51 @@ export class StoryObjectiveHUD {
         100% { border-color: rgba(56, 189, 248, 0.3); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); }
       }
       #story-objective-hud.is-collapsed .hud-card {
-        padding: 5px 10px;
-        background: rgba(10, 16, 28, 0.75);
-        border-radius: 6px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-        max-width: 220px;
+        padding: 6px 12px;
+        background: rgba(10, 16, 28, 0.88);
+        border-radius: 8px;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+        max-width: 250px;
       }
       #story-objective-hud.is-collapsed .hud-header {
         margin-bottom: 0 !important;
       }
+      #hud-btn-toggle-freeroam {
+        font-size: 10px !important;
+        font-weight: 700 !important;
+        padding: 4px 9px !important;
+        min-height: 28px !important;
+        border-radius: 6px !important;
+        cursor: pointer !important;
+        touch-action: manipulation !important;
+        transition: all 0.15s ease !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+      #hud-btn-toggle-freeroam:active {
+        transform: scale(0.94);
+      }
       /* Tablet & Touch Adaptation */
       @media (pointer: coarse), (max-width: 1024px) {
         #story-objective-hud {
-          top: max(56px, env(safe-area-inset-top, 56px));
-          left: max(14px, env(safe-area-inset-left, 14px));
-          max-width: 280px;
+          top: max(46px, env(safe-area-inset-top, 46px));
+          left: max(12px, env(safe-area-inset-left, 12px));
+          max-width: 260px;
         }
         #story-objective-hud .hud-card {
           padding: 8px 12px;
+        }
+        #hud-btn-toggle-freeroam {
+          min-height: 34px !important;
+          padding: 6px 12px !important;
+          font-size: 10.5px !important;
         }
       }
       /* Compact Phone Overrides */
       @media (max-width: 768px) {
         #story-objective-hud {
-          top: max(48px, env(safe-area-inset-top, 48px));
+          top: max(44px, env(safe-area-inset-top, 44px));
           left: max(10px, env(safe-area-inset-left, 10px));
           max-width: 240px;
         }
@@ -167,23 +190,28 @@ export class StoryObjectiveHUD {
     freeRoamBtn.id = 'hud-btn-toggle-freeroam';
     freeRoamBtn.title = 'Toggle Free Exploration Mode';
     freeRoamBtn.style.cssText = `
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: #94a3b8;
-      font-size: 8px;
-      padding: 1px 5px;
-      border-radius: 4px;
+      background: rgba(34, 197, 94, 0.2);
+      border: 1px solid rgba(74, 222, 128, 0.45);
+      color: #4ade80;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 4px 9px;
+      border-radius: 6px;
       cursor: pointer;
       font-family: inherit;
       transition: all 0.15s ease;
+      touch-action: manipulation;
     `;
-    freeRoamBtn.textContent = 'FREE ROAM';
-    freeRoamBtn.addEventListener('click', (e) => {
+    freeRoamBtn.textContent = '▶ MISSIONS';
+    const triggerToggle = (e: Event) => {
       e.stopPropagation();
+      HapticFeedback.medium();
       if (this.onToggleFreeRoamCallback) {
         this.onToggleFreeRoamCallback();
       }
-    });
+    };
+    freeRoamBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    freeRoamBtn.addEventListener('click', triggerToggle);
 
     const collapseBtn = document.createElement('button');
     collapseBtn.id = 'hud-btn-collapse-toggle';
@@ -250,6 +278,14 @@ export class StoryObjectiveHUD {
 
     card.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).tagName === 'BUTTON') return;
+      if (this.isCollapsed && this.isFreeExplorationActive) {
+        // Tapping the collapsed Free Roam pill activates missions directly
+        HapticFeedback.medium();
+        if (this.onToggleFreeRoamCallback) {
+          this.onToggleFreeRoamCallback();
+          return;
+        }
+      }
       this.toggleCollapse();
     });
 
@@ -265,6 +301,11 @@ export class StoryObjectiveHUD {
 
   public update(state: StoryState, showNotification = false): void {
     const isFree = !!state.freeExplorationMode;
+    this.isFreeExplorationActive = isFree;
+    const card = this.container.querySelector('.hud-card') as HTMLElement;
+    if (card) {
+      card.style.borderLeftColor = isFree ? '#4ade80' : '#38bdf8';
+    }
     const btn = this.container.querySelector('#hud-btn-toggle-freeroam') as HTMLElement;
     if (btn) {
       btn.textContent = isFree ? '▶ MISSIONS' : '⏸ ROAM';

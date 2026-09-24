@@ -68,13 +68,30 @@ class MockElement {
     };
   }
 
+  private _className = '';
+  public set className(val: string) {
+    this._className = val;
+    val.split(/\s+/).filter(Boolean).forEach(c => this.classSet.add(c));
+  }
+  public get className(): string {
+    return this._className;
+  }
+
+  private listeners: Record<string, Function[]> = {};
+
   appendChild(el: any) {
     this.children.push(el);
     return el;
   }
   remove() {}
-  addEventListener() {}
+  addEventListener(evt: string, cb: Function) {
+    if (!this.listeners[evt]) this.listeners[evt] = [];
+    this.listeners[evt].push(cb);
+  }
   removeEventListener() {}
+  click() {
+    this.listeners['click']?.forEach(cb => cb({ stopPropagation: () => {}, target: this }));
+  }
   querySelector(selector: string): any {
     if (selector.startsWith('#') && this.id === selector.slice(1)) return this;
     if (selector.startsWith('.') && this.classSet.has(selector.slice(1))) return this;
@@ -333,6 +350,37 @@ describe('Mobile Experience & Free Roam Clean UX', () => {
       expect((hud as any).isCollapsed).toBe(false);
       expect((hud as any).titleEl.style.display).toBe('block');
       expect((hud as any).objectiveEl.style.display).toBe('block');
+    });
+
+    it('activates missions when tapping the collapsed Free Roam card directly', () => {
+      const hud = new StoryObjectiveHUD(parentEl);
+      let toggleCount = 0;
+      hud.setOnToggleFreeRoam(() => {
+        toggleCount++;
+      });
+
+      hud.update({
+        freeExplorationMode: true,
+        currentChapter: 1,
+        currentBeat: 'beat_0_awakening',
+        activePillars: [],
+        alignedPillars: [],
+        resonanceFragments: [],
+        resonanceFrequenciesScanned: [],
+        discoveredResonanceSignatures: [],
+        relaySynchronized: false,
+        storyCompleted: false,
+      } as any);
+
+      hud.toggleCollapse(true);
+      expect((hud as any).isCollapsed).toBe(true);
+
+      const card = (hud as any).container.querySelector('.hud-card');
+      expect(card).toBeTruthy();
+
+      // Simulate tapping the card in collapsed Free Roam mode
+      card.click();
+      expect(toggleCount).toBe(1);
     });
   });
 

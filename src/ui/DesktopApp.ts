@@ -1834,6 +1834,13 @@ export class DesktopApp {
       },
       { passive: false }
     );
+    document.addEventListener(
+      'gestureend',
+      (e: Event) => {
+        if (e.cancelable) e.preventDefault();
+      },
+      { passive: false }
+    );
   }
 
   public isFullscreen(): boolean {
@@ -1841,7 +1848,7 @@ export class DesktopApp {
     return !!(
       doc.fullscreenElement ||
       doc.webkitFullscreenElement ||
-      document.documentElement.classList.contains('app-pseudo-fullscreen')
+      document.body?.classList?.contains('immersive-deck-mode')
     );
   }
 
@@ -1870,13 +1877,13 @@ export class DesktopApp {
     const docEl = document.documentElement as any;
     const body = document.body;
     const isNativeFs = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
-    const isPseudoFs = docEl.classList.contains('app-pseudo-fullscreen');
+    const isImmersive = body?.classList?.contains('immersive-deck-mode');
 
-    if (isNativeFs || isPseudoFs) {
-      // Exit fullscreen
-      if (isPseudoFs) {
-        docEl.classList.remove('app-pseudo-fullscreen');
-        body.classList.remove('app-pseudo-fullscreen');
+    if (isNativeFs || isImmersive) {
+      // Exit fullscreen / immersive mode
+      if (isImmersive) {
+        body?.classList?.remove('immersive-deck-mode');
+        this.showHudNotice('IMMERSIVE DECK MODE: OFF');
       }
       if (isNativeFs) {
         try {
@@ -1897,22 +1904,27 @@ export class DesktopApp {
           await docEl.requestFullscreen({ navigationUI: 'hide' });
           enteredNative = true;
         } catch (err) {
-          console.warn('[DesktopApp] requestFullscreen failed, using pseudo-fullscreen fallback:', err);
+          console.warn('[DesktopApp] requestFullscreen failed, using immersive deck fallback:', err);
         }
       } else if (docEl.webkitRequestFullscreen) {
         try {
           await docEl.webkitRequestFullscreen();
           enteredNative = true;
         } catch (err) {
-          console.warn('[DesktopApp] webkitRequestFullscreen failed, using pseudo-fullscreen fallback:', err);
+          console.warn('[DesktopApp] webkitRequestFullscreen failed, using immersive deck fallback:', err);
         }
       }
 
       // If native fullscreen was not supported or failed (e.g. iOS iPhone Safari)
       if (!enteredNative) {
-        docEl.classList.add('app-pseudo-fullscreen');
-        body.classList.add('app-pseudo-fullscreen');
-        window.scrollTo(0, 0);
+        body?.classList?.add('immersive-deck-mode');
+        this.showHudNotice('IMMERSIVE DECK MODE: ON');
+        const isIOS = typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)));
+        if (isIOS && typeof window !== 'undefined' && window.matchMedia && !window.matchMedia('(display-mode: standalone)').matches) {
+          setTimeout(() => {
+            this.showHudNotice('TIP: Tap Share ⎋ -> "Add to Home Screen" for borderless fullscreen');
+          }, 2400);
+        }
       }
     }
 
@@ -2816,22 +2828,31 @@ export class DesktopApp {
           #hud-telemetry-bar {
             padding: 3px 8px !important;
             gap: 6px !important;
-            font-size: 9.5px !important;
+            font-size: 9px !important;
           }
           .hud-title-brand {
-            font-size: 9.5px !important;
-            letter-spacing: 0.15em !important;
+            display: none !important;
+          }
+          #touch-toggle-btn, #touch-top-bar, #touch-toggle-pill {
+            display: none !important;
           }
           #hud-notice {
-            font-size: 9px !important;
-            padding: 4px 10px !important;
-            max-width: min(440px, 84vw) !important;
-            line-height: 1.35 !important;
-            border-radius: 8px !important;
+            font-size: 8.5px !important;
+            padding: 3px 10px !important;
+            max-width: min(320px, 48vw) !important;
+            line-height: 1.3 !important;
+            border-radius: 9999px !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
           }
           #proximity-indicator {
-            padding: 4px 10px !important;
-            font-size: 8.5px !important;
+            padding: 3px 8px !important;
+            font-size: 8px !important;
+            max-width: min(320px, 48vw) !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
           }
           #hud-inspace-warp-countdown {
             bottom: 8px !important;
@@ -3101,7 +3122,7 @@ export class DesktopApp {
           pointer-events: none;
           z-index: 40;
           width: max-content;
-          max-width: min(520px, 86vw);
+          max-width: min(340px, 50vw);
         ">
           <div id="proximity-indicator" style="
             display: none;
@@ -3493,7 +3514,7 @@ export class DesktopApp {
           pointer-events: none;
           z-index: 40;
           width: max-content;
-          max-width: min(520px, 86vw);
+          max-width: min(340px, 50vw);
         ">
           <div id="hud-notice" style="
             font-size: 11px;

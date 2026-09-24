@@ -116,8 +116,8 @@ describe('Fullscreen and Haptic Feedback System', () => {
     });
   });
 
-  describe('2. Pseudo-Fullscreen and Fullscreen Recovery', () => {
-    it('activates app-pseudo-fullscreen class when native requestFullscreen is unsupported or fails', async () => {
+  describe('2. Immersive Deck Mode and Fullscreen Recovery', () => {
+    it('activates immersive-deck-mode on body when native requestFullscreen is unsupported or fails (e.g. iPhone Safari)', async () => {
       const docEl = new MockElement();
       const body = new MockElement();
       (globalThis as any).document = {
@@ -127,36 +127,40 @@ describe('Fullscreen and Haptic Feedback System', () => {
       };
       (globalThis as any).window = {
         scrollTo: vi.fn(),
+        matchMedia: vi.fn().mockReturnValue({ matches: false }),
       };
 
       // Create a mock app with our toggleFullscreen logic
       const app = {
         uiContainer: new MockElement(),
         renderer: { handleResize: vi.fn() },
+        noticeText: '',
+        showHudNotice(text: string) {
+          this.noticeText = text;
+        },
         isFullscreen() {
           const doc = document as any;
           return !!(
             doc.fullscreenElement ||
             doc.webkitFullscreenElement ||
-            document.documentElement.classList.contains('app-pseudo-fullscreen')
+            document.body?.classList?.contains('immersive-deck-mode')
           );
         },
         async toggleFullscreen() {
           const doc = document as any;
-          const de = doc.documentElement as any;
-          const b = doc.body;
+          const body = doc.body;
           const isNative = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
-          const isPseudo = de.classList.contains('app-pseudo-fullscreen');
+          const isImmersive = body?.classList?.contains('immersive-deck-mode');
 
-          if (isNative || isPseudo) {
-            if (isPseudo) {
-              de.classList.remove('app-pseudo-fullscreen');
-              b.classList.remove('app-pseudo-fullscreen');
+          if (isNative || isImmersive) {
+            if (isImmersive) {
+              body?.classList?.remove('immersive-deck-mode');
+              this.showHudNotice('IMMERSIVE DECK MODE: OFF');
             }
           } else {
             // Emulate iOS iPhone Safari where requestFullscreen is not defined
-            de.classList.add('app-pseudo-fullscreen');
-            b.classList.add('app-pseudo-fullscreen');
+            body?.classList?.add('immersive-deck-mode');
+            this.showHudNotice('IMMERSIVE DECK MODE: ON');
           }
         },
       };
@@ -165,15 +169,16 @@ describe('Fullscreen and Haptic Feedback System', () => {
 
       // Toggle ON
       await app.toggleFullscreen();
-      expect(docEl.classList.contains('app-pseudo-fullscreen')).toBe(true);
-      expect(body.classList.contains('app-pseudo-fullscreen')).toBe(true);
+      expect(body.classList.contains('immersive-deck-mode')).toBe(true);
+      expect(docEl.classList.contains('app-pseudo-fullscreen')).toBe(false); // Verified no fixed root styles
       expect(app.isFullscreen()).toBe(true);
+      expect(app.noticeText).toContain('IMMERSIVE DECK MODE: ON');
 
       // Toggle OFF
       await app.toggleFullscreen();
-      expect(docEl.classList.contains('app-pseudo-fullscreen')).toBe(false);
-      expect(body.classList.contains('app-pseudo-fullscreen')).toBe(false);
+      expect(body.classList.contains('immersive-deck-mode')).toBe(false);
       expect(app.isFullscreen()).toBe(false);
+      expect(app.noticeText).toContain('IMMERSIVE DECK MODE: OFF');
     });
   });
 });

@@ -186,21 +186,31 @@ export class TargetLockReticle {
         }
 
         // Clamp to screen perimeter with margin
-        const margin = 50;
+        const marginX = isTouchDevice ? 64 : 50;
+        const marginY = isTouchDevice ? 56 : 50;
         const centerX = screenWidth / 2;
         const centerY = screenHeight / 2;
         let dx = screenX - centerX;
         let dy = screenY - centerY;
         if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) dy = -1;
 
-        const halfW = centerX - margin;
-        const halfH = centerY - margin;
+        const halfW = centerX - marginX;
+        const halfH = centerY - marginY;
         const scaleX = halfW / Math.max(0.001, Math.abs(dx));
         const scaleY = halfH / Math.max(0.001, Math.abs(dy));
         const scale = Math.min(scaleX, scaleY);
 
         screenX = centerX + dx * scale;
         screenY = centerY + dy * scale;
+
+        // If on touch device, push reticle up away from virtual stick or throttle
+        if (isTouchDevice) {
+          if (screenX < 170 && screenY > screenHeight - 170) {
+            screenY = Math.max(marginY, screenHeight - 180);
+          } else if (screenX > screenWidth - 180 && screenY > screenHeight - 180) {
+            screenY = Math.max(marginY, screenHeight - 190);
+          }
+        }
       } else {
         if (this.isVisible) {
           this.container.style.display = 'none';
