@@ -166,9 +166,11 @@ export class StationInterfaceModal {
         </div>
 
         <!-- Terminal Workspace Content -->
-        <div id="station-tab-content" style="
+        <div id="station-tab-content" class="modal-scrollable" data-scrollable="true" style="
           flex: 1;
           overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+          touch-action: pan-y;
           padding: 22px 26px;
         ">
           ${this.renderActiveTabContent()}
@@ -387,7 +389,7 @@ export class StationInterfaceModal {
             </div>
 
             <!-- Terminal Transmit / Receive Feed -->
-            <div style="
+            <div class="modal-scrollable" data-scrollable="true" style="
               flex: 1;
               min-height: 200px;
               max-height: 240px;
@@ -396,6 +398,8 @@ export class StationInterfaceModal {
               border-radius: 8px;
               padding: 14px 16px;
               overflow-y: auto;
+              -webkit-overflow-scrolling: touch;
+              touch-action: pan-y;
               display: flex;
               flex-direction: column;
               gap: 10px;

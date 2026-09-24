@@ -8,6 +8,10 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#030307" />
     <title>The Quiet Between Stars</title>
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="alternate icon" href="/favicon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
     <style>
       * {
         box-sizing: border-box;
@@ -27,6 +31,44 @@
         -webkit-touch-callout: none;
         touch-action: none;
         font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+      /* Fluid mobile modal scrolling & interaction performance */
+      .modal-scrollable,
+      [data-scrollable="true"] {
+        touch-action: pan-y !important;
+        -webkit-overflow-scrolling: touch !important;
+        overscroll-behavior-y: contain !important;
+      }
+      .modal-scrollable-x {
+        touch-action: pan-x !important;
+        -webkit-overflow-scrolling: touch !important;
+        overscroll-behavior-x: contain !important;
+      }
+      /* Prevent mobile WebKit GPU lag from backdrop-filter during scroll */
+      @media (max-width: 850px), (pointer: coarse) {
+        #help-modal,
+        #settings-modal,
+        #supply-modal,
+        #journal-modal,
+        #mission-help-modal,
+        #station-modal,
+        #holographic-nav-modal,
+        #starchart-modal {
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+          background: rgba(4, 7, 16, 0.985) !important;
+        }
+        #help-modal button,
+        #settings-modal button,
+        #supply-modal button,
+        #journal-modal button,
+        #mission-help-modal button,
+        #station-modal button,
+        #holographic-nav-modal button,
+        #starchart-modal button {
+          touch-action: manipulation !important;
+          -webkit-tap-highlight-color: transparent !important;
+        }
       }
       #app {
         width: 100%;

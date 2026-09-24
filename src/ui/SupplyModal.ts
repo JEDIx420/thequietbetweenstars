@@ -261,10 +261,11 @@ export class SupplyModal {
         </div>
 
         <!-- Catalog List -->
-        <div style="
+        <div class="modal-scrollable" data-scrollable="true" style="
           padding: clamp(14px, 2.5vw, 20px) clamp(14px, 3vw, 24px);
           overflow-y: auto;
           -webkit-overflow-scrolling: touch;
+          touch-action: pan-y;
           display: flex;
           flex-direction: column;
           gap: 12px;

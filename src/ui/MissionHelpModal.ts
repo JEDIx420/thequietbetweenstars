@@ -245,12 +245,16 @@ export class MissionHelpModal {
       .join('');
 
     this.container.innerHTML = `
-      <div style="
+      <div class="modal-scrollable" data-scrollable="true" style="
         background: rgba(15, 23, 42, 0.95);
         border: 1px solid ${isFree ? 'rgba(74, 222, 128, 0.45)' : 'rgba(56, 189, 248, 0.4)'};
         border-radius: 10px;
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px ${isFree ? 'rgba(74, 222, 128, 0.15)' : 'rgba(56, 189, 248, 0.15)'};
         max-width: 480px;
+        max-height: min(88dvh, 560px);
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
         width: 100%;
         padding: 20px 22px;
         box-sizing: border-box;

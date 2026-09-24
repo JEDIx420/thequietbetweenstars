@@ -63,7 +63,7 @@ export class JournalModal {
       </div>
 
       <!-- Navigation Tabs -->
-      <div style="
+      <div class="modal-scrollable-x" data-scrollable="true" style="
         display: flex;
         gap: 8px;
         padding: 10px clamp(16px, 4vw, 32px);
@@ -72,23 +72,25 @@ export class JournalModal {
         overflow-x: auto;
         white-space: nowrap;
         -webkit-overflow-scrolling: touch;
+        touch-action: pan-x;
       ">
-        <button class="journal-tab-btn" data-tab="STORY" style="flex-shrink: 0; font-weight: 700;">MISSION LOG</button>
-        <button class="journal-tab-btn" data-tab="WORLDS" style="flex-shrink: 0;">WORLDS</button>
-        <button class="journal-tab-btn" data-tab="LIFE" style="flex-shrink: 0;">LIFE</button>
-        <button class="journal-tab-btn" data-tab="PEOPLES" style="flex-shrink: 0;">PEOPLES</button>
-        <button class="journal-tab-btn" data-tab="LORE" style="flex-shrink: 0;">LORE</button>
-        <button class="journal-tab-btn" data-tab="RESOURCES" style="flex-shrink: 0;">RESOURCES</button>
-        <button class="journal-tab-btn" data-tab="SYSTEMS" style="flex-shrink: 0;">STAR SYSTEMS</button>
-        <button class="journal-tab-btn" data-tab="ANOMALIES" style="flex-shrink: 0;">ANOMALIES</button>
-        <button class="journal-tab-btn" data-tab="NOTES" style="flex-shrink: 0;">FLIGHT LOG</button>
+        <button class="journal-tab-btn" data-tab="STORY" style="flex-shrink: 0; font-weight: 700; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">MISSION LOG</button>
+        <button class="journal-tab-btn" data-tab="WORLDS" style="flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">WORLDS</button>
+        <button class="journal-tab-btn" data-tab="LIFE" style="flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">LIFE</button>
+        <button class="journal-tab-btn" data-tab="PEOPLES" style="flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">PEOPLES</button>
+        <button class="journal-tab-btn" data-tab="LORE" style="flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">LORE</button>
+        <button class="journal-tab-btn" data-tab="RESOURCES" style="flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">RESOURCES</button>
+        <button class="journal-tab-btn" data-tab="SYSTEMS" style="flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">STAR SYSTEMS</button>
+        <button class="journal-tab-btn" data-tab="ANOMALIES" style="flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">ANOMALIES</button>
+        <button class="journal-tab-btn" data-tab="NOTES" style="flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">FLIGHT LOG</button>
       </div>
 
       <!-- Main Content Area -->
-      <div id="journal-content-list" style="
+      <div id="journal-content-list" class="modal-scrollable" data-scrollable="true" style="
         flex: 1;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
         padding: clamp(16px, 3vw, 28px);
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
@@ -103,19 +105,26 @@ export class JournalModal {
   }
 
   private setupEvents(): void {
-    this.container.querySelector('#btn-journal-close')?.addEventListener('click', () => {
+    const closeBtn = this.container.querySelector('#btn-journal-close');
+    closeBtn?.addEventListener('click', () => {
       this.hide();
     });
 
     const tabBtns = this.container.querySelectorAll('.journal-tab-btn');
     tabBtns.forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        const tab = (e.currentTarget as HTMLElement).dataset.tab as JournalTab;
+      const selectTab = () => {
+        const tab = (btn as HTMLElement).dataset.tab as JournalTab;
         if (tab) {
           audio.playBlip();
           this.setTab(tab);
         }
+      };
+      btn.addEventListener('pointerdown', (e) => {
+        if ((e as PointerEvent).pointerType === 'touch') {
+          selectTab();
+        }
       });
+      btn.addEventListener('click', selectTab);
     });
   }
 

@@ -1809,14 +1809,65 @@ export class DesktopApp {
   }
 
   private setupGesturePreventListeners(): void {
-    // Prevent iOS Safari rubber-band scrolling, overscroll navigation, and pull-to-refresh
+    // Prevent iOS Safari rubber-band scrolling, overscroll navigation, and pull-to-refresh on flight canvas
+    // while allowing completely uninhibited, fluid 60-120fps scrolling inside all game modals and menus
     document.addEventListener(
       'touchmove',
       (e: TouchEvent) => {
         const target = e.target as HTMLElement | null;
-        if (target && target.closest('.modal-scrollable, .briefing-scroll, pre, textarea, [data-scrollable="true"]')) {
-          return;
+        if (!target) return;
+
+        let curr: HTMLElement | null = target;
+        while (curr && curr !== document.body && curr !== document.documentElement) {
+          if (
+            curr.classList.contains('modal-scrollable') ||
+            curr.classList.contains('modal-scrollable-x') ||
+            curr.classList.contains('briefing-scroll') ||
+            curr.hasAttribute('data-scrollable') ||
+            curr.tagName === 'TEXTAREA' ||
+            curr.tagName === 'PRE'
+          ) {
+            return;
+          }
+          const id = curr.id ? curr.id.toLowerCase() : '';
+          const cls = typeof curr.className === 'string' ? curr.className.toLowerCase() : '';
+          if (
+            id.includes('modal') ||
+            id.includes('dialog') ||
+            id.includes('drawer') ||
+            id.includes('journal') ||
+            id.includes('supply') ||
+            id.includes('settings') ||
+            id.includes('help') ||
+            id.includes('station') ||
+            id.includes('chart') ||
+            cls.includes('modal') ||
+            cls.includes('dialog') ||
+            cls.includes('scroll') ||
+            cls.includes('content')
+          ) {
+            return;
+          }
+          try {
+            const style = window.getComputedStyle(curr);
+            if (
+              (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+              curr.scrollHeight > curr.clientHeight
+            ) {
+              return;
+            }
+            if (
+              (style.overflowX === 'auto' || style.overflowX === 'scroll') &&
+              curr.scrollWidth > curr.clientWidth
+            ) {
+              return;
+            }
+          } catch {
+            // ignore
+          }
+          curr = curr.parentElement;
         }
+
         if (e.cancelable) {
           e.preventDefault();
         }

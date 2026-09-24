@@ -111,9 +111,11 @@ export class SettingsModal {
         ">CLOSE [ESC]</button>
       </div>
 
-      <div style="
+      <div class="modal-scrollable" data-scrollable="true" style="
         flex: 1;
         overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
         padding: clamp(20px, 4vw, 36px);
         max-width: 780px;
         margin: 0 auto;

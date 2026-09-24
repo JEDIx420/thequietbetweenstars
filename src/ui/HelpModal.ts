@@ -50,7 +50,7 @@ export class HelpModal {
       </div>
 
       <!-- Navigation Tabs -->
-      <div style="
+      <div class="modal-scrollable-x" data-scrollable="true" style="
         display: flex;
         gap: 8px;
         padding: 10px clamp(16px, 4vw, 32px);
@@ -59,20 +59,22 @@ export class HelpModal {
         overflow-x: auto;
         white-space: nowrap;
         -webkit-overflow-scrolling: touch;
+        touch-action: pan-x;
       ">
-        <button class="help-tab-btn" data-tab="FLIGHT" style="padding: 6px 14px; background: #0284c7; border: none; border-radius: 6px; color: #fff; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">FLIGHT CONTROLS</button>
-        <button class="help-tab-btn" data-tab="NAVIGATION" style="padding: 6px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">NAVIGATION & WARP</button>
-        <button class="help-tab-btn" data-tab="EXPLORATION" style="padding: 6px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">EXPLORATION & SCAN</button>
-        <button class="help-tab-btn" data-tab="COMPANION" style="padding: 6px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">TOUCH CONTROLS</button>
-        <button class="help-tab-btn" data-tab="LOG" style="padding: 6px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">SHIP LOG & SAVE</button>
-        <button class="help-tab-btn" data-tab="SETTINGS" style="padding: 6px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0;">AI & SETTINGS</button>
+        <button class="help-tab-btn" data-tab="FLIGHT" style="padding: 8px 14px; background: #0284c7; border: none; border-radius: 6px; color: #fff; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">FLIGHT CONTROLS</button>
+        <button class="help-tab-btn" data-tab="NAVIGATION" style="padding: 8px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">NAVIGATION & WARP</button>
+        <button class="help-tab-btn" data-tab="EXPLORATION" style="padding: 8px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">EXPLORATION & SCAN</button>
+        <button class="help-tab-btn" data-tab="COMPANION" style="padding: 8px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">TOUCH CONTROLS</button>
+        <button class="help-tab-btn" data-tab="LOG" style="padding: 8px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">SHIP LOG & SAVE</button>
+        <button class="help-tab-btn" data-tab="SETTINGS" style="padding: 8px 14px; background: transparent; border: none; border-radius: 6px; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">AI & SETTINGS</button>
       </div>
 
       <!-- Content Area -->
-      <div id="help-tab-content" style="
+      <div id="help-tab-content" class="modal-scrollable" data-scrollable="true" style="
         flex: 1;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
         padding: clamp(16px, 4vw, 32px);
         max-width: 800px;
         line-height: 1.6;
@@ -94,14 +96,15 @@ export class HelpModal {
   }
 
   private setupEvents(): void {
-    this.container.querySelector('#btn-help-close')?.addEventListener('click', () => {
+    const closeBtn = this.container.querySelector('#btn-help-close');
+    closeBtn?.addEventListener('click', () => {
       this.hide();
     });
 
     const btns = this.container.querySelectorAll('.help-tab-btn');
     btns.forEach((b) => {
-      b.addEventListener('click', (e) => {
-        const tab = (e.currentTarget as HTMLElement).dataset.tab as HelpTab;
+      const selectTab = () => {
+        const tab = (b as HTMLElement).dataset.tab as HelpTab;
         if (tab) {
           btns.forEach((other) => {
             (other as HTMLElement).style.background = 'transparent';
@@ -111,7 +114,13 @@ export class HelpModal {
           (b as HTMLElement).style.color = '#fff';
           this.renderTab(tab);
         }
+      };
+      b.addEventListener('pointerdown', (e) => {
+        if ((e as PointerEvent).pointerType === 'touch') {
+          selectTab();
+        }
       });
+      b.addEventListener('click', selectTab);
     });
   }
 

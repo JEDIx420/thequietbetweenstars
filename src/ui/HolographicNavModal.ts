@@ -238,7 +238,7 @@ export class HolographicNavModal {
             <span style="font-size: 11px; letter-spacing: 0.15em; color: #38bdf8; font-weight: 600;">REACHABLE DESTINATIONS</span>
             <button id="holo-dest-close-btn" style="background: none; border: none; color: #94a3b8; font-size: 14px; cursor: pointer; padding: 2px 6px;">✕</button>
           </div>
-          <div id="holo-destinations-list" style="flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+          <div id="holo-destinations-list" class="modal-scrollable" data-scrollable="true" style="flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
             <!-- Populated dynamically -->
           </div>
         </div>
@@ -273,7 +273,7 @@ export class HolographicNavModal {
         </div>
 
         <!-- Right Selected Target Inspector Panel -->
-        <div id="holo-details-panel" style="
+        <div id="holo-details-panel" class="modal-scrollable" data-scrollable="true" style="
           flex: 0 0 340px;
           width: 340px;
           background: rgba(8, 13, 22, 0.95);
@@ -283,6 +283,8 @@ export class HolographicNavModal {
           flex-direction: column;
           box-sizing: border-box;
           overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+          touch-action: pan-y;
           z-index: 10;
         "></div>
       </div>

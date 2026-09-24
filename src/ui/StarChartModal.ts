@@ -137,7 +137,7 @@ export class StarChartModal {
         </div>
 
         <!-- Right Side Details Drawer - Guaranteed minimum and maximum width -->
-        <div id="starchart-details" style="
+        <div id="starchart-details" class="modal-scrollable" data-scrollable="true" style="
           flex: 0 0 360px;
           width: 360px;
           min-width: 360px;
@@ -150,6 +150,8 @@ export class StarChartModal {
           flex-direction: column;
           justify-content: space-between;
           overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+          touch-action: pan-y;
           z-index: 10;
         "></div>
       </div>
@@ -437,7 +439,7 @@ export class StarChartModal {
         <div style="font-size: 10px; letter-spacing: 0.15em; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px;">
           CELESTIAL SURVEY
         </div>
-        <div style="max-height: 200px; overflow-y: auto;">
+        <div class="modal-scrollable" data-scrollable="true" style="max-height: 200px; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y;">
           ${planetsHtml}
         </div>
 
