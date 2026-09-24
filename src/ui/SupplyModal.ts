@@ -96,6 +96,27 @@ export class SupplyModal {
       })
       .join('');
 
+    const commodities = saveSlot.commodityInventory || {};
+    const commodityChipsHtml = Object.entries(commodities)
+      .map(([id, count]) => {
+        return `
+          <div style="
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          ">
+            <span style="color: #38bdf8; text-transform: capitalize;">${id.replace('_', ' ')}:</span>
+            <span style="font-weight: 700; color: #f8fafc;">${count}</span>
+          </div>
+        `;
+      })
+      .join('');
+
     const modulesHtml = SHIP_MODULE_CATALOG.map((mod) => {
       const isInstalled = installed.includes(mod.id);
       const isPending = pending.some((p) => p.moduleId === mod.id && p.status === 'IN_TRANSIT');
@@ -258,6 +279,16 @@ export class SupplyModal {
             CATALOGUED SAMPLES:
           </span>
           ${inventoryChipsHtml}
+          ${
+            commodityChipsHtml
+              ? `<div style="display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 4px;">
+                  <span style="font-size: 10px; font-family: ui-monospace, monospace; color: #38bdf8; letter-spacing: 0.05em;">
+                    REFINED CARGO:
+                  </span>
+                  ${commodityChipsHtml}
+                </div>`
+              : ''
+          }
         </div>
 
         <!-- Catalog List -->

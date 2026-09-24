@@ -113,8 +113,32 @@ export class DesktopApp {
   public dockingController: DockingController = new DockingController();
   public spaceInteractionController!: SpaceInteractionController;
   public stationModal!: StationInterfaceModal;
-  public activeSpaceStation: SpaceStation | null = null;
-  public activeNamedVessel: NamedVessel | null = null;
+  public activeSpaceStations: Map<string, SpaceStation> = new Map();
+  public activeNPCVessels: Map<string, NamedVessel> = new Map();
+
+  public get activeSpaceStation(): SpaceStation | null {
+    if (this.activeSpaceStations.size === 0) return null;
+    return this.activeSpaceStations.values().next().value || null;
+  }
+  public set activeSpaceStation(station: SpaceStation | null) {
+    if (!station) {
+      this.activeSpaceStations.clear();
+    } else {
+      this.activeSpaceStations.set(station.id, station);
+    }
+  }
+
+  public get activeNamedVessel(): NamedVessel | null {
+    if (this.activeNPCVessels.size === 0) return null;
+    return this.activeNPCVessels.values().next().value || null;
+  }
+  public set activeNamedVessel(vessel: NamedVessel | null) {
+    if (!vessel) {
+      this.activeNPCVessels.clear();
+    } else {
+      this.activeNPCVessels.set(vessel.id, vessel);
+    }
+  }
   public activeHarmonicRelay: HarmonicRelay | null = null;
   public storyObjectiveHud!: StoryObjectiveHUD;
   public storyPresentationDirector!: StoryPresentationDirector;
@@ -249,8 +273,8 @@ export class DesktopApp {
         this.shipEmoteDirector.onRebase(offset);
         this.approachController.onRebase(offset);
         this.navRadar?.onRebase(offset);
-        this.activeSpaceStation?.onRebase(offset);
-        this.activeNamedVessel?.onRebase(offset);
+        this.activeSpaceStations.forEach((s) => s.onRebase(offset));
+        this.activeNPCVessels.forEach((v) => v.onRebase(offset));
         this.activeHarmonicRelay?.onRebase(offset);
       },
     });
@@ -781,7 +805,9 @@ export class DesktopApp {
       }
       this.renderSurfaceHUD();
       this.updateControlContext(FlightPhase.SURFACE_FLIGHT);
-      this.storyObjectiveHud?.show();
+      if (!this.storyDirector.isFreeExploration()) {
+        this.storyObjectiveHud?.show();
+      }
       this.showHudNotice(`ATMOSPHERIC PENETRATION COMPLETE // COMMENCING HOVER RECONNAISSANCE`);
     }
   }
@@ -973,16 +999,17 @@ export class DesktopApp {
       : null;
 
     // Update active space entities (station, vessel, relay)
-    this.activeSpaceStation?.update(dt);
-    this.activeNamedVessel?.update(dt);
+    this.activeSpaceStations.forEach((s) => s.update(dt));
+    this.activeNPCVessels.forEach((v) => v.update(dt));
     this.activeHarmonicRelay?.update(dt);
 
     // Update docking state machine
     const dockStatus = this.dockingController.update(dt, this.flightModel.position, this.flightModel.quaternion);
-    if (dockStatus.isDocked && this.activeSpaceStation && !this.stationModal.isOpen()) {
+    const dockedTarget = this.dockingController.getActiveTarget() || this.activeSpaceStation;
+    if (dockStatus.isDocked && dockedTarget && !this.stationModal.isOpen()) {
       const currentSlot: PlayerSaveSlot = {
         slotId: 'current_journey',
-        saveVersion: 5,
+        saveVersion: 6,
         updatedAt: Date.now(),
         universeSeed: this.sectorManager.universeSeed,
         playerSector: { ...this.worldPosition.sector },
@@ -991,9 +1018,12 @@ export class DesktopApp {
         flightPhase: 'DOCKED',
         credits: this.credits,
         sampleInventory: this.sampleInventory,
+        commodityInventory: (saveManager as any).memorySaveSlot?.commodityInventory || {},
         installedModules: Array.from(this.installedModules),
         pendingOrders: this.pendingOrders,
         npcMemories: this.npcMemories,
+        knownStations: Array.from(new Set([(saveManager as any).memorySaveSlot?.knownStations || [], dockedTarget.id].flat())),
+        knownVessels: (saveManager as any).memorySaveSlot?.knownVessels || [],
         stats: {
           systemsVisited: Math.max(1, this.visitedSystems.size),
           planetsScanned: this.scannedPlanets.size,
@@ -1013,7 +1043,7 @@ export class DesktopApp {
         },
         story: this.storyDirector.getState(),
       };
-      this.stationModal.show(this.activeSpaceStation, this.storyDirector, currentSlot);
+      this.stationModal.show(dockedTarget as any, this.storyDirector, currentSlot, this.spaceScene.currentSystem);
     }
 
     // Show docking guidance telemetry when tethering or undocking
@@ -1678,26 +1708,27 @@ export class DesktopApp {
         data: p,
       });
     }
-    if (this.activeSpaceStation) {
+    this.activeSpaceStations.forEach((st) => {
       list.push({
-        id: this.activeSpaceStation.id,
-        name: this.activeSpaceStation.name,
+        id: st.id,
+        name: st.name,
         type: 'station',
-        position: this.activeSpaceStation.position,
-        radius: this.activeSpaceStation.captureRadius,
-        data: this.activeSpaceStation,
+        position: st.position,
+        radius: st.captureRadius,
+        data: st,
       });
-    }
-    if (this.activeNamedVessel) {
+    });
+
+    this.activeNPCVessels.forEach((v) => {
       list.push({
-        id: this.activeNamedVessel.id,
-        name: this.activeNamedVessel.name,
+        id: v.id,
+        name: v.name,
         type: 'vessel',
-        position: this.activeNamedVessel.position,
-        radius: this.activeNamedVessel.hailRadius,
-        data: this.activeNamedVessel,
+        position: v.position,
+        radius: v.isDockable ? v.captureRadius : v.hailRadius,
+        data: v,
       });
-    }
+    });
     if (this.activeHarmonicRelay) {
       list.push({
         id: this.activeHarmonicRelay.id,
@@ -2440,53 +2471,71 @@ export class DesktopApp {
     // Synchronize physical 3D encounter layer with augmented runtime descriptors
     this.spaceScene.syncAnomalies(system.anomalies);
 
-    // 2. Station reconciliation
-    if (plan.injectedStation) {
-      if (!this.activeSpaceStation || this.activeSpaceStation.id !== plan.injectedStation.id) {
-        if (this.activeSpaceStation) {
-          this.spaceScene.worldRoot.remove(this.activeSpaceStation.group);
-          this.activeSpaceStation.dispose();
-          this.activeSpaceStation = null;
-        }
-        this.activeSpaceStation = new SpaceStation({
-          ...plan.injectedStation,
-          position: new THREE.Vector3(
-            plan.injectedStation.position.x,
-            plan.injectedStation.position.y,
-            plan.injectedStation.position.z
-          ),
-        });
-        this.spaceScene.worldRoot.add(this.activeSpaceStation.group);
+    // 2. Station reconciliation (procedural population + story injected)
+    const targetStationsMap = new Map<string, any>();
+    if (system.population?.stations) {
+      for (const st of system.population.stations) {
+        targetStationsMap.set(st.id, st);
       }
-    } else if (this.activeSpaceStation) {
-      this.spaceScene.worldRoot.remove(this.activeSpaceStation.group);
-      this.activeSpaceStation.dispose();
-      this.activeSpaceStation = null;
+    }
+    if (plan.injectedStation) {
+      targetStationsMap.set(plan.injectedStation.id, plan.injectedStation);
     }
 
-    // 3. Named Vessel reconciliation
-    if (plan.injectedVessel) {
-      if (!this.activeNamedVessel || this.activeNamedVessel.id !== plan.injectedVessel.id) {
-        if (this.activeNamedVessel) {
-          this.spaceScene.worldRoot.remove(this.activeNamedVessel.group);
-          this.activeNamedVessel.dispose();
-          this.activeNamedVessel = null;
-        }
-        this.activeNamedVessel = new NamedVessel({
-          ...plan.injectedVessel,
-          species: 'nomad_avian',
-          position: new THREE.Vector3(
-            plan.injectedVessel.position.x,
-            plan.injectedVessel.position.y,
-            plan.injectedVessel.position.z
-          ),
-        });
-        this.spaceScene.worldRoot.add(this.activeNamedVessel.group);
+    // Remove obsolete stations
+    for (const [id, station] of this.activeSpaceStations.entries()) {
+      if (!targetStationsMap.has(id)) {
+        this.spaceScene.worldRoot.remove(station.group);
+        station.dispose();
+        this.activeSpaceStations.delete(id);
       }
-    } else if (this.activeNamedVessel) {
-      this.spaceScene.worldRoot.remove(this.activeNamedVessel.group);
-      this.activeNamedVessel.dispose();
-      this.activeNamedVessel = null;
+    }
+
+    // Add or retain stations
+    for (const [id, stConfig] of targetStationsMap.entries()) {
+      if (!this.activeSpaceStations.has(id)) {
+        const newStation = new SpaceStation({
+          ...stConfig,
+          position: new THREE.Vector3(stConfig.position.x, stConfig.position.y, stConfig.position.z),
+        });
+        this.activeSpaceStations.set(id, newStation);
+        this.spaceScene.worldRoot.add(newStation.group);
+      }
+    }
+
+    // 3. Named & Procedural Vessel reconciliation
+    const targetVesselsMap = new Map<string, any>();
+    if (system.population?.vessels) {
+      for (const v of system.population.vessels) {
+        targetVesselsMap.set(v.id, v);
+      }
+    }
+    if (plan.injectedVessel) {
+      targetVesselsMap.set(plan.injectedVessel.id, {
+        ...plan.injectedVessel,
+        species: 'Nomad Avian',
+      });
+    }
+
+    // Remove obsolete vessels
+    for (const [id, vessel] of this.activeNPCVessels.entries()) {
+      if (!targetVesselsMap.has(id)) {
+        this.spaceScene.worldRoot.remove(vessel.group);
+        vessel.dispose();
+        this.activeNPCVessels.delete(id);
+      }
+    }
+
+    // Add or retain vessels
+    for (const [id, vConfig] of targetVesselsMap.entries()) {
+      if (!this.activeNPCVessels.has(id)) {
+        const newVessel = new NamedVessel({
+          ...vConfig,
+          position: new THREE.Vector3(vConfig.position.x, vConfig.position.y, vConfig.position.z),
+        });
+        this.activeNPCVessels.set(id, newVessel);
+        this.spaceScene.worldRoot.add(newVessel.group);
+      }
     }
 
     // 4. Harmonic Relay reconciliation
@@ -2527,28 +2576,28 @@ export class DesktopApp {
 
   public collectExtraRadarTargets(): RadarTargetItem[] {
     const extraRadarTargets: RadarTargetItem[] = [];
-    if (this.activeSpaceStation) {
+    this.activeSpaceStations.forEach((st) => {
       extraRadarTargets.push({
-        id: this.activeSpaceStation.id,
-        name: this.activeSpaceStation.name,
+        id: st.id,
+        name: st.name,
         type: 'station',
-        position: this.activeSpaceStation.position,
+        position: st.position,
         color: '#38bdf8',
         isStoryTarget: true,
-        storyTag: 'RESEARCH OUTPOST',
+        storyTag: st.archetype ? st.archetype.replace('_', ' ') : 'STATION',
       });
-    }
-    if (this.activeNamedVessel) {
+    });
+    this.activeNPCVessels.forEach((v) => {
       extraRadarTargets.push({
-        id: this.activeNamedVessel.id,
-        name: this.activeNamedVessel.name,
+        id: v.id,
+        name: v.name,
         type: 'vessel',
-        position: this.activeNamedVessel.position,
-        color: '#c084fc',
+        position: v.position,
+        color: v.isDockable ? '#2dd4bf' : '#c084fc',
         isStoryTarget: true,
-        storyTag: 'NOMAD VESSEL',
+        storyTag: v.isDockable ? 'CAPITAL VESSEL' : 'VESSEL CONTACT',
       });
-    }
+    });
     if (this.activeHarmonicRelay) {
       extraRadarTargets.push({
         id: this.activeHarmonicRelay.id,
@@ -2824,13 +2873,9 @@ export class DesktopApp {
     const isFree = this.storyDirector.isFreeExploration();
 
     if (isFree) {
-      // In Free Roam, keep mission HUD completely hidden to provide pristine cinematic view
+      // In Free Roam sandbox, keep mission HUD completely hidden to provide pristine cinematic view
       this.storyObjectiveHud.hide(true);
       this.storyPresentationDirector.refresh();
-      // Inform player clearly how to start missions
-      setTimeout(() => {
-        this.showHudNotice('FREE ROAM ACTIVE // Tap [🎯 MISSIONS] on top-left to enable story objectives');
-      }, 900);
     } else {
       this.storyObjectiveHud.show();
       this.storyObjectiveHud.toggleCollapse(false);
@@ -2953,17 +2998,6 @@ export class DesktopApp {
           #top-right-utilities button:active {
             transform: scale(0.92) !important;
           }
-          #btn-toggle-story-mode {
-            padding: 3.5px 9px !important;
-            font-size: 9px !important;
-            min-height: 28px !important;
-            touch-action: manipulation !important;
-            -webkit-tap-highlight-color: transparent !important;
-            transition: transform 0.08s ease !important;
-          }
-          #btn-toggle-story-mode:active {
-            transform: scale(0.92) !important;
-          }
         }
       </style>
       <div style="
@@ -2986,26 +3020,6 @@ export class DesktopApp {
             <div class="hud-title-brand" style="font-size: 11px; letter-spacing: 0.22em; color: #38bdf8; font-weight: 600; white-space: nowrap;">
               THE QUIET BETWEEN STARS
             </div>
-            <button id="btn-toggle-story-mode" style="
-              pointer-events: auto;
-              background: rgba(15, 23, 42, 0.85);
-              border: 1px solid rgba(56, 189, 248, 0.45);
-              color: #38bdf8;
-              padding: 3px 8px;
-              border-radius: 9999px;
-              font-family: ui-monospace, SFMono-Regular, monospace;
-              font-size: 9px;
-              font-weight: 700;
-              letter-spacing: 0.06em;
-              cursor: pointer;
-              touch-action: manipulation;
-              white-space: nowrap;
-              display: inline-flex;
-              align-items: center;
-              gap: 4px;
-              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-              transition: all 0.15s ease;
-            ">🎯 MISSIONS</button>
           </div>
 
           <!-- Top-Center Telemetry Readout -->
@@ -3389,29 +3403,6 @@ export class DesktopApp {
       );
     });
 
-    // Top-Left Mission / Free Roam Toggle Button
-    bindTapAction('#btn-toggle-story-mode', (e) => {
-      if (e.cancelable) e.preventDefault();
-      audio.playBlip();
-      const nextIsFree = !this.storyDirector.isFreeExploration();
-      this.storyDirector.setFreeExploration(nextIsFree);
-      if (nextIsFree) {
-        this.storyObjectiveHud.hide();
-        this.showHudNotice('FREE ROAM ACTIVE // Story objectives paused');
-      } else {
-        this.storyObjectiveHud.update(this.storyDirector.getState());
-        this.storyObjectiveHud.show();
-        this.storyObjectiveHud.toggleCollapse(false);
-        this.showHudNotice('STORY OBJECTIVES ACTIVE // CHAPTER 1 ONLINE');
-        const state = this.storyDirector.getState();
-        if (state.currentBeat === 'beat_0_awakening') {
-          this.storyPresentationDirector.beginStoryOpening();
-        }
-      }
-      this.storyPresentationDirector.refresh();
-      this.updateStoryModeToggleBtn();
-    });
-
     // Minimal Fullscreen Toggle
     bindTapAction('#btn-toggle-fullscreen', () => {
       this.toggleFullscreen();
@@ -3420,27 +3411,11 @@ export class DesktopApp {
     document.addEventListener('fullscreenchange', () => this.updateFullscreenIcons());
     document.addEventListener('webkitfullscreenchange', () => this.updateFullscreenIcons());
     this.updateFullscreenIcons();
-    this.updateStoryModeToggleBtn();
     this.cacheHudElements();
   }
 
-  private updateStoryModeToggleBtn(): void {
-    const btn = this.uiContainer?.querySelector('#btn-toggle-story-mode') as HTMLButtonElement | null;
-    if (!btn) return;
-    const isFree = this.storyDirector.isFreeExploration();
-    if (isFree) {
-      btn.innerHTML = '🎯 MISSIONS';
-      btn.style.color = '#38bdf8';
-      btn.style.borderColor = 'rgba(56, 189, 248, 0.45)';
-      btn.style.background = 'rgba(15, 23, 42, 0.85)';
-      btn.title = 'Switch to Story Missions';
-    } else {
-      btn.innerHTML = '⏸ FREE ROAM';
-      btn.style.color = '#94a3b8';
-      btn.style.borderColor = 'rgba(148, 163, 184, 0.35)';
-      btn.style.background = 'rgba(15, 23, 42, 0.65)';
-      btn.title = 'Switch to Free Exploration Mode';
-    }
+  public updateStoryModeToggleBtn(): void {
+    // No-op in sandbox mode
   }
 
   private renderOrbitInspectionHUD(): void {

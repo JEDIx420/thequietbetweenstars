@@ -10,4 +10,6 @@ export interface StarSystemSummary {
   star: StarDescriptor;
   planetCount: number;
   hasAnomalies: boolean;
+  estimatedStations?: number;
+  estimatedVessels?: number;
 }

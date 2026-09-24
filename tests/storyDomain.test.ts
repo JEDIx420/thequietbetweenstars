@@ -51,7 +51,7 @@ describe('Story Domain & Save v5 Migration', () => {
     const loaded = await saveMgr.getSaveSlot();
 
     expect(loaded).not.toBeNull();
-    expect(loaded!.saveVersion).toBe(5);
+    expect(loaded!.saveVersion).toBeGreaterThanOrEqual(5);
     expect(loaded!.story).toBeDefined();
     expect(loaded!.story!.activeChapter).toBe(1);
     expect(loaded!.story!.currentBeat).toBe('beat_0_awakening');

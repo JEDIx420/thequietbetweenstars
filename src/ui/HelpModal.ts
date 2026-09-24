@@ -210,16 +210,18 @@ export class HelpModal {
       case 'EXPLORATION':
         content.innerHTML = `
           <div style="font-size: 16px; font-weight: 600; color: #38bdf8; margin-bottom: 12px;">
-            Planetary Survey, Landing & Living Worlds
+            Planetary Survey, Stations, Trade & Upgrades
           </div>
           <p style="font-size: 13px; color: #cbd5e1;">
-            Every world is deterministically generated with unique atmospheres, palettes, and landing regions.
+            The universe is a persistent procedural exploration sandbox. Discover solar systems, encounter orbital stations and alien spacecraft, trade goods, craft components, and physically customize your vessel.
           </p>
           <ul style="color: #cbd5e1; font-size: 13px; line-height: 1.8;">
-            <li><b>Approach:</b> Fly close to any planet to begin orbital approach.</li>
-            <li><b>Inspect & Orbit:</b> Press <b>[Space]</b> when in orbital range to enter stable orbit and inspect landing sites.</li>
-            <li><b>Landing:</b> Select a landing site (A/D) and press <b>[Enter]</b> or <b>[Space]</b> to descend into the atmosphere.</li>
-            <li><b>Surface Scans:</b> Fly within 55m of exotic flora, living fauna, or monolithic landmarks and press <b>[Space]</b> to scan.</li>
+            <li><b>Procedural Stations:</b> Each populated system harbors stations (Trade Hubs, Mining Refineries, Research Arrays, Shipyards, Bio-stations). Target on radar, approach within 120m, and press <b>[Space]</b> to dock.</li>
+            <li><b>Dockable NPC Vessels:</b> Hail passing alien spacecraft, or dock directly with large capital carriers and heavy cargo traders in deep space.</li>
+            <li><b>Market & Trade:</b> Liquidate planetary mineral, biological, and crystalline samples, or buy and sell refined trade commodities with live supply/demand pricing.</li>
+            <li><b>Fabrication Workshop:</b> Smelt raw ores, compound cryogenic coolants, culture biopolymers, and synthesize plasma crystals and optotronic circuits.</li>
+            <li><b>Functional Ship Upgrades:</b> Install propulsion vector rings, grav lift stabilizers, deep ecology sensor crowns, warp coils, and overdrive runners that physically attach to your ship's exterior.</li>
+            <li><b>Planetary Survey & Landing:</b> Enter orbit around landable worlds, select landing regions, hover over surface terrain, and scan exotic species and landmarks.</li>
             <li><b>Ascent:</b> Press <b>[E]</b> or <b>[X]</b> at any time in surface flight to ascend back to orbit.</li>
           </ul>
         `;

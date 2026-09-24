@@ -97,6 +97,8 @@ export interface SpaceAnomalyDescriptor {
   signature?: ResonanceSignature;
 }
 
+import type { SystemPopulationDescriptor } from '../population/PopulationTypes';
+
 export interface StarSystemDescriptor {
   id: string;
   seed: number;
@@ -107,4 +109,5 @@ export interface StarSystemDescriptor {
   star: StarDescriptor;
   planets: PlanetDescriptor[];
   anomalies?: SpaceAnomalyDescriptor[];
+  population?: SystemPopulationDescriptor;
 }

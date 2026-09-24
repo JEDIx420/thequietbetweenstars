@@ -1,51 +1,85 @@
 import type { SpaceStation } from '../game/stations/SpaceStationManager';
+import type { NamedVessel } from '../game/vessels/NamedVesselDirector';
 import type { StoryDirector } from '../story/StoryDirector';
 import type { PlayerSaveSlot } from '../persistence/SaveManager';
-import { CHAPTER_1_BEATS } from '../story/chapters/Chapter1Resonance';
+import type { StarSystemDescriptor } from '../game/systems/PlanetDescriptor';
+import { MarketService } from '../game/economy/MarketService';
+import { CraftingService } from '../game/economy/CraftingService';
+import { CRAFTING_RECIPES } from '../game/economy/CraftingCatalog';
+import { SHIP_MODULE_CATALOG } from '../game/progression/ShipProgression';
 import { audio } from '../audio/AudioEngine';
+import { localAI } from '../ai/LocalIntelligenceService';
 
 export interface StationModalCallbacks {
   onUndock: () => void;
-  onTalkToNPC: (npcId: string) => void;
+  onTalkToNPC?: (npcId: string) => void;
   onClose: () => void;
+  onModuleInstalled?: (moduleId: string) => void;
+  onSave?: () => void;
 }
+
+export type DockedTerminalTab = 'market' | 'fabricator' | 'shipyard' | 'services' | 'comms';
 
 export class StationInterfaceModal {
   private container: HTMLElement;
   private modalEl: HTMLElement | null = null;
   private isVisible = false;
-  private activeTab: 'comms_link' | 'signal_lab' | 'station_logs' | 'systems_depot' = 'comms_link';
-  private station: SpaceStation | null = null;
+  private activeTab: DockedTerminalTab = 'market';
+  private target: SpaceStation | NamedVessel | null = null;
+  private system: StarSystemDescriptor | null = null;
   private storyDirector: StoryDirector | null = null;
   private saveSlot: PlayerSaveSlot | null = null;
   private callbacks: StationModalCallbacks;
-  private commReplyHistory: Array<{ sender: string; text: string; time: string }> = [];
+  private commHistory: Array<{ sender: string; text: string; time: string }> = [];
 
   constructor(container: HTMLElement, callbacks: StationModalCallbacks) {
     this.container = container;
     this.callbacks = callbacks;
   }
 
-  public show(station: SpaceStation, storyDirector: StoryDirector, saveSlot: PlayerSaveSlot): void {
+  public show(
+    target: SpaceStation | NamedVessel,
+    storyDirector: StoryDirector,
+    saveSlot: PlayerSaveSlot,
+    system?: StarSystemDescriptor | null
+  ): void {
     if (this.isVisible) return;
     this.isVisible = true;
-    this.station = station;
+    this.target = target;
     this.storyDirector = storyDirector;
     this.saveSlot = saveSlot;
+    this.system = system ?? (storyDirector as any).currentSystem ?? null;
 
-    // Default opening comms transmission in transcript feed
-    if (this.commReplyHistory.length === 0) {
-      const now = new Date();
-      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-      this.commReplyHistory.push({
-        sender: 'STATION_TRAFFIC_CONTROL',
-        text: 'Mooring clamps confirmed. Umbilical power feed connected. High-bandwidth optical channel open.',
-        time: timeStr,
-      });
-      this.commReplyHistory.push({
-        sender: 'DR_VANCE // CHIEF_SIGNAL_ANALYST',
-        text: 'Explorer, Dr. Vance speaking via secure telemetry relay. If you recovered anomalous resonance shards during your survey run, feed their data directly into our Signal Lab synthesis deck.',
-        time: timeStr,
+    // Track station/vessel discovery in saveSlot
+    if (this.target) {
+      if ('archetype' in this.target && typeof (this.target as any).archetype === 'string') {
+        if (!saveSlot.knownStations) saveSlot.knownStations = [];
+        if (!saveSlot.knownStations.includes(this.target.id)) {
+          saveSlot.knownStations.push(this.target.id);
+        }
+      } else {
+        if (!saveSlot.knownVessels) saveSlot.knownVessels = [];
+        if (!saveSlot.knownVessels.includes(this.target.id)) {
+          saveSlot.knownVessels.push(this.target.id);
+        }
+      }
+    }
+
+    // Default opening comms greeting
+    if (this.commHistory.length === 0) {
+      const now = new Date().toTimeString().split(' ')[0];
+      const isStation = 'archetype' in this.target;
+      const speaker = isStation
+        ? `${this.target.name.toUpperCase()} TRAFFIC CONTROL`
+        : `${(this.target as NamedVessel).captainName.toUpperCase()} // BRIDGE`;
+      const greeting = this.target.greeting || (isStation
+        ? 'Umbilical magnetic lock confirmed. Remote logistics link established.'
+        : 'Welcome aboard our vessel. Sub-space docking tether secured.');
+
+      this.commHistory.push({
+        sender: speaker,
+        text: greeting,
+        time: now,
       });
     }
 
@@ -62,7 +96,7 @@ export class StationInterfaceModal {
       justify-content: center;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       color: #f8fafc;
-      animation: fadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     `;
 
     this.render();
@@ -92,96 +126,104 @@ export class StationInterfaceModal {
   }
 
   private render(): void {
-    if (!this.modalEl || !this.station || !this.storyDirector) return;
+    if (!this.modalEl || !this.target || !this.saveSlot) return;
 
-    const state = this.storyDirector.getState();
-    const currentBeatDef = CHAPTER_1_BEATS[state.currentBeat];
+    const credits = this.saveSlot.credits ?? 0;
+    const isStation = 'archetype' in this.target;
+    const archetype = isStation ? (this.target as SpaceStation).archetype : 'TRADE_HUB';
+    const faction = (this.target as any).faction || (this.target as any).species || 'Independent';
 
     this.modalEl.innerHTML = `
       <div style="
-        width: min(940px, 95vw);
-        height: min(660px, 90vh);
-        background: rgba(10, 17, 34, 0.96);
-        border: 1px solid rgba(56, 189, 248, 0.35);
-        box-shadow: 0 0 60px rgba(56, 189, 248, 0.12), inset 0 0 20px rgba(3, 7, 18, 0.8);
+        width: min(960px, 95vw);
+        height: min(680px, 92vh);
+        background: rgba(10, 17, 34, 0.97);
+        border: 1px solid rgba(56, 189, 248, 0.4);
+        box-shadow: 0 0 60px rgba(56, 189, 248, 0.12), inset 0 0 24px rgba(3, 7, 18, 0.85);
         border-radius: 12px;
         display: flex;
         flex-direction: column;
         overflow: hidden;
       ">
-        <!-- Terminal Header: Remote Station Interface Console -->
+        <!-- Terminal Header -->
         <div style="
-          padding: 16px 24px;
+          padding: 14px 20px;
           border-bottom: 1px solid rgba(56, 189, 248, 0.25);
           display: flex;
           justify-content: space-between;
           align-items: center;
-          background: rgba(4, 9, 20, 0.85);
-          gap: 16px;
+          background: rgba(4, 9, 20, 0.9);
+          gap: 12px;
+          flex-wrap: wrap;
         ">
           <div>
             <div style="display: flex; align-items: center; gap: 10px;">
               <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 10px #4ade80;"></span>
-              <h2 style="margin: 0; font-size: 1.15rem; letter-spacing: 0.12em; font-weight: 700; color: #f8fafc; text-transform: uppercase;">
-                ${this.station.name}
+              <h2 style="margin: 0; font-size: 1.1rem; letter-spacing: 0.12em; font-weight: 700; color: #f8fafc; text-transform: uppercase;">
+                ${this.target.name}
               </h2>
               <span style="font-size: 0.72rem; letter-spacing: 0.08em; padding: 2px 8px; border-radius: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35);">
-                BAY 03 · CLAMP LOCKED · UPLINK 99.8%
+                ${archetype.replace('_', ' ')} · DOCKED
               </span>
             </div>
-            <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 5px; font-family: ui-monospace, monospace;">
-              AFFILIATION: <span style="color: #cbd5e1;">${this.station.faction.toUpperCase()}</span> // CARRIER FREQ: <span style="color: #38bdf8;">1420.405 MHz</span> // MISSION: <span style="color: #7dd3fc;">${currentBeatDef?.title.toUpperCase() || 'SYSTEM SURVEY'}</span>
+            <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px; font-family: ui-monospace, monospace;">
+              AFFILIATION: <span style="color: #cbd5e1;">${faction.toUpperCase()}</span> // UMBILICAL POWER: <span style="color: #4ade80;">100% ONLINE</span> // BALANCE: <span style="color: #38bdf8; font-weight: 700;">${credits} CR</span>
             </div>
           </div>
 
-          <button id="station-btn-undock-header" style="
-            background: rgba(239, 68, 68, 0.15);
-            border: 1px solid rgba(239, 68, 68, 0.5);
-            color: #fca5a5;
-            padding: 9px 18px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.82rem;
-            font-weight: 600;
-            letter-spacing: 0.08em;
-            transition: all 0.15s ease;
-            white-space: nowrap;
-          ">
-            ⏏ DISENGAGE & UNDOCK
-          </button>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <button id="station-btn-undock-header" style="
+              background: rgba(239, 68, 68, 0.15);
+              border: 1px solid rgba(239, 68, 68, 0.5);
+              color: #fca5a5;
+              padding: 8px 16px;
+              border-radius: 6px;
+              cursor: pointer;
+              font-size: 0.8rem;
+              font-weight: 600;
+              letter-spacing: 0.08em;
+              transition: all 0.15s ease;
+              white-space: nowrap;
+            ">
+              ⏏ DISENGAGE & UNDOCK
+            </button>
+          </div>
         </div>
 
-        <!-- Channel Select Bar -->
+        <!-- Channel Navigation Tabs -->
         <div style="
           display: flex;
           border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(8, 14, 28, 0.7);
+          background: rgba(8, 14, 28, 0.75);
           padding: 0 16px;
           gap: 4px;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
         ">
-          ${this.renderTabButton('comms_link', 'CH 01 // SUBSPACE COMMS UPLINK')}
-          ${this.renderTabButton('signal_lab', 'CH 02 // SIGNAL LAB & SYNTHESIS')}
-          ${this.renderTabButton('station_logs', 'CH 03 // ARCHIVE & LOGS')}
-          ${this.renderTabButton('systems_depot', 'CH 04 // SHIP SERVICES')}
+          ${this.renderTabButton('market', 'CH 01 // COMMERCE MARKET')}
+          ${this.renderTabButton('fabricator', 'CH 02 // FABRICATOR WORKSHOP')}
+          ${this.renderTabButton('shipyard', 'CH 03 // SHIPYARD MODULES')}
+          ${this.renderTabButton('services', 'CH 04 // STATION SERVICES')}
+          ${this.renderTabButton('comms', 'CH 05 // SUBSPACE COMMS')}
         </div>
 
-        <!-- Terminal Workspace Content -->
+        <!-- Tab Content Area -->
         <div id="station-tab-content" class="modal-scrollable" data-scrollable="true" style="
           flex: 1;
           overflow-y: auto;
           -webkit-overflow-scrolling: touch;
           touch-action: pan-y;
-          padding: 22px 26px;
+          padding: 20px 24px;
         ">
           ${this.renderActiveTabContent()}
         </div>
       </div>
     `;
 
-    // Bind event listeners
+    // Bind tab switching
     this.modalEl.querySelectorAll('.station-tab-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
-        const tab = (e.currentTarget as HTMLElement).getAttribute('data-tab') as any;
+        const tab = (e.currentTarget as HTMLElement).getAttribute('data-tab') as DockedTerminalTab;
         if (tab) {
           this.activeTab = tab;
           audio.playBlip();
@@ -190,6 +232,7 @@ export class StationInterfaceModal {
       });
     });
 
+    // Bind undock
     const undockBtn = this.modalEl.querySelector('#station-btn-undock-header');
     if (undockBtn) {
       undockBtn.addEventListener('click', () => {
@@ -198,139 +241,25 @@ export class StationInterfaceModal {
       });
     }
 
-    // Comms interactive queries
-    this.modalEl.querySelectorAll('.comm-query-action').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        const query = (e.currentTarget as HTMLElement).getAttribute('data-query');
-        if (query) {
-          this.handleCommsQuery(query);
-        }
-      });
-    });
-
-    const synthBtn = this.modalEl.querySelector('#btn-synthesize-key');
-    if (synthBtn) {
-      synthBtn.addEventListener('click', () => {
-        audio.playConnectChime();
-        this.storyDirector?.emit({
-          type: 'FRAGMENT_DECRYPTED',
-          payload: { fragmentId: 'fragment_alpha' },
-          timestamp: Date.now(),
-        });
-        this.storyDirector?.emit({
-          type: 'FRAGMENT_DECRYPTED',
-          payload: { fragmentId: 'fragment_beta' },
-          timestamp: Date.now(),
-        });
-        this.commReplyHistory.push({
-          sender: 'SYNTHESIS_PROCESSOR',
-          text: 'Dual-frequency harmonic alignment successful. Resonance signature confirmed at 960.8 Hz. Vector to First Harmonic Relay locked in astrogation computer.',
-          time: new Date().toTimeString().split(' ')[0],
-        });
-        this.render();
-      });
-    }
-
-    const tradeDataBtn = this.modalEl.querySelector('#btn-trade-survey-data');
-    if (tradeDataBtn) {
-      tradeDataBtn.addEventListener('click', () => {
-        audio.playConnectChime();
-        if (this.saveSlot) {
-          this.saveSlot.credits = (this.saveSlot.credits || 0) + 150;
-        }
-        this.commReplyHistory.push({
-          sender: 'STATION_DATA_EXCHANGE',
-          text: 'Telemetry package uploaded to Epsilon-7 scientific repository. Credited +150 credits to pilot account.',
-          time: new Date().toTimeString().split(' ')[0],
-        });
-        this.render();
-      });
-    }
+    this.bindTabActionListeners();
   }
 
-  private handleCommsQuery(queryType: string): void {
-    audio.playBlip();
-    const now = new Date().toTimeString().split(' ')[0];
-
-    switch (queryType) {
-      case 'vance_briefing': {
-        this.commReplyHistory.push({
-          sender: 'PILOT // SHIP_LINK',
-          text: 'Transmission: Requesting current signal survey briefing on the harmonic anomaly.',
-          time: now,
-        });
-        this.commReplyHistory.push({
-          sender: 'DR_VANCE // CHIEF_SIGNAL_ANALYST',
-          text: 'Our deep-space listening array detected phase-coherent ripples across the sector. They do not originate from any natural pulsars or stellar flaring. We believe an ancient builder network is resonating in response to your ship\'s hyperspace drive.',
-          time: now,
-        });
-        this.render();
-        break;
-      }
-
-      case 'vance_fragments': {
-        const state = this.storyDirector?.getState();
-        const count = state?.resonanceFragments.length || 0;
-        this.commReplyHistory.push({
-          sender: 'PILOT // SHIP_LINK',
-          text: `Transmission: Transmitting telemetry on recovered fragments [${count}/2].`,
-          time: now,
-        });
-        if (count >= 2) {
-          this.commReplyHistory.push({
-            sender: 'DR_VANCE // CHIEF_SIGNAL_ANALYST',
-            text: 'Both fragments α and β are intact! Switch to CH 02 (Signal Lab) and initiate key matrix synthesis to compute the relay coordinates.',
-            time: now,
-          });
-        } else if (count === 1) {
-          this.commReplyHistory.push({
-            sender: 'DR_VANCE // CHIEF_SIGNAL_ANALYST',
-            text: 'Fragment α is recorded. Telemetry indicates a secondary frequency origin point near the outer orbit: an abandoned survey craft Alpha-9. Locate it to acquire Fragment β.',
-            time: now,
-          });
-        } else {
-          this.commReplyHistory.push({
-            sender: 'DR_VANCE // CHIEF_SIGNAL_ANALYST',
-            text: 'No fragments detected in your sensor buffer yet. Track the 432.8 Hz subcarrier signal in deep space and complete the multi-stage harmonic scan.',
-            time: now,
-          });
-        }
-        this.render();
-        break;
-      }
-
-      case 'station_traffic': {
-        this.commReplyHistory.push({
-          sender: 'PILOT // SHIP_LINK',
-          text: 'Transmission: Requesting navigational hazard advisory for outer system orbits.',
-          time: now,
-        });
-        this.commReplyHistory.push({
-          sender: 'STATION_TRAFFIC_CONTROL',
-          text: 'Advisory: Outer system orbits experience localized gravity shear and high-band harmonic distortion. Maintain sublight cruise speed (<160 m/s) when entering uncharted anomaly fields.',
-          time: now,
-        });
-        this.render();
-        break;
-      }
-    }
-  }
-
-  private renderTabButton(tabKey: typeof this.activeTab, label: string): string {
+  private renderTabButton(tabKey: DockedTerminalTab, label: string): string {
     const isActive = this.activeTab === tabKey;
     return `
       <button class="station-tab-btn" data-tab="${tabKey}" style="
-        padding: 11px 16px;
+        padding: 10px 14px;
         background: transparent;
         border: none;
         border-bottom: 2px solid ${isActive ? '#38bdf8' : 'transparent'};
         color: ${isActive ? '#38bdf8' : '#94a3b8'};
         font-weight: ${isActive ? '700' : '400'};
         cursor: pointer;
-        font-size: 0.8rem;
+        font-size: 0.78rem;
         font-family: inherit;
         letter-spacing: 0.06em;
         transition: all 0.15s ease;
+        white-space: nowrap;
       ">
         ${label}
       </button>
@@ -338,61 +267,378 @@ export class StationInterfaceModal {
   }
 
   private renderActiveTabContent(): string {
-    if (!this.storyDirector) return '';
-    const state = this.storyDirector.getState();
+    if (!this.target || !this.saveSlot) return '';
+
+    const isStation = 'archetype' in this.target;
+    const archetype = isStation ? (this.target as SpaceStation).archetype : 'TRADE_HUB';
+    const sysSeed = this.system?.seed ?? 104729;
 
     switch (this.activeTab) {
-      case 'comms_link': {
+      case 'market': {
+        const quotes = MarketService.getMarketQuotes(archetype, sysSeed, this.target.id);
+        const playerSamples = this.saveSlot.sampleInventory || {};
+        const playerCommodities = this.saveSlot.commodityInventory || {};
+
         return `
-          <div style="display: flex; flex-direction: column; gap: 16px; height: 100%;">
-            <!-- Audio Oscilloscope & Carrier Waveform -->
-            <div style="
-              background: rgba(6, 12, 24, 0.7);
-              border: 1px solid rgba(56, 189, 248, 0.25);
-              border-radius: 8px;
-              padding: 14px 18px;
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              gap: 16px;
-            ">
-              <div style="display: flex; align-items: center; gap: 12px;">
-                <div style="
-                  display: flex;
-                  align-items: flex-end;
-                  gap: 3px;
-                  height: 28px;
-                  padding: 2px;
-                ">
-                  <span style="width: 3px; height: 12px; background: #38bdf8; animation: barPulse 1.2s infinite ease-in-out;"></span>
-                  <span style="width: 3px; height: 22px; background: #38bdf8; animation: barPulse 0.9s infinite ease-in-out;"></span>
-                  <span style="width: 3px; height: 18px; background: #38bdf8; animation: barPulse 1.4s infinite ease-in-out;"></span>
-                  <span style="width: 3px; height: 26px; background: #38bdf8; animation: barPulse 0.8s infinite ease-in-out;"></span>
-                  <span style="width: 3px; height: 15px; background: #38bdf8; animation: barPulse 1.1s infinite ease-in-out;"></span>
-                  <span style="width: 3px; height: 24px; background: #38bdf8; animation: barPulse 1.3s infinite ease-in-out;"></span>
-                  <span style="width: 3px; height: 10px; background: #38bdf8; animation: barPulse 1.0s infinite ease-in-out;"></span>
-                  <span style="width: 3px; height: 20px; background: #38bdf8; animation: barPulse 0.7s infinite ease-in-out;"></span>
-                </div>
-                <div>
-                  <div style="font-size: 0.85rem; color: #e2e8f0; font-weight: 600; letter-spacing: 0.08em;">
-                    SUBSPACE CARRIER UPLINK // CHANNEL 01 ENCRYPTED
-                  </div>
-                  <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 2px;">
-                    Carrier Phase: 432.8 Hz · Latency: 1.2ms · Signal-to-Noise: 48.6 dB
-                  </div>
+          <div style="display: flex; flex-direction: column; gap: 20px;">
+            <!-- Header bar -->
+            <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+              <div>
+                <h3 style="margin: 0; font-size: 0.95rem; color: #f8fafc; letter-spacing: 0.08em; text-transform: uppercase;">
+                  COMMODITIES & TRADE EXCHANGE // LOCAL CONCOURSE
+                </h3>
+                <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 3px;">
+                  Current Market Profile: <span style="color: #38bdf8;">${archetype.replace('_', ' ')}</span> · Instant settlement
                 </div>
               </div>
-
-              <div style="font-size: 0.72rem; color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.35); padding: 3px 8px; border-radius: 4px; background: rgba(34, 197, 94, 0.1);">
-                ● LIVE TRANSMISSION
+              <div style="font-size: 0.78rem; color: #cbd5e1;">
+                Available Pilot Liquidity: <span style="color: #38bdf8; font-weight: 700;">${this.saveSlot.credits ?? 0} CR</span>
               </div>
             </div>
 
-            <!-- Terminal Transmit / Receive Feed -->
+            <!-- Planetary Samples Liquidation Section -->
+            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 14px 16px;">
+              <div style="font-size: 0.8rem; font-weight: 700; color: #7dd3fc; margin-bottom: 8px; letter-spacing: 0.06em;">
+                PLANETARY EXPLORATION SAMPLES // STATION BUYOUT
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;">
+                ${quotes.samples
+                  .map((s) => {
+                    const owned = playerSamples[s.id] || 0;
+                    return `
+                      <div style="background: rgba(3, 7, 18, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; justify-content: space-between; gap: 6px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                          <span style="color: #f1f5f9; font-weight: 600;">${s.id}</span>
+                          <span style="color: #94a3b8;">Cargo: <strong style="color: ${owned > 0 ? '#38bdf8' : '#64748b'};">${owned}</strong></span>
+                        </div>
+                        <div style="font-size: 0.72rem; color: #4ade80;">+${s.sellPrice} CR / sample</div>
+                        <button class="btn-sell-sample" data-sample="${s.id}" ${owned === 0 ? 'disabled' : ''} style="
+                          margin-top: 4px;
+                          background: ${owned > 0 ? 'rgba(74, 222, 128, 0.15)' : 'rgba(51, 65, 85, 0.3)'};
+                          border: 1px solid ${owned > 0 ? 'rgba(74, 222, 128, 0.4)' : 'rgba(148, 163, 184, 0.2)'};
+                          color: ${owned > 0 ? '#86efac' : '#64748b'};
+                          padding: 5px 8px;
+                          border-radius: 4px;
+                          font-size: 0.7rem;
+                          font-weight: 600;
+                          cursor: ${owned > 0 ? 'pointer' : 'default'};
+                        ">
+                          SELL 1 (+${s.sellPrice} CR)
+                        </button>
+                      </div>
+                    `;
+                  })
+                  .join('')}
+              </div>
+            </div>
+
+            <!-- Refined Commodities Table -->
+            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 14px 16px;">
+              <div style="font-size: 0.8rem; font-weight: 700; color: #7dd3fc; margin-bottom: 10px; letter-spacing: 0.06em;">
+                REFINED INDUSTRIAL & HIGH-TECH COMMODITIES
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                ${quotes.commodities
+                  .map((c) => {
+                    const owned = playerCommodities[c.id] || 0;
+                    const canAfford = (this.saveSlot?.credits ?? 0) >= c.buyPrice;
+                    return `
+                      <div style="
+                        background: rgba(3, 7, 18, 0.6);
+                        border: 1px solid rgba(255, 255, 255, 0.06);
+                        border-radius: 6px;
+                        padding: 10px 14px;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        gap: 12px;
+                        flex-wrap: wrap;
+                      ">
+                        <div style="flex: 1; min-width: 180px;">
+                          <div style="font-size: 0.82rem; font-weight: 700; color: #f8fafc;">${c.name}</div>
+                          <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 2px;">
+                            ${c.category} · In Station Cargo: ${c.stationStock} units
+                          </div>
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 14px;">
+                          <div style="font-size: 0.75rem; text-align: right;">
+                            <div style="color: #cbd5e1;">Cargo: <strong style="color: ${owned > 0 ? '#38bdf8' : '#64748b'};">${owned}</strong></div>
+                            <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 2px;">
+                              Buy: <span style="color: #f87171;">${c.buyPrice} CR</span> / Sell: <span style="color: #4ade80;">${c.sellPrice} CR</span>
+                            </div>
+                          </div>
+
+                          <div style="display: flex; gap: 6px;">
+                            <button class="btn-buy-commodity" data-comm="${c.id}" ${!canAfford ? 'disabled' : ''} style="
+                              background: ${canAfford ? 'rgba(56, 189, 248, 0.18)' : 'rgba(51, 65, 85, 0.3)'};
+                              border: 1px solid ${canAfford ? 'rgba(56, 189, 248, 0.5)' : 'rgba(148, 163, 184, 0.2)'};
+                              color: ${canAfford ? '#38bdf8' : '#64748b'};
+                              padding: 6px 12px;
+                              border-radius: 4px;
+                              font-size: 0.72rem;
+                              font-weight: 600;
+                              cursor: ${canAfford ? 'pointer' : 'default'};
+                            ">
+                              BUY [${c.buyPrice} CR]
+                            </button>
+                            <button class="btn-sell-commodity" data-comm="${c.id}" ${owned === 0 ? 'disabled' : ''} style="
+                              background: ${owned > 0 ? 'rgba(74, 222, 128, 0.18)' : 'rgba(51, 65, 85, 0.3)'};
+                              border: 1px solid ${owned > 0 ? 'rgba(74, 222, 128, 0.5)' : 'rgba(148, 163, 184, 0.2)'};
+                              color: ${owned > 0 ? '#86efac' : '#64748b'};
+                              padding: 6px 12px;
+                              border-radius: 4px;
+                              font-size: 0.72rem;
+                              font-weight: 600;
+                              cursor: ${owned > 0 ? 'pointer' : 'default'};
+                            ">
+                              SELL [+${c.sellPrice} CR]
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    `;
+                  })
+                  .join('')}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      case 'fabricator': {
+        const samples = this.saveSlot.sampleInventory || {};
+        const commodities = this.saveSlot.commodityInventory || {};
+
+        return `
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div>
+              <h3 style="margin: 0; font-size: 0.95rem; color: #f8fafc; letter-spacing: 0.08em; text-transform: uppercase;">
+                ON-SITE MATERIAL FABRICATOR & SYNTHESIS DECK
+              </h3>
+              <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 3px;">
+                Smelt planetary ores, compound coolants, and assemble advanced components.
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              ${CRAFTING_RECIPES.map((r) => {
+                const validation = CraftingService.validateRecipe(this.saveSlot!, r);
+                const reqsStr = r.ingredients
+                  .map((ing) => {
+                    const have = ing.type === 'SAMPLE' ? samples[ing.id] || 0 : commodities[ing.id] || 0;
+                    const ok = have >= ing.count;
+                    return `<span style="color: ${ok ? '#86efac' : '#f87171'};">${ing.count}x ${ing.id.replace('_', ' ')} (${have}/${ing.count})</span>`;
+                  })
+                  .join(', ');
+
+                return `
+                  <div style="
+                    background: rgba(15, 23, 42, 0.6);
+                    border: 1px solid rgba(56, 189, 248, 0.25);
+                    border-radius: 8px;
+                    padding: 12px 16px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                  ">
+                    <div style="flex: 1; min-width: 200px;">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 0.85rem; font-weight: 700; color: #f8fafc;">${r.name}</span>
+                        <span style="font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8;">
+                          ${r.category}
+                        </span>
+                      </div>
+                      <div style="font-size: 0.72rem; color: #cbd5e1; margin-top: 4px;">
+                        ${r.description}
+                      </div>
+                      <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 5px;">
+                        Requires: ${reqsStr} + <span style="color: ${(this.saveSlot?.credits ?? 0) >= r.creditsCost ? '#38bdf8' : '#f87171'};">${r.creditsCost} CR</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <button class="btn-craft-recipe" data-recipe="${r.id}" ${!validation.canCraft ? 'disabled' : ''} style="
+                        background: ${validation.canCraft ? 'linear-gradient(135deg, #0284c7, #38bdf8)' : 'rgba(51, 65, 85, 0.3)'};
+                        border: 1px solid ${validation.canCraft ? '#38bdf8' : 'rgba(148, 163, 184, 0.2)'};
+                        color: ${validation.canCraft ? '#ffffff' : '#64748b'};
+                        padding: 8px 16px;
+                        border-radius: 6px;
+                        font-size: 0.75rem;
+                        font-weight: 700;
+                        font-family: inherit;
+                        cursor: ${validation.canCraft ? 'pointer' : 'default'};
+                      ">
+                        FABRICATE
+                      </button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      case 'shipyard': {
+        const installed = this.saveSlot.installedModules || [];
+        const credits = this.saveSlot.credits ?? 0;
+        const samples = this.saveSlot.sampleInventory || {};
+
+        return `
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div>
+              <h3 style="margin: 0; font-size: 0.95rem; color: #f8fafc; letter-spacing: 0.08em; text-transform: uppercase;">
+                DRYDOCK OUTFITTING & SHIP UPGRADE REQUISITION
+              </h3>
+              <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 3px;">
+                Direct gantry installation of functional propulsion, sensors, and structural modules.
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              ${SHIP_MODULE_CATALOG.map((mod) => {
+                const isInstalled = installed.includes(mod.id);
+
+                let hasSamples = true;
+                const reqsStr = mod.sampleRequirements
+                  .map((req) => {
+                    const have = samples[req.category] || 0;
+                    if (have < req.count) hasSamples = false;
+                    return `${req.count}x ${req.category} (${have}/${req.count})`;
+                  })
+                  .join(', ');
+
+                const canAfford = credits >= mod.costCredits && hasSamples;
+
+                return `
+                  <div style="
+                    background: rgba(15, 23, 42, 0.6);
+                    border: 1px solid ${isInstalled ? 'rgba(74, 222, 128, 0.4)' : 'rgba(56, 189, 248, 0.25)'};
+                    border-radius: 8px;
+                    padding: 14px 16px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                  ">
+                    <div style="flex: 1; min-width: 200px;">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 0.88rem; font-weight: 700; color: #f8fafc;">${mod.name}</span>
+                        <span style="font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8;">
+                          ${mod.category} · TIER ${mod.tier}
+                        </span>
+                        ${isInstalled ? '<span style="font-size: 0.68rem; color: #86efac; font-weight: 700;">[INSTALLED]</span>' : ''}
+                      </div>
+                      <div style="font-size: 0.72rem; color: #cbd5e1; margin-top: 4px;">
+                        ${mod.description}
+                      </div>
+                      <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 5px;">
+                        Requisition Cost: <span style="color: ${credits >= mod.costCredits ? '#38bdf8' : '#f87171'}; font-weight: 600;">${mod.costCredits} CR</span> · Materials: <span style="color: ${hasSamples ? '#93c5fd' : '#f87171'};">${reqsStr}</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      ${
+                        isInstalled
+                          ? `<button disabled style="background: rgba(74, 222, 128, 0.15); border: 1px solid rgba(74, 222, 128, 0.4); color: #86efac; padding: 7px 14px; border-radius: 6px; font-size: 0.75rem; cursor: default;">ACTIVE ON HULL</button>`
+                          : `<button class="btn-install-module" data-module="${mod.id}" ${!canAfford ? 'disabled' : ''} style="
+                              background: ${canAfford ? 'linear-gradient(135deg, #0284c7, #38bdf8)' : 'rgba(51, 65, 85, 0.3)'};
+                              border: 1px solid ${canAfford ? '#38bdf8' : 'rgba(148, 163, 184, 0.2)'};
+                              color: ${canAfford ? '#ffffff' : '#64748b'};
+                              padding: 8px 16px;
+                              border-radius: 6px;
+                              font-size: 0.75rem;
+                              font-weight: 700;
+                              font-family: inherit;
+                              cursor: ${canAfford ? 'pointer' : 'default'};
+                            ">
+                              INSTALL UPGRADE
+                            </button>`
+                      }
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      case 'services': {
+        return `
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div>
+              <h3 style="margin: 0; font-size: 0.95rem; color: #f8fafc; letter-spacing: 0.08em; text-transform: uppercase;">
+                DOCKYARD MAINTENANCE & SURVEY CARTOGRAPHY UPLOAD
+              </h3>
+              <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 3px;">
+                Station maintenance umbilicals, hull diagnostics, and stellar survey data remuneration.
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div style="background: rgba(15, 23, 42, 0.6); padding: 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                <div style="color: #94a3b8; font-size: 0.72rem; letter-spacing: 0.05em;">DEFLECTOR INTEGRITY</div>
+                <div style="font-size: 1.1rem; font-weight: 700; color: #86efac; margin-top: 4px;">100% RECHARGED</div>
+                <div style="font-size: 0.68rem; color: #64748b; margin-top: 2px;">Active mooring power feed engaged</div>
+              </div>
+
+              <div style="background: rgba(15, 23, 42, 0.6); padding: 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                <div style="color: #94a3b8; font-size: 0.72rem; letter-spacing: 0.05em;">REACTION PROPELLANT</div>
+                <div style="font-size: 1.1rem; font-weight: 700; color: #38bdf8; margin-top: 4px;">CAPACITY FULL</div>
+                <div style="font-size: 0.68rem; color: #64748b; margin-top: 2px;">Interplanetary impulse thrusters pressurized</div>
+              </div>
+            </div>
+
+            <!-- Survey Upload Section -->
+            <div style="
+              background: rgba(15, 23, 42, 0.6);
+              border: 1px solid rgba(56, 189, 248, 0.3);
+              border-radius: 8px;
+              padding: 16px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 14px;
+              flex-wrap: wrap;
+            ">
+              <div>
+                <div style="font-size: 0.85rem; color: #f8fafc; font-weight: 600;">CARTOGRAPHY & SURVEY DATA TELEMETRY</div>
+                <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 3px;">
+                  Transmit local stellar observations and anomaly telemetry to station archives for remuneration.
+                </div>
+              </div>
+              <button id="btn-upload-survey-telemetry" style="
+                background: rgba(56, 189, 248, 0.18);
+                border: 1px solid #38bdf8;
+                color: #e0f2fe;
+                padding: 9px 18px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 0.78rem;
+                font-weight: 700;
+                font-family: inherit;
+                transition: all 0.15s ease;
+              ">
+                UPLOAD DATA (+150 CR)
+              </button>
+            </div>
+          </div>
+        `;
+      }
+
+      case 'comms': {
+        return `
+          <div style="display: flex; flex-direction: column; gap: 14px; height: 100%;">
+            <!-- Transmission Feed -->
             <div class="modal-scrollable" data-scrollable="true" style="
               flex: 1;
-              min-height: 200px;
-              max-height: 240px;
+              min-height: 220px;
+              max-height: 260px;
               background: rgba(3, 7, 18, 0.8);
               border: 1px solid rgba(255, 255, 255, 0.08);
               border-radius: 8px;
@@ -404,17 +650,17 @@ export class StationInterfaceModal {
               flex-direction: column;
               gap: 10px;
             ">
-              ${this.commReplyHistory
+              ${this.commHistory
                 .map(
                   (msg) => `
-                <div style="font-size: 0.8rem; line-height: 1.45;">
+                <div style="font-size: 0.78rem; line-height: 1.45;">
                   <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-                    <span style="color: ${msg.sender.startsWith('PILOT') ? '#7dd3fc' : msg.sender.startsWith('DR_VANCE') ? '#38bdf8' : '#cbd5e1'}; font-weight: 700; font-size: 0.75rem;">
+                    <span style="color: ${msg.sender.startsWith('PILOT') ? '#7dd3fc' : '#38bdf8'}; font-weight: 700; font-size: 0.72rem;">
                       [${msg.sender}]
                     </span>
-                    <span style="color: #64748b; font-size: 0.7rem;">${msg.time}</span>
+                    <span style="color: #64748b; font-size: 0.68rem;">${msg.time}</span>
                   </div>
-                  <div style="color: #e2e8f0; padding-left: 6px; border-left: 2px solid ${msg.sender.startsWith('PILOT') ? 'rgba(125, 211, 252, 0.4)' : 'rgba(56, 189, 248, 0.4)'};">
+                  <div style="color: #e2e8f0; padding-left: 6px; border-left: 2px solid rgba(56, 189, 248, 0.4);">
                     ${msg.text}
                   </div>
                 </div>
@@ -423,240 +669,242 @@ export class StationInterfaceModal {
                 .join('')}
             </div>
 
-            <!-- Transmission Query Console -->
+            <!-- Interactive Transmission Queries -->
             <div>
-              <div style="font-size: 0.75rem; color: #94a3b8; letter-spacing: 0.1em; margin-bottom: 8px; text-transform: uppercase;">
-                SELECT TRANSMISSION PACKET TO BROADCAST:
+              <div style="font-size: 0.72rem; color: #94a3b8; letter-spacing: 0.08em; margin-bottom: 8px; text-transform: uppercase;">
+                SELECT INQUIRY PACKET TO TRANSMIT:
               </div>
               <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button class="comm-query-action" data-query="vance_briefing" style="
+                <button class="btn-comms-query" data-query="traffic_advisory" style="
                   background: rgba(56, 189, 248, 0.12);
                   border: 1px solid rgba(56, 189, 248, 0.35);
                   color: #e0f2fe;
-                  padding: 8px 14px;
+                  padding: 8px 12px;
                   border-radius: 6px;
-                  font-size: 0.75rem;
+                  font-size: 0.72rem;
                   cursor: pointer;
                   font-family: inherit;
-                  transition: all 0.15s ease;
                 ">
-                  [📡 Query Survey Briefing]
+                  [📡 Navigational Hazard Advisory]
                 </button>
-                <button class="comm-query-action" data-query="vance_fragments" style="
+                <button class="btn-comms-query" data-query="trade_routes" style="
                   background: rgba(56, 189, 248, 0.12);
                   border: 1px solid rgba(56, 189, 248, 0.35);
                   color: #e0f2fe;
-                  padding: 8px 14px;
+                  padding: 8px 12px;
                   border-radius: 6px;
-                  font-size: 0.75rem;
+                  font-size: 0.72rem;
                   cursor: pointer;
                   font-family: inherit;
-                  transition: all 0.15s ease;
                 ">
-                  [📊 Transmit Fragment Telemetry]
+                  [📈 Local Trade Currents]
                 </button>
-                <button class="comm-query-action" data-query="station_traffic" style="
+                <button class="btn-comms-query" data-query="customs_lore" style="
                   background: rgba(56, 189, 248, 0.12);
                   border: 1px solid rgba(56, 189, 248, 0.35);
                   color: #e0f2fe;
-                  padding: 8px 14px;
+                  padding: 8px 12px;
                   border-radius: 6px;
-                  font-size: 0.75rem;
+                  font-size: 0.72rem;
                   cursor: pointer;
                   font-family: inherit;
-                  transition: all 0.15s ease;
                 ">
-                  [⚠️ Query Flight Navigation Hazard]
+                  [📜 Station History & Lore]
                 </button>
               </div>
             </div>
           </div>
         `;
       }
+    }
+  }
 
-      case 'signal_lab': {
-        const fragments = state.resonanceFragments;
-        const hasAlpha = fragments.some((f) => f.id === 'fragment_alpha');
-        const hasBeta = fragments.some((f) => f.id === 'fragment_beta');
-        const canSynthesize = hasAlpha && hasBeta && fragments.some((f) => !f.decrypted);
-        const bothDecrypted = hasAlpha && hasBeta && fragments.every((f) => f.decrypted);
+  private bindTabActionListeners(): void {
+    if (!this.modalEl || !this.target || !this.saveSlot) return;
 
-        return `
-          <div style="display: flex; flex-direction: column; gap: 16px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                <h3 style="margin: 0; font-size: 0.95rem; color: #e2e8f0; letter-spacing: 0.08em; text-transform: uppercase;">
-                  SIGNAL LABORATORY // HARMONIC SPECTRUM ANALYSIS
-                </h3>
-                <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 3px;">
-                  Fourier Phase Reconstruction · Builders Cryptographic Matrix
-                </div>
-              </div>
-              ${
-                canSynthesize
-                  ? `<button id="btn-synthesize-key" style="background: linear-gradient(135deg, #0284c7, #38bdf8); border: none; color: white; padding: 9px 18px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 700; font-family: inherit; letter-spacing: 0.06em;">⚡ SYNTHESIZE HARMONIC KEY</button>`
-                  : ''
+    const isStation = 'archetype' in this.target;
+    const archetype = isStation ? (this.target as SpaceStation).archetype : 'TRADE_HUB';
+    const sysSeed = this.system?.seed ?? 104729;
+
+    // BUY Commodity
+    this.modalEl.querySelectorAll('.btn-buy-commodity').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const commId = (e.currentTarget as HTMLElement).getAttribute('data-comm');
+        if (commId && this.saveSlot && this.target) {
+          const res = MarketService.buyCommodity(this.saveSlot, commId, 1, archetype, sysSeed, this.target.id);
+          if (res.success) {
+            audio.playConnectChime();
+            this.callbacks.onSave?.();
+            this.render();
+          } else {
+            audio.playScanEffect();
+          }
+        }
+      });
+    });
+
+    // SELL Commodity
+    this.modalEl.querySelectorAll('.btn-sell-commodity').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const commId = (e.currentTarget as HTMLElement).getAttribute('data-comm');
+        if (commId && this.saveSlot && this.target) {
+          const res = MarketService.sellCommodity(this.saveSlot, commId, 1, archetype, sysSeed, this.target.id);
+          if (res.success) {
+            audio.playConnectChime();
+            this.callbacks.onSave?.();
+            this.render();
+          } else {
+            audio.playScanEffect();
+          }
+        }
+      });
+    });
+
+    // SELL Sample
+    this.modalEl.querySelectorAll('.btn-sell-sample').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const sampleCat = (e.currentTarget as HTMLElement).getAttribute('data-sample');
+        if (sampleCat && this.saveSlot && this.target) {
+          const res = MarketService.sellSample(this.saveSlot, sampleCat, 1, archetype, sysSeed, this.target.id);
+          if (res.success) {
+            audio.playConnectChime();
+            this.callbacks.onSave?.();
+            this.render();
+          } else {
+            audio.playScanEffect();
+          }
+        }
+      });
+    });
+
+    // CRAFT Recipe
+    this.modalEl.querySelectorAll('.btn-craft-recipe').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const recId = (e.currentTarget as HTMLElement).getAttribute('data-recipe');
+        if (recId && this.saveSlot) {
+          const res = CraftingService.craftRecipe(this.saveSlot, recId);
+          if (res.success) {
+            audio.playConnectChime();
+            this.callbacks.onSave?.();
+            this.render();
+          } else {
+            audio.playScanEffect();
+          }
+        }
+      });
+    });
+
+    // INSTALL Module
+    this.modalEl.querySelectorAll('.btn-install-module').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const modId = (e.currentTarget as HTMLElement).getAttribute('data-module');
+        const mod = SHIP_MODULE_CATALOG.find((m) => m.id === modId);
+        if (mod && this.saveSlot) {
+          const credits = this.saveSlot.credits ?? 0;
+          const samples = this.saveSlot.sampleInventory || {};
+          let canAfford = credits >= mod.costCredits;
+          for (const req of mod.sampleRequirements) {
+            if ((samples[req.category] || 0) < req.count) canAfford = false;
+          }
+
+          if (canAfford) {
+            this.saveSlot.credits = credits - mod.costCredits;
+            for (const req of mod.sampleRequirements) {
+              this.saveSlot.sampleInventory[req.category] -= req.count;
+              if (this.saveSlot.sampleInventory[req.category] <= 0) {
+                delete this.saveSlot.sampleInventory[req.category];
               }
-            </div>
-
-            ${
-              fragments.length === 0
-                ? `<div style="padding: 40px; text-align: center; color: #64748b; background: rgba(3, 7, 18, 0.4); border: 1px dashed rgba(255,255,255,0.1); border-radius: 8px; font-size: 0.82rem;">
-                    NO RESONANCE FRAGMENTS CATALOGED IN SHIP STORAGE.<br>
-                    LOCATE ANOMALY SIGNALS IN SPACE AND COMPLETE MULTI-STAGE SENSOR HARMONIZATION.
-                  </div>`
-                : fragments
-                    .map(
-                      (f) => `
-                <div style="
-                  background: rgba(15, 23, 42, 0.6);
-                  border: 1px solid ${f.decrypted ? 'rgba(74, 222, 128, 0.4)' : 'rgba(56, 189, 248, 0.3)'};
-                  border-radius: 8px;
-                  padding: 14px 16px;
-                ">
-                  <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div style="font-weight: 700; color: #f8fafc; font-size: 0.9rem; letter-spacing: 0.05em;">${f.name.toUpperCase()}</div>
-                    <span style="font-size: 0.72rem; padding: 2px 7px; border-radius: 4px; background: ${f.decrypted ? 'rgba(74, 222, 128, 0.2)' : 'rgba(56, 189, 248, 0.2)'}; color: ${f.decrypted ? '#86efac' : '#38bdf8'}; border: 1px solid ${f.decrypted ? 'rgba(74, 222, 128, 0.4)' : 'rgba(56, 189, 248, 0.4)'};">
-                      ${f.decrypted ? '✓ DECRYPTED' : '⧖ ENCRYPTED PHASE'}
-                    </span>
-                  </div>
-                  <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 5px; font-family: ui-monospace, monospace;">
-                    CARRIER: ${f.frequency.toFixed(1)} Hz // PAYLOAD: <span style="color: #38bdf8;">${f.dataPayload}</span> // RECOVERED: Beat ${f.originBeat}
-                  </div>
-                  <div style="font-size: 0.8rem; color: #cbd5e1; margin-top: 6px; line-height: 1.4;">
-                    ${f.description}
-                  </div>
-                </div>
-              `
-                    )
-                    .join('')
             }
-
-            ${
-              bothDecrypted
-                ? `
-              <div style="background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(74, 222, 128, 0.4); padding: 14px 18px; border-radius: 8px; color: #86efac; font-size: 0.82rem; line-height: 1.45;">
-                ✓ <strong>HARMONIC ALIGNMENT KEY SYNTHESIZED:</strong> Target coordinates to the First Harmonic Relay have been calibrated and locked into your ship navigation computer.
-              </div>
-            `
-                : ''
+            if (!this.saveSlot.installedModules) this.saveSlot.installedModules = [];
+            if (!this.saveSlot.installedModules.includes(mod.id)) {
+              this.saveSlot.installedModules.push(mod.id);
             }
-          </div>
-        `;
-      }
+            audio.playConnectChime();
+            this.callbacks.onModuleInstalled?.(mod.id);
+            this.callbacks.onSave?.();
+            this.render();
+          } else {
+            audio.playScanEffect();
+          }
+        }
+      });
+    });
 
-      case 'station_logs': {
-        const codex = state.unlockedCodexEntries;
-        return `
-          <div style="display: flex; flex-direction: column; gap: 14px;">
-            <div>
-              <h3 style="margin: 0; font-size: 0.95rem; color: #e2e8f0; letter-spacing: 0.08em; text-transform: uppercase;">
-                STATION ARCHIVES & CODEX LOGS
-              </h3>
-              <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 3px;">
-                Historical First Builders Telemetry & Frontier Survey Chronicles
-              </div>
-            </div>
+    // UPLOAD Survey telemetry
+    const uploadBtn = this.modalEl.querySelector('#btn-upload-survey-telemetry');
+    if (uploadBtn) {
+      uploadBtn.addEventListener('click', () => {
+        audio.playConnectChime();
+        if (this.saveSlot) {
+          this.saveSlot.credits = (this.saveSlot.credits || 0) + 150;
+          this.callbacks.onSave?.();
+        }
+        this.commHistory.push({
+          sender: 'DATA_EXCHANGE_TERMINAL',
+          text: 'Telemetry package uploaded to stellar cartography repository. +150 CR credited to pilot account.',
+          time: new Date().toTimeString().split(' ')[0],
+        });
+        this.render();
+      });
+    }
 
-            <div style="background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 16px;">
-              <div style="font-size: 0.8rem; font-weight: 700; color: #38bdf8; margin-bottom: 4px;">
-                LOG 4409.2 // SIGNAL SURVEY DISCOVERY
-              </div>
-              <div style="font-size: 0.78rem; color: #cbd5e1; line-height: 1.45;">
-                "Observation: The harmonic resonance waves are not static relics. They are responsive carrier pulses that activate when modern sub-warp displacement engines enter their operational radius."
-              </div>
-            </div>
+    // COMMS Queries
+    this.modalEl.querySelectorAll('.btn-comms-query').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const queryType = (e.currentTarget as HTMLElement).getAttribute('data-query');
+        if (queryType) {
+          this.handleCommsQuery(queryType);
+        }
+      });
+    });
+  }
 
-            <div style="background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 16px;">
-              <div style="font-size: 0.8rem; font-weight: 700; color: #38bdf8; margin-bottom: 4px;">
-                LOG 4410.8 // ANCIENT RELAY MAPPING
-              </div>
-              <div style="font-size: 0.78rem; color: #cbd5e1; line-height: 1.45;">
-                "Three harmonic tuning spires detected standing dormant around a central celestial conduit. Without an aligned harmonic key, approaching ships cannot awaken the conduit array."
-              </div>
-            </div>
+  private handleCommsQuery(queryType: string): void {
+    audio.playBlip();
+    const now = new Date().toTimeString().split(' ')[0];
+    const isStation = 'archetype' in (this.target || {});
+    const speaker = isStation
+      ? `${this.target?.name.toUpperCase()} CONTROL`
+      : `${(this.target as NamedVessel)?.captainName?.toUpperCase() || 'CAPTAIN'}`;
 
-            ${
-              codex.length > 0
-                ? codex
-                    .map((id) => `
-                  <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px; padding: 12px 16px;">
-                    <div style="font-weight: 600; color: #7dd3fc; font-size: 0.8rem;">${id.replace(/_/g, ' ').toUpperCase()}</div>
-                    <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">Unsealed research entry stored in ship computer memory.</div>
-                  </div>
-                `)
-                    .join('')
-                : ''
-            }
-          </div>
-        `;
-      }
+    let pilotText = '';
+    let replyText = '';
 
-      case 'systems_depot': {
-        return `
-          <div style="display: flex; flex-direction: column; gap: 16px;">
-            <div>
-              <h3 style="margin: 0; font-size: 0.95rem; color: #e2e8f0; letter-spacing: 0.08em; text-transform: uppercase;">
-                DOCKYARD REPAIR & SUPPLY INTERFACE
-              </h3>
-              <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 3px;">
-                Automated Umbilical Systems · Hull Diagnostics · Cartography Exchange
-              </div>
-            </div>
+    switch (queryType) {
+      case 'traffic_advisory':
+        pilotText = 'Requesting navigational hazard advisory for local orbital planes.';
+        replyText = 'Local gravity gradients nominal. Maintain cruise sub-light velocity (<160 m/s) when approaching planetary atmosphere entry envelopes.';
+        break;
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-              <div style="background: rgba(15, 23, 42, 0.6); padding: 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
-                <div style="color: #94a3b8; font-size: 0.75rem; letter-spacing: 0.05em;">HULL DEFLECTOR ENVELOPE</div>
-                <div style="font-size: 1.15rem; font-weight: 700; color: #86efac; margin-top: 6px;">100% NOMINAL</div>
-                <div style="font-size: 0.72rem; color: #64748b; margin-top: 4px;">Mooring tether providing active recharge</div>
-              </div>
+      case 'trade_routes':
+        pilotText = 'Requesting economic trade current intelligence.';
+        replyText = 'High demand reported for refined alloys and plasma crystals in research array sectors. Planetary mineral ores can be smelted in the on-site fabricator for higher profit margins.';
+        break;
 
-              <div style="background: rgba(15, 23, 42, 0.6); padding: 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
-                <div style="color: #94a3b8; font-size: 0.75rem; letter-spacing: 0.05em;">IMPULSE PROPULSION RESERVES</div>
-                <div style="font-size: 1.15rem; font-weight: 700; color: #38bdf8; margin-top: 6px;">REPLENISHED</div>
-                <div style="font-size: 0.72rem; color: #64748b; margin-top: 4px;">Reaction propellant tanks refilled to capacity</div>
-              </div>
-            </div>
+      case 'customs_lore':
+        pilotText = 'Requesting outpost background and historical telemetry.';
+        replyText = this.target?.lore || 'Operating under independent charter, charting the quiet spaces between frontier systems.';
+        break;
+    }
 
-            <div style="
-              background: rgba(15, 23, 42, 0.5);
-              border: 1px solid rgba(56, 189, 248, 0.25);
-              border-radius: 8px;
-              padding: 16px;
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              gap: 16px;
-              flex-wrap: wrap;
-            ">
-              <div>
-                <div style="font-size: 0.85rem; color: #f8fafc; font-weight: 600;">CARTOGRAPHY & SURVEY DATA EXCHANGE</div>
-                <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px;">
-                  Transmit sector telemetry logs to Epsilon-7 outpost for remuneration.
-                </div>
-              </div>
-              <button id="btn-trade-survey-data" style="
-                background: rgba(56, 189, 248, 0.15);
-                border: 1px solid #38bdf8;
-                color: #e0f2fe;
-                padding: 8px 16px;
-                border-radius: 6px;
-                cursor: pointer;
-                font-size: 0.78rem;
-                font-weight: 700;
-                font-family: inherit;
-                transition: all 0.15s ease;
-              ">
-                UPLOAD DATA (+150 CR)
-              </button>
-            </div>
+    this.commHistory.push({ sender: 'PILOT // SHIP_LINK', text: pilotText, time: now });
 
-            <div style="font-size: 0.75rem; color: #94a3b8; padding: 8px 0;">
-              Account Pilot Balance: <strong style="color: #f8fafc;">${this.saveSlot?.credits ?? 0} Credits</strong>
-            </div>
-          </div>
-        `;
-      }
+    // Optional local AI generation if available
+    if (localAI.isAiEnabled() && localAI.getStatus() === 'READY') {
+      const storyState = this.storyDirector?.getState() as any;
+      localAI
+        .generateReply(speaker, pilotText, storyState, 'Pilot', replyText)
+        .then((aiReply) => {
+          this.commHistory.push({ sender: speaker, text: aiReply, time: new Date().toTimeString().split(' ')[0] });
+          this.render();
+        })
+        .catch(() => {
+          this.commHistory.push({ sender: speaker, text: replyText, time: now });
+          this.render();
+        });
+    } else {
+      this.commHistory.push({ sender: speaker, text: replyText, time: now });
+      this.render();
     }
   }
 }

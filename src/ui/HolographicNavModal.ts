@@ -1063,6 +1063,16 @@ export class HolographicNavModal {
           <span style="color: #94a3b8;">SECTOR COORD:</span>
           <span style="color: #94a3b8;">[${sys.sectorX}, ${sys.sectorY}, ${sys.sectorZ}]</span>
         </div>
+        ${
+          sys.population
+            ? `
+            <div style="display: flex; justify-content: space-between; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 6px; margin-top: 4px;">
+              <span style="color: #94a3b8;">CONTACTS:</span>
+              <span style="color: #38bdf8; font-weight: 600; text-align: right;">${sys.population.populationDescription}</span>
+            </div>
+            `
+            : ''
+        }
       </div>
 
       <!-- Action Buttons -->

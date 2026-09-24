@@ -443,6 +443,39 @@ export class StarChartModal {
           ${planetsHtml}
         </div>
 
+        ${
+          sys.population && (sys.population.stations.length > 0 || sys.population.vessels.length > 0)
+            ? `
+              <div style="margin-top: 14px;">
+                <div style="font-size: 10px; letter-spacing: 0.15em; color: #38bdf8; text-transform: uppercase; margin-bottom: 6px;">
+                  ORBITAL INFRASTRUCTURE & CONTACTS
+                </div>
+                <div style="font-size: 11px; color: #94a3b8; margin-bottom: 6px;">
+                  ${sys.population.populationDescription}
+                </div>
+                ${sys.population.stations
+                  .map(
+                    (st) => `
+                  <div style="font-size: 11px; color: #cbd5e1; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 6px 10px; margin-bottom: 4px;">
+                    🛰️ <strong>${st.name}</strong> — <span style="color:#38bdf8;">${st.archetype.replace('_', ' ')}</span>
+                  </div>
+                `
+                  )
+                  .join('')}
+                ${sys.population.vessels
+                  .map(
+                    (v) => `
+                  <div style="font-size: 11px; color: #cbd5e1; background: rgba(192, 132, 252, 0.1); border: 1px solid rgba(192, 132, 252, 0.25); border-radius: 6px; padding: 6px 10px; margin-bottom: 4px;">
+                    🚀 <strong>${v.name}</strong> — <span style="color:#c084fc;">${v.sizeClass}${v.isDockable ? ' · DOCKABLE' : ''}</span>
+                  </div>
+                `
+                  )
+                  .join('')}
+              </div>
+            `
+            : ''
+        }
+
         ${anomaliesHtml}
       </div>
 

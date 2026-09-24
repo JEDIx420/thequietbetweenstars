@@ -398,13 +398,52 @@ export class SurveyCraft {
         crown.position.set(0, 0.62, 0.8);
         this.moduleVisualsGroup.add(crown);
         this.installedModuleVisuals.set(id, crown);
-      } else if (id === 'mod_field_warp_stabilizer') {
-        // Dorsal resonance spine
+      } else if (id === 'mod_warp_harmonic_field' || id === 'mod_field_warp_stabilizer') {
+        // Dorsal resonance spine & harmonic capacitor plates
+        const group = new THREE.Group();
         const spineGeo = new THREE.BoxGeometry(0.12, 0.35, 2.2);
         const spine = new THREE.Mesh(spineGeo, upgradeMat);
         spine.position.set(0, 0.6, 1.4);
-        this.moduleVisualsGroup.add(spine);
-        this.installedModuleVisuals.set(id, spine);
+        group.add(spine);
+
+        const finGeo = new THREE.BoxGeometry(0.8, 0.08, 0.4);
+        const fin = new THREE.Mesh(finGeo, upgradeMat);
+        fin.position.set(0, 0.72, 1.2);
+        group.add(fin);
+
+        this.moduleVisualsGroup.add(group);
+        this.installedModuleVisuals.set(id, group);
+      } else if (id === 'mod_sublight_overdrive') {
+        // High-output auxiliary thruster runners on engine flanks
+        const group = new THREE.Group();
+        const runnerGeo = new THREE.CylinderGeometry(0.14, 0.18, 1.4, 8);
+        runnerGeo.rotateX(Math.PI / 2);
+
+        const leftRunner = new THREE.Mesh(runnerGeo, upgradeMat);
+        leftRunner.position.set(-1.05, 0.15, 2.2);
+        const rightRunner = new THREE.Mesh(runnerGeo, upgradeMat);
+        rightRunner.position.set(1.05, 0.15, 2.2);
+
+        group.add(leftRunner);
+        group.add(rightRunner);
+        this.moduleVisualsGroup.add(group);
+        this.installedModuleVisuals.set(id, group);
+      } else if (id === 'mod_survey_mote_magnet') {
+        // Ventral gravitic tractor siphon array under nose
+        const group = new THREE.Group();
+        const siphonGeo = new THREE.CylinderGeometry(0.24, 0.08, 0.3, 8);
+        const siphon = new THREE.Mesh(siphonGeo, upgradeMat);
+        siphon.position.set(0, -0.32, -2.8);
+        group.add(siphon);
+
+        const ringGeo = new THREE.TorusGeometry(0.35, 0.03, 6, 16);
+        ringGeo.rotateX(Math.PI / 2);
+        const ring = new THREE.Mesh(ringGeo, upgradeMat);
+        ring.position.set(0, -0.34, -2.8);
+        group.add(ring);
+
+        this.moduleVisualsGroup.add(group);
+        this.installedModuleVisuals.set(id, group);
       }
     }
   }

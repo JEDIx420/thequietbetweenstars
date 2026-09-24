@@ -83,9 +83,12 @@ export interface PlayerSaveSlot {
   flightPhase: string;
   credits: number;
   sampleInventory: Record<string, number>;
+  commodityInventory?: Record<string, number>;
   installedModules: string[];
   pendingOrders: ModuleOrder[];
   npcMemories: Record<string, NPCMemory>;
+  knownStations?: string[];
+  knownVessels?: string[];
   collectedCreditIds?: string[];
   stats: {
     systemsVisited: number;
@@ -132,7 +135,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 export const DEFAULT_SAVE_SLOT: PlayerSaveSlot = {
   slotId: 'current_journey',
-  saveVersion: 5,
+  saveVersion: 6,
   updatedAt: 0,
   universeSeed: 'QUIET-DEFAULT-001',
   playerSector: { x: 0, y: 0, z: 0 },
@@ -142,9 +145,12 @@ export const DEFAULT_SAVE_SLOT: PlayerSaveSlot = {
   flightPhase: 'SYSTEM_CRUISE',
   credits: 250,
   sampleInventory: {},
+  commodityInventory: {},
   installedModules: [],
   pendingOrders: [],
   npcMemories: {},
+  knownStations: [],
+  knownVessels: [],
   collectedCreditIds: [],
   stats: {
     systemsVisited: 1,
@@ -329,6 +335,17 @@ export class SaveManager {
     if (raw.saveVersion < 5 || !raw.story) {
       raw.saveVersion = 5;
       raw.story = raw.story ? raw.story : cloneStoryState(DEFAULT_STORY_STATE);
+    }
+
+    // Migrate v5 -> v6
+    if (raw.saveVersion < 6) {
+      raw.saveVersion = 6;
+      if (!raw.commodityInventory) raw.commodityInventory = {};
+      if (!raw.knownStations) raw.knownStations = [];
+      if (!raw.knownVessels) raw.knownVessels = [];
+      if (raw.story) {
+        raw.story.freeExplorationMode = true;
+      }
     }
 
     // Consolidate NPC memories: top-level raw.npcMemories is canonical

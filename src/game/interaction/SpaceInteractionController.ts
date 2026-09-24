@@ -13,7 +13,6 @@ import { audio } from '../../audio/AudioEngine';
 import { commAudio } from '../../audio/CommunicationSoundSynth';
 import { sceneAudio } from '../../audio/AudioSceneDirector';
 import { localAI } from '../../ai/LocalIntelligenceService';
-import { CHAPTER_1_BEATS } from '../../story/chapters/Chapter1Resonance';
 
 export interface SpaceInteractionCallbacks {
   showNotice: (msg: string) => void;
@@ -69,11 +68,22 @@ export class SpaceInteractionController {
 
       case 'vessel': {
         const vessel = lockedTarget.data as NamedVessel;
-        const canHail = vessel.canHail(shipPos);
-        if (canHail) {
-          callbacks.setContextPrompt(`LOCKED: ${vessel.name} [${dist}m] // SPACE: OPEN COMMS HAIL`);
+        if (vessel.isDockable) {
+          const canDock = vessel.canDock(shipPos).allowed;
+          if (canDock) {
+            callbacks.setContextPrompt(`LOCKED: ${vessel.name} [${dist}m] // SPACE: DOCK WITH CAPITAL VESSEL`);
+          } else if (vessel.canHail(shipPos)) {
+            callbacks.setContextPrompt(`LOCKED: ${vessel.name} [${dist}m] // SPACE: OPEN COMMS HAIL (APPROACH <${vessel.captureRadius}m TO DOCK)`);
+          } else {
+            callbacks.setContextPrompt(`LOCKED: ${vessel.name} [${dist}m] // APPROACH TO HAIL/DOCK (<${vessel.hailRadius}m)`);
+          }
         } else {
-          callbacks.setContextPrompt(`LOCKED: ${vessel.name} [${dist}m] // APPROACH TO HAIL (<${vessel.hailRadius}m)`);
+          const canHail = vessel.canHail(shipPos);
+          if (canHail) {
+            callbacks.setContextPrompt(`LOCKED: ${vessel.name} [${dist}m] // SPACE: OPEN COMMS HAIL`);
+          } else {
+            callbacks.setContextPrompt(`LOCKED: ${vessel.name} [${dist}m] // APPROACH TO HAIL (<${vessel.hailRadius}m)`);
+          }
         }
         break;
       }
@@ -154,6 +164,21 @@ export class SpaceInteractionController {
       case 'vessel': {
         if (callbacks.isTriggered === false) break;
         const vessel = lockedTarget.data as NamedVessel;
+        if (vessel.isDockable && vessel.canDock(shipPos).allowed) {
+          const req = this.dockingController.requestDocking(vessel, shipPos, callbacks.shipQuaternion);
+          if (req.success) {
+            callbacks.showNotice(req.message);
+            audio.playConnectChime();
+            sceneAudio.setMood('STATION_DOCKED');
+            this.storyDirector.emit({
+              type: 'VESSEL_HAILED',
+              payload: { vesselId: vessel.id },
+              timestamp: Date.now(),
+            });
+            break;
+          }
+        }
+
         if (vessel.canHail(shipPos)) {
           sceneAudio.setMood('HAILING');
           this.storyDirector.emit({
@@ -162,13 +187,10 @@ export class SpaceInteractionController {
             timestamp: Date.now(),
           });
 
-          // Fetch story dialogue or generate via Local AI
-          const state = this.storyDirector.getState();
-          const beatDef = CHAPTER_1_BEATS[state.currentBeat];
           const defaultSpeaker = vessel.captainName;
-          const defaultLines = beatDef?.dialogueLines || [
-            'Greetings, explorer. The quiet paths are long, but harmonious.',
-            'May the currents guide your ship true.',
+          const defaultLines = [
+            vessel.greeting || `Greetings, traveler. This is ${vessel.name}.`,
+            `Our routes cross peaceful currents in the ${vessel.dialogueTopic || 'outer sectors'}. Safe journey through the stars.`
           ];
 
           // Use Local AI if ready and enabled
@@ -176,9 +198,9 @@ export class SpaceInteractionController {
             localAI
               .generateReply(
                 defaultSpeaker,
-                'cosmic currents and the harmonic relay',
-                state,
-                'Aurelia',
+                vessel.dialogueTopic || 'cosmic trade and deep space exploration',
+                this.storyDirector.getState(),
+                'Pilot',
                 defaultLines[0]
               )
               .then((aiReply) => {

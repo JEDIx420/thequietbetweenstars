@@ -73,8 +73,7 @@ export class JournalModal {
         white-space: nowrap;
         -webkit-overflow-scrolling: touch;
         touch-action: pan-x;
-      ">
-        <button class="journal-tab-btn" data-tab="STORY" style="flex-shrink: 0; font-weight: 700; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">MISSION LOG</button>
+        <button class="journal-tab-btn" data-tab="STORY" style="flex-shrink: 0; font-weight: 700; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">EXPEDITION</button>
         <button class="journal-tab-btn" data-tab="WORLDS" style="flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">WORLDS</button>
         <button class="journal-tab-btn" data-tab="LIFE" style="flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">LIFE</button>
         <button class="journal-tab-btn" data-tab="PEOPLES" style="flex-shrink: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">PEOPLES</button>
@@ -235,7 +234,7 @@ export class JournalModal {
                 ${isFree ? 'SANDBOX STATUS:' : 'CURRENT OBJECTIVE:'}
               </span>
               <span>
-                ${isFree ? 'Active narrative objectives are paused. Explore solar systems freely.' : (beatDef ? beatDef.objective : 'Review long-range telemetry with Mnemosyne.')}
+                ${isFree ? 'Persistent procedural space sandbox active. Discover solar systems, dock with orbital stations & capital ships, trade, craft, and upgrade your vessel.' : (beatDef ? beatDef.objective : 'Explore distant sectors.')}
               </span>
             </div>
           </div>

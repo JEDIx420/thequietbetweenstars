@@ -1,5 +1,6 @@
 import { SeededRandom } from '../universe/SeededRandom';
 import { PlanetEnvironmentGenerator } from '../planets/PlanetEnvironmentProfile';
+import { SystemPopulationGenerator } from '../population/SystemPopulationGenerator';
 import type {
   StarSystemDescriptor,
   StarDescriptor,
@@ -54,6 +55,18 @@ export class StarSystemGenerator {
 
     const hasAnomaly = rng.chance(0.4) || isOrigin;
 
+    const pop = SystemPopulationGenerator.generatePopulation({
+      id,
+      seed: sysSeed,
+      name: isOrigin ? 'Solara' : name,
+      sectorX: sx,
+      sectorY: sy,
+      sectorZ: sz,
+      star,
+      planets: [],
+      anomalies: [],
+    });
+
     return {
       id,
       seed: sysSeed,
@@ -64,6 +77,8 @@ export class StarSystemGenerator {
       star,
       planetCount: numPlanets,
       hasAnomalies: hasAnomaly,
+      estimatedStations: pop.stations.length,
+      estimatedVessels: pop.vessels.length,
     };
   }
   public static generateSystem(universeSeed: string | number, sx: number, sy: number, sz: number): StarSystemDescriptor {
@@ -140,7 +155,7 @@ export class StarSystemGenerator {
       }
     }
 
-    return {
+    const systemDesc: StarSystemDescriptor = {
       id,
       seed: sysSeed,
       name: isOrigin ? 'Solara' : name,
@@ -151,6 +166,8 @@ export class StarSystemGenerator {
       planets,
       anomalies,
     };
+    systemDesc.population = SystemPopulationGenerator.generatePopulation(systemDesc);
+    return systemDesc;
   }
 
   private static generateAnomaly(
