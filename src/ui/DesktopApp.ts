@@ -380,16 +380,21 @@ export class DesktopApp {
     this.storyObjectiveHud.setOnToggleFreeRoam(() => {
       const next = !this.storyDirector.isFreeExploration();
       this.storyDirector.setFreeExploration(next);
-      this.storyObjectiveHud.toggleCollapse(next);
-      if (!next) {
+      if (next) {
+        this.storyObjectiveHud.hide();
+        this.showHudNotice('FREE ROAM ACTIVE // Story paused. Explore systems freely.');
+      } else {
+        this.storyObjectiveHud.update(this.storyDirector.getState());
+        this.storyObjectiveHud.show();
+        this.storyObjectiveHud.toggleCollapse(false);
         this.showHudNotice('STORY OBJECTIVES ACTIVE // CHAPTER 1 ONLINE');
         const state = this.storyDirector.getState();
         if (state.currentBeat === 'beat_0_awakening') {
           this.storyPresentationDirector.beginStoryOpening();
         }
-      } else {
-        this.showHudNotice('FREE ROAM ACTIVE // Story paused. Explore systems freely.');
       }
+      this.storyPresentationDirector.refresh();
+      this.updateStoryModeToggleBtn();
       audio.playBlip();
     });
     this.storyObjectiveHud.setOnTrackObjective(() => {
@@ -2185,9 +2190,11 @@ export class DesktopApp {
       // Trigger in-engine New Journey Cinematic
       this.uiState = 'cinematic';
       this.uiContainer.innerHTML = '';
+      this.storyObjectiveHud.hide(true);
       this.newJourneyCinematic.play(
         this.flightModel.position,
         () => {
+          this.storyObjectiveHud.hide(true);
           const briefing = new ExpeditionBriefing(this.container);
           briefing.show(() => {
             this.enterFlightMode();
@@ -2761,29 +2768,33 @@ export class DesktopApp {
       this.tutorialDirector.start();
     }
     this.renderFlightHUD(activeMode);
-    this.storyObjectiveHud.show();
 
     const storyState = this.storyDirector.getState();
     const isFree = this.storyDirector.isFreeExploration();
 
     if (isFree) {
-      // In Free Roam, keep mission HUD collapsed on start to prevent mobile screen clutter
-      this.storyObjectiveHud.toggleCollapse(true);
+      // In Free Roam, keep mission HUD completely hidden to provide pristine cinematic view
+      this.storyObjectiveHud.hide(true);
       this.storyPresentationDirector.refresh();
       // Inform player clearly how to start missions
       setTimeout(() => {
-        this.showHudNotice('FREE ROAM ACTIVE // Tap [MISSIONS] on top-left to enable story objectives');
+        this.showHudNotice('FREE ROAM ACTIVE // Tap [🎯 MISSIONS] on top-left to enable story objectives');
       }, 900);
-    } else if (storyState.currentBeat === 'beat_0_awakening') {
-      this.storyPresentationDirector.beginStoryOpening();
-    } else if (
-      storyState.currentBeat === 'beat_7_chapter1_climax' &&
-      !storyState.completedBeats.includes('beat_7_chapter1_climax')
-    ) {
-      this.storyPresentationDirector.playChapter1ClimaxPresentation();
     } else {
-      this.storyPresentationDirector.refresh();
+      this.storyObjectiveHud.show();
+      this.storyObjectiveHud.toggleCollapse(false);
+      if (storyState.currentBeat === 'beat_0_awakening') {
+        this.storyPresentationDirector.beginStoryOpening();
+      } else if (
+        storyState.currentBeat === 'beat_7_chapter1_climax' &&
+        !storyState.completedBeats.includes('beat_7_chapter1_climax')
+      ) {
+        this.storyPresentationDirector.playChapter1ClimaxPresentation();
+      } else {
+        this.storyPresentationDirector.refresh();
+      }
     }
+    this.updateStoryModeToggleBtn();
 
     // Initialize & display on-screen touch controls if on mobile, tablet, or touch screen
     if (isTouch) {
@@ -2831,10 +2842,12 @@ export class DesktopApp {
             font-size: 9px !important;
           }
           .hud-title-brand {
-            display: none !important;
+            font-size: 9px !important;
+            letter-spacing: 0.15em !important;
           }
-          #touch-toggle-btn, #touch-top-bar, #touch-toggle-pill {
-            display: none !important;
+          #btn-toggle-story-mode {
+            padding: 2.5px 7px !important;
+            font-size: 8.5px !important;
           }
           #hud-notice {
             font-size: 8.5px !important;
@@ -2882,15 +2895,37 @@ export class DesktopApp {
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        padding: max(10px, env(safe-area-inset-top, 10px)) max(14px, env(safe-area-inset-right, 14px)) max(10px, env(safe-area-inset-bottom, 10px)) max(14px, env(safe-area-inset-left, 14px));
+        padding: max(10px, env(safe-area-inset-top, 10px)) 16px 10px 16px;
         box-sizing: border-box;
         pointer-events: none;
         font-family: ui-sans-serif, system-ui, sans-serif;
       ">
         <!-- Top HUD Header Strip -->
         <div style="display: flex; justify-content: space-between; align-items: center; pointer-events: auto; gap: 8px; width: 100%;">
-          <div class="hud-title-brand" style="font-size: 11px; letter-spacing: 0.22em; color: #38bdf8; font-weight: 600; white-space: nowrap;">
-            THE QUIET BETWEEN STARS
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="hud-title-brand" style="font-size: 11px; letter-spacing: 0.22em; color: #38bdf8; font-weight: 600; white-space: nowrap;">
+              THE QUIET BETWEEN STARS
+            </div>
+            <button id="btn-toggle-story-mode" style="
+              pointer-events: auto;
+              background: rgba(15, 23, 42, 0.85);
+              border: 1px solid rgba(56, 189, 248, 0.45);
+              color: #38bdf8;
+              padding: 3px 8px;
+              border-radius: 9999px;
+              font-family: ui-monospace, SFMono-Regular, monospace;
+              font-size: 9px;
+              font-weight: 700;
+              letter-spacing: 0.06em;
+              cursor: pointer;
+              touch-action: manipulation;
+              white-space: nowrap;
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+              transition: all 0.15s ease;
+            ">🎯 MISSIONS</button>
           </div>
 
           <!-- Top-Center Telemetry Readout -->
@@ -3255,6 +3290,30 @@ export class DesktopApp {
       );
     });
 
+    // Top-Left Mission / Free Roam Toggle Button
+    this.uiContainer.querySelector('#btn-toggle-story-mode')?.addEventListener('click', (e) => {
+      if (e.cancelable) e.preventDefault();
+      audio.playBlip();
+      HapticFeedback.light();
+      const nextIsFree = !this.storyDirector.isFreeExploration();
+      this.storyDirector.setFreeExploration(nextIsFree);
+      if (nextIsFree) {
+        this.storyObjectiveHud.hide();
+        this.showHudNotice('FREE ROAM ACTIVE // Story objectives paused');
+      } else {
+        this.storyObjectiveHud.update(this.storyDirector.getState());
+        this.storyObjectiveHud.show();
+        this.storyObjectiveHud.toggleCollapse(false);
+        this.showHudNotice('STORY OBJECTIVES ACTIVE // CHAPTER 1 ONLINE');
+        const state = this.storyDirector.getState();
+        if (state.currentBeat === 'beat_0_awakening') {
+          this.storyPresentationDirector.beginStoryOpening();
+        }
+      }
+      this.storyPresentationDirector.refresh();
+      this.updateStoryModeToggleBtn();
+    });
+
     // Minimal Fullscreen Toggle
     this.uiContainer.querySelector('#btn-toggle-fullscreen')?.addEventListener('click', () => {
       this.toggleFullscreen();
@@ -3263,7 +3322,27 @@ export class DesktopApp {
     document.addEventListener('fullscreenchange', () => this.updateFullscreenIcons());
     document.addEventListener('webkitfullscreenchange', () => this.updateFullscreenIcons());
     this.updateFullscreenIcons();
+    this.updateStoryModeToggleBtn();
     this.cacheHudElements();
+  }
+
+  private updateStoryModeToggleBtn(): void {
+    const btn = this.uiContainer?.querySelector('#btn-toggle-story-mode') as HTMLButtonElement | null;
+    if (!btn) return;
+    const isFree = this.storyDirector.isFreeExploration();
+    if (isFree) {
+      btn.innerHTML = '🎯 MISSIONS';
+      btn.style.color = '#38bdf8';
+      btn.style.borderColor = 'rgba(56, 189, 248, 0.45)';
+      btn.style.background = 'rgba(15, 23, 42, 0.85)';
+      btn.title = 'Switch to Story Missions';
+    } else {
+      btn.innerHTML = '⏸ ROAM';
+      btn.style.color = '#94a3b8';
+      btn.style.borderColor = 'rgba(148, 163, 184, 0.35)';
+      btn.style.background = 'rgba(15, 23, 42, 0.65)';
+      btn.title = 'Switch to Free Roam';
+    }
   }
 
   private renderOrbitInspectionHUD(): void {
@@ -3454,7 +3533,7 @@ export class DesktopApp {
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        padding: max(10px, env(safe-area-inset-top, 10px)) max(14px, env(safe-area-inset-right, 14px)) max(10px, env(safe-area-inset-bottom, 10px)) max(14px, env(safe-area-inset-left, 14px));
+        padding: max(10px, env(safe-area-inset-top, 10px)) 16px 10px 16px;
         box-sizing: border-box;
         pointer-events: none;
         font-family: ui-sans-serif, system-ui, sans-serif;

@@ -408,4 +408,13 @@ describe('Mobile Experience & Free Roam Clean UX', () => {
       expect(finished).toBe(true);
     });
   });
+
+  describe('7. Cinematic Free Roam Startup Cleanliness', () => {
+    it('immediately hides StoryObjectiveHUD in free roam without screen clutter', () => {
+      const hud = new StoryObjectiveHUD(parentEl);
+      hud.hide(true);
+      expect((hud as any).container.style.display).toBe('none');
+      expect((hud as any).container.style.opacity).toBe('0');
+    });
+  });
 });

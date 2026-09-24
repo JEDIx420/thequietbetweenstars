@@ -286,5 +286,14 @@ describe('Touch Controls & Mobile Flight Deck', () => {
 
     controls.dispose();
   });
+
+  it('ensures touch controls have pinned bottom main zone and natural edge padding', () => {
+    const controls = new TouchControls(container, touchInput);
+    const overlay = (controls as any).container;
+    expect(overlay.style.cssText).toContain('padding: 10px 14px');
+    expect(overlay.innerHTML).toContain('#touch-controls-main');
+    expect(overlay.innerHTML).toContain('margin-top: auto !important;');
+    controls.dispose();
+  });
 });
 

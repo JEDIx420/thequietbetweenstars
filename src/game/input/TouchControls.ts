@@ -91,7 +91,7 @@ export class TouchControls {
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      padding: env(safe-area-inset-top, 10px) env(safe-area-inset-right, 12px) env(safe-area-inset-bottom, 10px) env(safe-area-inset-left, 12px);
+      padding: 10px 14px;
       box-sizing: border-box;
       transition: opacity 0.2s ease;
     `;
@@ -106,11 +106,15 @@ export class TouchControls {
         #touch-controls-overlay button:active {
           transform: scale(0.94);
         }
+        #touch-controls-main {
+          margin-top: auto !important;
+          width: 100% !important;
+        }
         /* Dedicated Tablet & iPad Layout and Sizing */
         @media (min-width: 851px) and (pointer: coarse),
                (min-width: 851px) and (max-width: 1366px) and (hover: none) {
           #touch-controls-overlay {
-            padding: max(14px, env(safe-area-inset-top, 14px)) max(18px, env(safe-area-inset-right, 18px)) max(14px, env(safe-area-inset-bottom, 14px)) max(18px, env(safe-area-inset-left, 18px)) !important;
+            padding: 12px 16px !important;
           }
           #touch-top-bar {
             margin-top: 32px !important;
@@ -299,6 +303,7 @@ export class TouchControls {
         justify-content: space-between;
         align-items: flex-end;
         width: 100%;
+        margin-top: auto;
         pointer-events: none;
         padding-bottom: 2px;
       ">

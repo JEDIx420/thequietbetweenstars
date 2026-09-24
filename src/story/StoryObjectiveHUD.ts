@@ -23,6 +23,8 @@ export class StoryObjectiveHUD {
   constructor(parent: HTMLElement) {
     this.container = document.createElement('div');
     this.container.id = 'story-objective-hud';
+    this.container.style.display = 'none';
+    this.container.style.opacity = '0';
 
     const styleEl = document.createElement('style');
     styleEl.textContent = `
@@ -401,8 +403,12 @@ export class StoryObjectiveHUD {
     this.container.style.opacity = '1';
   }
 
-  public hide(): void {
+  public hide(immediate = false): void {
     this.container.style.opacity = '0';
+    if (immediate) {
+      this.container.style.display = 'none';
+      return;
+    }
     setTimeout(() => {
       if (this.container.style.opacity === '0') {
         this.container.style.display = 'none';
