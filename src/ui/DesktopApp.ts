@@ -2888,12 +2888,30 @@ export class DesktopApp {
             font-size: 8px !important;
           }
           #top-right-utilities {
-            gap: 4px !important;
+            gap: 5px !important;
           }
           #top-right-utilities button {
-            padding: 3px 6px !important;
-            font-size: 8.5px !important;
-            height: 25px !important;
+            padding: 4px 8px !important;
+            font-size: 9px !important;
+            min-height: 28px !important;
+            touch-action: manipulation !important;
+            -webkit-tap-highlight-color: transparent !important;
+            cursor: pointer !important;
+            transition: transform 0.08s ease !important;
+          }
+          #top-right-utilities button:active {
+            transform: scale(0.92) !important;
+          }
+          #btn-toggle-story-mode {
+            padding: 3.5px 9px !important;
+            font-size: 9px !important;
+            min-height: 28px !important;
+            touch-action: manipulation !important;
+            -webkit-tap-highlight-color: transparent !important;
+            transition: transform 0.08s ease !important;
+          }
+          #btn-toggle-story-mode:active {
+            transform: scale(0.92) !important;
           }
         }
       </style>
@@ -2903,7 +2921,10 @@ export class DesktopApp {
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        padding: max(10px, env(safe-area-inset-top, 10px)) 16px 10px 16px;
+        padding: max(8px, env(safe-area-inset-top, 0px))
+                 max(14px, calc(env(safe-area-inset-right, 0px) + 12px))
+                 max(8px, calc(env(safe-area-inset-bottom, 0px) + 6px))
+                 max(14px, calc(env(safe-area-inset-left, 0px) + 12px));
         box-sizing: border-box;
         pointer-events: none;
         font-family: ui-sans-serif, system-ui, sans-serif;
@@ -3231,27 +3252,46 @@ export class DesktopApp {
       </div>
     `;
 
-    this.uiContainer.querySelector('#btn-open-chart')?.addEventListener('click', () => {
+    const bindTapAction = (selector: string, handler: (e: Event) => void) => {
+      const el = this.uiContainer.querySelector(selector) as HTMLElement | null;
+      if (!el) return;
+      let lastTrigger = 0;
+      const execute = (e: Event) => {
+        const now = Date.now();
+        if (now - lastTrigger < 250) return;
+        lastTrigger = now;
+        HapticFeedback.light();
+        handler(e);
+      };
+      el.addEventListener('pointerdown', (e) => {
+        if ((e as PointerEvent).pointerType === 'touch') {
+          execute(e);
+        }
+      });
+      el.addEventListener('click', execute);
+    };
+
+    bindTapAction('#btn-open-chart', () => {
       audio.playBlip();
       this.holographicNavModal.toggle();
     });
 
-    this.uiContainer.querySelector('#btn-open-supply')?.addEventListener('click', () => {
+    bindTapAction('#btn-open-supply', () => {
       audio.playBlip();
       this.openSupplyModal();
     });
 
-    this.uiContainer.querySelector('#btn-open-journal')?.addEventListener('click', () => {
+    bindTapAction('#btn-open-journal', () => {
       audio.playBlip();
       this.journalModal.toggle();
     });
 
-    this.uiContainer.querySelector('#btn-open-help')?.addEventListener('click', () => {
+    bindTapAction('#btn-open-help', () => {
       audio.playBlip();
       this.helpModal.toggle();
     });
 
-    this.uiContainer.querySelector('#btn-open-settings')?.addEventListener('click', () => {
+    bindTapAction('#btn-open-settings', () => {
       audio.playBlip();
       this.settingsModal.toggle();
     });
@@ -3285,13 +3325,13 @@ export class DesktopApp {
       if (desktopDrawer) desktopDrawer.style.display = 'none';
     });
 
-    this.uiContainer.querySelector('#btn-audio-mute')?.addEventListener('click', () => {
+    bindTapAction('#btn-audio-mute', () => {
       const isMuted = audio.toggleMute();
       const btn = this.uiContainer.querySelector('#btn-audio-mute') as HTMLButtonElement;
       if (btn) btn.textContent = isMuted ? '🔇' : '🔊';
     });
 
-    this.uiContainer.querySelector('#btn-mission-help')?.addEventListener('click', () => {
+    bindTapAction('#btn-mission-help', () => {
       this.missionHelpModal?.toggle(
         this.storyDirector.getState(),
         this.currentControlMode === 'touch' || isTouchDevice()
@@ -3299,10 +3339,9 @@ export class DesktopApp {
     });
 
     // Top-Left Mission / Free Roam Toggle Button
-    this.uiContainer.querySelector('#btn-toggle-story-mode')?.addEventListener('click', (e) => {
+    bindTapAction('#btn-toggle-story-mode', (e) => {
       if (e.cancelable) e.preventDefault();
       audio.playBlip();
-      HapticFeedback.light();
       const nextIsFree = !this.storyDirector.isFreeExploration();
       this.storyDirector.setFreeExploration(nextIsFree);
       if (nextIsFree) {
@@ -3323,7 +3362,7 @@ export class DesktopApp {
     });
 
     // Minimal Fullscreen Toggle
-    this.uiContainer.querySelector('#btn-toggle-fullscreen')?.addEventListener('click', () => {
+    bindTapAction('#btn-toggle-fullscreen', () => {
       this.toggleFullscreen();
     });
 

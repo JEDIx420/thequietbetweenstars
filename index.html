@@ -57,6 +57,9 @@
       body.immersive-deck-mode #touch-toggle-pill {
         display: none !important;
       }
+      body.dialogue-active #proximity-indicator {
+        display: none !important;
+      }
 
       /* Strict Portrait Orientation Blocker */
       #portrait-orientation-blocker {
@@ -249,67 +252,44 @@
         color: #94a3b8;
       }
 
-      .preloader-progress-wrap {
-        width: clamp(240px, 48vw, 340px);
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .preloader-bar-track {
-        width: 100%;
-        height: 5px;
-        background: rgba(15, 23, 42, 0.85);
-        border: 1px solid rgba(56, 189, 248, 0.28);
-        border-radius: 999px;
-        overflow: hidden;
-        position: relative;
-        box-shadow: 0 0 16px rgba(56, 189, 248, 0.12);
-      }
-
-      .preloader-bar-fill {
-        height: 100%;
-        width: 0%;
-        background: linear-gradient(90deg, #0284c7, #38bdf8 45%, #c084fc 80%, #f472b6 100%);
-        border-radius: 999px;
-        position: relative;
-        transition: width 0.12s ease-out;
-        box-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
-      }
-
-      .preloader-bar-beam {
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        right: 0;
-        width: 32px;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9), transparent);
-        filter: blur(1px);
-        animation: beamShimmer 1.8s ease-in-out infinite;
-      }
-
-      @keyframes beamShimmer {
-        0%, 100% { opacity: 0.3; }
-        50% { opacity: 1; }
-      }
-
       .preloader-telemetry {
         display: flex;
-        justify-content: space-between;
+        flex-direction: column;
         align-items: center;
+        gap: 6px;
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        font-size: 10.5px;
-        color: #7dd3fc;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.18em;
+        margin-top: 14px;
       }
 
       .telemetry-status {
-        opacity: 0.85;
-      }
-
-      .telemetry-percent {
+        font-size: 11px;
         font-weight: 700;
         color: #38bdf8;
+        text-shadow: 0 0 12px rgba(56, 189, 248, 0.7);
+        letter-spacing: 0.22em;
+        animation: pulseStatus 2s ease-in-out infinite alternate;
+      }
+
+      .telemetry-substatus {
+        font-size: 9.5px;
+        color: #94a3b8;
+        letter-spacing: 0.14em;
+        opacity: 0.8;
+      }
+
+      @keyframes pulseStatus {
+        0% { opacity: 0.75; transform: scale(0.99); }
+        100% { opacity: 1; transform: scale(1.01); filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.8)); }
+      }
+
+      #preloader-warp-canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: auto;
+        z-index: 1;
       }
     </style>
   </head>
@@ -364,13 +344,13 @@
 
     <!-- Instant Atmospheric Cosmic Preloader -->
     <div id="initial-preloader">
+      <canvas id="preloader-warp-canvas"></canvas>
       <div class="preloader-bg-glow"></div>
-      <div class="preloader-stars"></div>
 
       <div class="preloader-content">
         <!-- Animated Celestial Gyroscope Beacon -->
         <div class="preloader-gyro">
-          <svg viewBox="0 0 120 120" width="104" height="104" fill="none" class="gyro-svg">
+          <svg viewBox="0 0 120 120" width="112" height="112" fill="none" class="gyro-svg">
             <!-- Pulsing outer acoustic ripples -->
             <circle class="beacon-ripple ripple-1" cx="60" cy="60" r="24" stroke="rgba(56, 189, 248, 0.45)" stroke-width="1.2" />
             <circle class="beacon-ripple ripple-2" cx="60" cy="60" r="24" stroke="rgba(168, 85, 247, 0.35)" stroke-width="1.2" />
@@ -392,81 +372,174 @@
 
         <!-- Typography -->
         <div class="preloader-brand">
-          <div class="preloader-pretitle">// FLIGHT SYSTEMS STANDBY //</div>
+          <div class="preloader-pretitle">// HYPERLANE NAVIGATION SYSTEM //</div>
           <h1 class="preloader-title">THE QUIET BETWEEN STARS</h1>
           <div class="preloader-subtitle">DEEP RECONNAISSANCE SCOUT VESSEL</div>
         </div>
 
-        <!-- Progress Bar Container -->
-        <div class="preloader-progress-wrap">
-          <div class="preloader-bar-track">
-            <div id="preloader-bar" class="preloader-bar-fill">
-              <div class="preloader-bar-beam"></div>
-            </div>
-          </div>
-          <div class="preloader-telemetry">
-            <span id="preloader-status" class="telemetry-status">INITIALIZING SENSOR MATRIX...</span>
-            <span id="preloader-percent" class="telemetry-percent">0%</span>
-          </div>
+        <!-- Trippy Cosmic Telemetry (No progress bar) -->
+        <div class="preloader-telemetry">
+          <div id="preloader-status" class="telemetry-status">✦ WARP RESONANCE COHERING ✦</div>
+          <div id="preloader-substatus" class="telemetry-substatus">CALIBRATING STELLAR EPHEMERIS</div>
         </div>
       </div>
     </div>
 
     <script>
       (function() {
-        var bar = document.getElementById('preloader-bar');
-        var percent = document.getElementById('preloader-percent');
-        var status = document.getElementById('preloader-status');
         var preloader = document.getElementById('initial-preloader');
-        if (!bar || !preloader) return;
+        var canvas = document.getElementById('preloader-warp-canvas');
+        var status = document.getElementById('preloader-status');
+        var substatus = document.getElementById('preloader-substatus');
+        if (!preloader || !canvas) return;
 
-        var progress = 0;
-        var target = 92;
+        var ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        var w = canvas.width = window.innerWidth;
+        var h = canvas.height = window.innerHeight;
+        var cx = w / 2;
+        var cy = h / 2;
+        var targetCx = cx;
+        var targetCy = cy;
+
+        window.addEventListener('resize', function() {
+          w = canvas.width = window.innerWidth;
+          h = canvas.height = window.innerHeight;
+          targetCx = w / 2;
+          targetCy = h / 2;
+        });
+
+        // Interactive perspective tilt
+        window.addEventListener('pointermove', function(e) {
+          targetCx = (w / 2) + (e.clientX - w / 2) * 0.18;
+          targetCy = (h / 2) + (e.clientY - h / 2) * 0.18;
+        });
+
+        var STAR_COUNT = 150;
+        var stars = [];
+        for (var i = 0; i < STAR_COUNT; i++) {
+          stars.push({
+            x: (Math.random() - 0.5) * w * 2.5,
+            y: (Math.random() - 0.5) * h * 2.5,
+            z: Math.random() * 1000 + 1,
+            pz: 1000,
+            hue: Math.random() > 0.4 ? 198 : (Math.random() > 0.5 ? 275 : 330),
+            size: Math.random() * 1.5 + 0.8
+          });
+        }
+
+        var speed = 7;
+        var warpActive = false;
         var dismissed = false;
+        var animId = null;
+
         var phases = [
-          'INITIALIZING SENSOR MATRIX...',
-          'CALIBRATING QUANTUM COILS...',
-          'MAPPING CELESTIAL EPHEMERIS...',
-          'WARMING GRAVITATIONAL THRUSTERS...',
-          'SYNCHRONIZING FLIGHT TELEMETRY...'
+          { status: '✦ WARP RESONANCE COHERING ✦', sub: 'CALIBRATING STELLAR EPHEMERIS' },
+          { status: '✦ HARMONIC WAVE DETECTED ✦', sub: 'ALIGNING SUB-SPACE FREQUENCIES' },
+          { status: '✦ HYPERDRIVE VECTOR LOCKED ✦', sub: 'ENGAGING GRAVITATIONAL ACCELERATOR' },
+          { status: '✦ TRANSIT APEX REACHED ✦', sub: 'DECK SYSTEMS ONLINE' }
         ];
         var phaseIdx = 0;
-
-        var interval = setInterval(function() {
+        var phaseTimer = setInterval(function() {
           if (dismissed) return;
-          if (progress < target) {
-            var step = Math.max(0.35, (target - progress) * 0.075);
-            progress = Math.min(target, progress + step);
-            bar.style.width = progress.toFixed(1) + '%';
-            if (percent) percent.textContent = Math.floor(progress) + '%';
+          phaseIdx = (phaseIdx + 1) % phases.length;
+          if (status) status.textContent = phases[phaseIdx].status;
+          if (substatus) substatus.textContent = phases[phaseIdx].sub;
+        }, 1600);
 
-            var nextPhase = Math.floor((progress / target) * phases.length);
-            if (nextPhase !== phaseIdx && nextPhase < phases.length) {
-              phaseIdx = nextPhase;
-              if (status) status.textContent = phases[phaseIdx];
-            }
+        function renderWarp() {
+          cx += (targetCx - cx) * 0.05;
+          cy += (targetCy - cy) * 0.05;
+
+          // Soft cosmic motion trail
+          ctx.fillStyle = warpActive ? 'rgba(2, 4, 12, 0.45)' : 'rgba(3, 4, 9, 0.28)';
+          ctx.fillRect(0, 0, w, h);
+
+          var time = Date.now() * 0.002;
+
+          // Pulsing chromatic harmonic resonance rings around center
+          for (var r = 1; r <= 3; r++) {
+            var pulseRad = ((time * 35 + r * 55) % 180) + 15;
+            var ringAlpha = Math.max(0, (1 - pulseRad / 195) * 0.35);
+            ctx.strokeStyle = r === 1 ? 'rgba(56, 189, 248, ' + ringAlpha + ')'
+                            : r === 2 ? 'rgba(168, 85, 247, ' + ringAlpha + ')'
+                            : 'rgba(244, 114, 182, ' + ringAlpha + ')';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.arc(cx, cy, pulseRad, 0, Math.PI * 2);
+            ctx.stroke();
           }
-        }, 40);
+
+          // Render 3D hyperspace star streaks
+          for (var j = 0; j < STAR_COUNT; j++) {
+            var s = stars[j];
+            s.pz = s.z;
+            s.z -= speed;
+
+            if (s.z <= 1) {
+              s.z = 1000;
+              s.pz = 1000;
+              s.x = (Math.random() - 0.5) * w * 2.5;
+              s.y = (Math.random() - 0.5) * h * 2.5;
+            }
+
+            var k = 320 / s.z;
+            var px = s.x * k + cx;
+            var py = s.y * k + cy;
+
+            var pk = 320 / s.pz;
+            var prevX = s.x * pk + cx;
+            var prevY = s.y * pk + cy;
+
+            var alpha = Math.min(1, (1000 - s.z) / 450);
+            var color = s.hue === 198 ? 'rgba(56, 189, 248, ' + alpha + ')'
+                      : s.hue === 275 ? 'rgba(192, 132, 252, ' + alpha + ')'
+                      : 'rgba(244, 114, 182, ' + alpha + ')';
+
+            ctx.strokeStyle = color;
+            ctx.lineWidth = s.size * (warpActive ? 2.2 : 1.2);
+            ctx.beginPath();
+            ctx.moveTo(prevX, prevY);
+            ctx.lineTo(px, py);
+            ctx.stroke();
+          }
+
+          if (!dismissed || warpActive) {
+            animId = requestAnimationFrame(renderWarp);
+          }
+        }
+
+        animId = requestAnimationFrame(renderWarp);
 
         window.__dismissPreloader = function() {
           if (dismissed) return;
           dismissed = true;
-          clearInterval(interval);
-          if (bar) bar.style.width = '100%';
-          if (percent) percent.textContent = '100%';
-          if (status) status.textContent = 'DECK SYSTEMS ENGAGED';
+          clearInterval(phaseTimer);
+          warpActive = true;
+          speed = 68; // Hyperspace surge burst!
+
+          if (status) {
+            status.textContent = '✦ HYPERSPACE TRANSIT ONLINE ✦';
+            status.style.color = '#f8fafc';
+          }
+          if (substatus) {
+            substatus.textContent = 'CELESTIAL NAVIGATION ENGAGED';
+            substatus.style.color = '#38bdf8';
+          }
 
           setTimeout(function() {
             preloader.classList.add('preloader-fade-out');
             setTimeout(function() {
+              if (animId) cancelAnimationFrame(animId);
               if (preloader && preloader.parentNode) {
                 preloader.parentNode.removeChild(preloader);
               }
             }, 600);
-          }, 160);
+          }, 320);
         };
 
-        // Absolute safety fallback: auto dismiss if scripts stall for > 12s
+        // Safety fallback: auto dismiss if scripts stall for > 12s
         setTimeout(function() {
           if (!dismissed && window.__dismissPreloader) {
             window.__dismissPreloader();

@@ -98,13 +98,26 @@ export class TouchControls {
 
     this.container.innerHTML = `
       <style>
+        #touch-controls-overlay {
+          padding: max(8px, env(safe-area-inset-top, 0px))
+                   max(14px, calc(env(safe-area-inset-right, 0px) + 12px))
+                   max(8px, calc(env(safe-area-inset-bottom, 0px) + 6px))
+                   max(14px, calc(env(safe-area-inset-left, 0px) + 12px)) !important;
+        }
         #touch-controls-overlay,
         #touch-controls-overlay * {
           touch-action: none;
           -webkit-touch-callout: none;
         }
+        #touch-controls-overlay button {
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
+          cursor: pointer;
+          transition: transform 0.08s ease, filter 0.08s ease;
+        }
         #touch-controls-overlay button:active {
-          transform: scale(0.94);
+          transform: scale(0.92) !important;
+          filter: brightness(1.28) !important;
         }
         #touch-controls-main {
           margin-top: auto !important;
@@ -114,7 +127,10 @@ export class TouchControls {
         @media (min-width: 851px) and (pointer: coarse),
                (min-width: 851px) and (max-width: 1366px) and (hover: none) {
           #touch-controls-overlay {
-            padding: 12px 16px !important;
+            padding: max(10px, env(safe-area-inset-top, 0px))
+                     max(18px, calc(env(safe-area-inset-right, 0px) + 14px))
+                     max(10px, calc(env(safe-area-inset-bottom, 0px) + 8px))
+                     max(18px, calc(env(safe-area-inset-left, 0px) + 14px)) !important;
           }
           #touch-top-bar {
             margin-top: 32px !important;
@@ -201,6 +217,12 @@ export class TouchControls {
           }
         }
         @media (max-height: 520px), (max-width: 850px) {
+          #touch-controls-overlay {
+            padding: max(6px, env(safe-area-inset-top, 0px))
+                     max(14px, calc(env(safe-area-inset-right, 0px) + 12px))
+                     max(6px, calc(env(safe-area-inset-bottom, 0px) + 4px))
+                     max(14px, calc(env(safe-area-inset-left, 0px) + 12px)) !important;
+          }
           #touch-top-bar {
             margin-top: 18px !important;
           }
@@ -964,24 +986,35 @@ export class TouchControls {
     this.scanBtnEl.addEventListener('pointercancel', releaseScan);
     this.scanBtnEl.addEventListener('pointerleave', releaseScan);
 
+    const bindFastTap = (el: HTMLElement | null, action: () => void) => {
+      if (!el) return;
+      let lastTrigger = 0;
+      const trigger = (e: Event) => {
+        const now = Date.now();
+        if (now - lastTrigger < 250) return;
+        lastTrigger = now;
+        if (e.cancelable) e.preventDefault();
+        action();
+      };
+      el.addEventListener('pointerdown', trigger);
+      el.addEventListener('click', trigger);
+    };
+
     // Map button (Left Thumb)
-    this.mapBtnEl.addEventListener('click', (e) => {
-      if (e.cancelable) e.preventDefault();
+    bindFastTap(this.mapBtnEl, () => {
       this.touchInput.triggerAction('map');
       HapticFeedback.light();
     });
 
     // Target button (Left Thumb: lock on target ahead / cycle lock)
-    this.targetBtnEl?.addEventListener('click', (e) => {
-      if (e.cancelable) e.preventDefault();
+    bindFastTap(this.targetBtnEl, () => {
       this.touchInput.triggerAction('target_lock');
       this.touchInput.triggerAction('cycle_target');
       HapticFeedback.medium();
     });
 
     // Orbit / Land button
-    this.orbitBtnEl.addEventListener('click', (e) => {
-      if (e.cancelable) e.preventDefault();
+    bindFastTap(this.orbitBtnEl, () => {
       if (this.currentContext === 'surface') {
         this.touchInput.triggerAction('cancel'); // Return to orbit
       } else {
@@ -991,35 +1024,30 @@ export class TouchControls {
     });
 
     // Altitude controls (surface hover)
-    this.altUpBtnEl.addEventListener('click', (e) => {
-      if (e.cancelable) e.preventDefault();
+    bindFastTap(this.altUpBtnEl, () => {
       this.touchInput.triggerAction('altitude_up');
       HapticFeedback.light();
     });
 
-    this.altDownBtnEl.addEventListener('click', (e) => {
-      if (e.cancelable) e.preventDefault();
+    bindFastTap(this.altDownBtnEl, () => {
       this.touchInput.triggerAction('altitude_down');
       HapticFeedback.light();
     });
 
     // Modules / Store
-    this.upgradeBtnEl.addEventListener('click', (e) => {
-      if (e.cancelable) e.preventDefault();
+    bindFastTap(this.upgradeBtnEl, () => {
       this.touchInput.triggerAction('supply');
       HapticFeedback.light();
     });
 
     // Journal
-    this.journalBtnEl.addEventListener('click', (e) => {
-      if (e.cancelable) e.preventDefault();
+    bindFastTap(this.journalBtnEl, () => {
       this.touchInput.triggerAction('journal');
       HapticFeedback.light();
     });
 
     // Toggle touch controls visibility
-    this.toggleBtnEl.addEventListener('click', (e) => {
-      if (e.cancelable) e.preventDefault();
+    bindFastTap(this.toggleBtnEl, () => {
       this.toggleVisibility();
       HapticFeedback.light();
     });

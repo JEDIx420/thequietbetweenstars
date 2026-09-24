@@ -90,11 +90,11 @@ export class DialoguePresenter {
       @media (max-width: 850px), (max-height: 520px) {
         #dialogue-presenter-container {
           bottom: auto !important;
-          top: max(44px, env(safe-area-inset-top, 44px)) !important;
+          top: max(44px, calc(env(safe-area-inset-top, 0px) + 38px)) !important;
           left: 50% !important;
           transform: translateX(-50%) !important;
-          max-width: min(380px, 86vw) !important;
-          width: min(380px, 86vw) !important;
+          max-width: min(330px, 48vw) !important;
+          width: min(330px, 48vw) !important;
           z-index: 120 !important;
         }
         #dialogue-presenter-container .dialogue-bubble {
@@ -115,6 +115,12 @@ export class DialoguePresenter {
         #dialogue-presenter-container button {
           font-size: 9.5px !important;
           padding: 4px 8px !important;
+        }
+      }
+      @media (max-width: 600px) and (orientation: portrait) {
+        #dialogue-presenter-container {
+          max-width: min(360px, 88vw) !important;
+          width: min(360px, 88vw) !important;
         }
       }
     `;
@@ -201,6 +207,9 @@ export class DialoguePresenter {
     if (this.currentTimeout) clearTimeout(this.currentTimeout);
 
     this.isDisplaying = true;
+    if (typeof document !== 'undefined') {
+      document.body.classList.add('dialogue-active');
+    }
     this.speakerEl.textContent = speaker;
     this.textEl.textContent = text;
     this.choicesContainer.innerHTML = '';
@@ -268,6 +277,9 @@ export class DialoguePresenter {
     }
 
     this.isDisplaying = true;
+    if (typeof document !== 'undefined') {
+      document.body.classList.add('dialogue-active');
+    }
     this.choicesContainer.style.display = 'none';
     const line = this.queue.shift()!;
 
@@ -317,6 +329,9 @@ export class DialoguePresenter {
     this.bubbleEl.style.transform = 'translateY(10px)';
     this.choicesContainer.style.display = 'none';
     this.isDisplaying = false;
+    if (typeof document !== 'undefined') {
+      document.body.classList.remove('dialogue-active');
+    }
   }
 
   public clear(): void {
@@ -326,6 +341,9 @@ export class DialoguePresenter {
 
   public dispose(): void {
     if (this.currentTimeout) clearTimeout(this.currentTimeout);
+    if (typeof document !== 'undefined') {
+      document.body.classList.remove('dialogue-active');
+    }
     this.container.remove();
   }
 }

@@ -30,8 +30,8 @@ export class StoryObjectiveHUD {
     styleEl.textContent = `
       #story-objective-hud {
         position: fixed;
-        top: 68px;
-        left: 24px;
+        top: max(48px, calc(env(safe-area-inset-top, 0px) + 44px));
+        left: max(16px, calc(env(safe-area-inset-left, 0px) + 14px));
         z-index: 100;
         pointer-events: auto;
         user-select: none;
@@ -48,7 +48,13 @@ export class StoryObjectiveHUD {
         backdrop-filter: blur(12px);
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 15px rgba(56, 189, 248, 0.08);
         cursor: pointer;
-        transition: border-color 0.2s, background 0.2s;
+        transition: border-color 0.2s, background 0.2s, transform 0.15s ease;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+      }
+      #story-objective-hud .hud-card:active {
+        transform: scale(0.98);
+        background: rgba(15, 23, 42, 0.95);
       }
       #story-objective-hud .hud-card:hover {
         background: rgba(15, 23, 42, 0.92);
@@ -74,8 +80,8 @@ export class StoryObjectiveHUD {
       /* Tablet & Touch Adaptation */
       @media (pointer: coarse), (max-width: 1024px) {
         #story-objective-hud {
-          top: max(46px, env(safe-area-inset-top, 46px));
-          left: max(12px, env(safe-area-inset-left, 12px));
+          top: max(44px, calc(env(safe-area-inset-top, 0px) + 38px));
+          left: max(12px, calc(env(safe-area-inset-left, 0px) + 10px));
           max-width: 260px;
         }
         #story-objective-hud .hud-card {
@@ -85,8 +91,8 @@ export class StoryObjectiveHUD {
       /* Compact Phone Overrides */
       @media (max-width: 768px) {
         #story-objective-hud {
-          top: max(44px, env(safe-area-inset-top, 44px));
-          left: max(10px, env(safe-area-inset-left, 10px));
+          top: max(42px, calc(env(safe-area-inset-top, 0px) + 36px));
+          left: max(10px, calc(env(safe-area-inset-left, 0px) + 8px));
           max-width: 240px;
         }
         #story-objective-hud .hud-card {
@@ -151,40 +157,76 @@ export class StoryObjectiveHUD {
       color: #fbbf24;
       font-size: 8px;
       font-weight: 700;
-      padding: 1px 5px;
+      padding: 3px 7px;
+      min-height: 24px;
       border-radius: 4px;
       cursor: pointer;
       font-family: inherit;
       transition: all 0.15s ease;
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     `;
     trackBtn.textContent = '🎯 TRACK';
-    trackBtn.addEventListener('click', (e) => {
+    let lastTrackTap = 0;
+    const triggerTrack = (e: Event) => {
       e.stopPropagation();
+      const now = Date.now();
+      if (now - lastTrackTap < 250) return;
+      lastTrackTap = now;
+      HapticFeedback.light();
       if (this.onTrackObjectiveCallback) {
         this.onTrackObjectiveCallback();
       }
+    };
+    trackBtn.addEventListener('pointerdown', (e) => {
+      if ((e as PointerEvent).pointerType === 'touch') {
+        triggerTrack(e);
+      }
     });
+    trackBtn.addEventListener('click', triggerTrack);
     this.trackBtn = trackBtn;
 
     const collapseBtn = document.createElement('button');
     collapseBtn.id = 'hud-btn-collapse-toggle';
     collapseBtn.title = 'Collapse/Expand Mission Panel';
     collapseBtn.style.cssText = `
-      background: transparent;
-      border: none;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(148, 163, 184, 0.2);
       color: #94a3b8;
-      font-size: 10px;
-      padding: 0 2px;
+      font-size: 11px;
+      padding: 0 4px;
+      min-width: 24px;
+      min-height: 24px;
+      border-radius: 4px;
       cursor: pointer;
       font-family: inherit;
       line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      transition: all 0.15s ease;
     `;
     collapseBtn.textContent = '▴';
-    collapseBtn.addEventListener('click', (e) => {
+    let lastCollapseTap = 0;
+    const triggerCollapse = (e: Event) => {
       e.stopPropagation();
+      const now = Date.now();
+      if (now - lastCollapseTap < 250) return;
+      lastCollapseTap = now;
+      HapticFeedback.light();
       this.toggleCollapse();
+    };
+    collapseBtn.addEventListener('pointerdown', (e) => {
+      if ((e as PointerEvent).pointerType === 'touch') {
+        triggerCollapse(e);
+      }
     });
+    collapseBtn.addEventListener('click', triggerCollapse);
 
     controlsWrapper.appendChild(this.badgeEl);
     controlsWrapper.appendChild(trackBtn);
