@@ -78,8 +78,8 @@ export class NavRadar {
     styleEl.textContent = `
       #nav-radar-widget {
         position: fixed;
-        bottom: 24px;
-        right: 28px;
+        bottom: 50px;
+        right: 24px;
         display: flex;
         flex-direction: column;
         align-items: flex-end;
@@ -89,19 +89,34 @@ export class NavRadar {
         user-select: none;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       }
+      #nav-radar-widget .radar-canvas {
+        position: relative !important;
+        inset: auto !important;
+        display: block !important;
+        flex-shrink: 0 !important;
+        width: 140px !important;
+        height: 140px !important;
+        border-radius: 50% !important;
+        box-sizing: border-box !important;
+      }
+      #nav-radar-widget .radar-info {
+        position: relative !important;
+        inset: auto !important;
+        box-sizing: border-box !important;
+      }
       /* Tablet & Touch Devices: Move radar below top header bar and keep bottom-right clear for throttle & action buttons */
       @media (pointer: coarse), (max-width: 1366px) and (hover: none) {
         #nav-radar-widget {
           bottom: auto !important;
-          top: max(54px, calc(env(safe-area-inset-top, 0px) + 48px)) !important;
-          right: max(14px, env(safe-area-inset-right, 14px)) !important;
+          top: max(48px, calc(env(safe-area-inset-top, 0px) + 42px)) !important;
+          right: max(12px, env(safe-area-inset-right, 12px)) !important;
           gap: 8px !important;
           flex-direction: row-reverse !important;
-          align-items: flex-start !important;
+          align-items: center !important;
         }
         #nav-radar-widget .radar-canvas {
-          width: 90px !important;
-          height: 90px !important;
+          width: 88px !important;
+          height: 88px !important;
         }
         #nav-radar-widget .radar-info {
           max-width: 150px !important;
@@ -111,15 +126,15 @@ export class NavRadar {
       }
       body.touch-controls-active #nav-radar-widget {
         bottom: auto !important;
-        top: max(54px, calc(env(safe-area-inset-top, 0px) + 48px)) !important;
-        right: max(14px, env(safe-area-inset-right, 14px)) !important;
+        top: max(48px, calc(env(safe-area-inset-top, 0px) + 42px)) !important;
+        right: max(12px, env(safe-area-inset-right, 12px)) !important;
         gap: 8px !important;
         flex-direction: row-reverse !important;
-        align-items: flex-start !important;
+        align-items: center !important;
       }
       body.touch-controls-active #nav-radar-widget .radar-canvas {
-        width: 90px !important;
-        height: 90px !important;
+        width: 88px !important;
+        height: 88px !important;
       }
       body.touch-controls-active #nav-radar-widget .radar-info {
         max-width: 150px !important;
@@ -130,11 +145,11 @@ export class NavRadar {
       @media (max-width: 850px), (max-height: 520px) {
         #nav-radar-widget {
           bottom: auto !important;
-          top: max(50px, calc(env(safe-area-inset-top, 0px) + 44px)) !important;
+          top: max(46px, calc(env(safe-area-inset-top, 0px) + 40px)) !important;
           right: max(10px, env(safe-area-inset-right, 10px)) !important;
           gap: 6px !important;
           flex-direction: row-reverse !important;
-          align-items: flex-start !important;
+          align-items: center !important;
         }
         #nav-radar-widget .radar-canvas {
           width: 78px !important;
@@ -153,17 +168,22 @@ export class NavRadar {
 
     // Holographic radar canvas
     this.canvas = document.createElement('canvas');
+    this.canvas.id = 'nav-radar-canvas';
     this.canvas.className = 'radar-canvas';
     this.canvas.width = 140;
     this.canvas.height = 140;
     this.canvas.title = 'Click to cycle target · Double-click for Map';
     this.canvas.style.cssText = `
+      position: relative !important;
+      inset: auto !important;
+      display: block !important;
+      flex-shrink: 0 !important;
       width: 140px;
       height: 140px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(15, 23, 42, 0.92) 0%, rgba(3, 7, 18, 0.98) 100%);
-      border: 1px solid rgba(56, 189, 248, 0.4);
-      box-shadow: 0 0 24px rgba(56, 189, 248, 0.2), inset 0 0 16px rgba(0, 0, 0, 0.8);
+      border-radius: 50% !important;
+      background: radial-gradient(circle, rgba(15, 23, 42, 0.92) 0%, rgba(3, 7, 18, 0.98) 100%) !important;
+      border: 1px solid rgba(56, 189, 248, 0.4) !important;
+      box-shadow: 0 0 24px rgba(56, 189, 248, 0.2), inset 0 0 16px rgba(0, 0, 0, 0.8) !important;
       cursor: pointer;
     `;
     this.ctx = this.canvas.getContext('2d')!;
@@ -178,6 +198,8 @@ export class NavRadar {
     this.targetInfoEl = document.createElement('div');
     this.targetInfoEl.className = 'radar-info';
     this.targetInfoEl.style.cssText = `
+      position: relative !important;
+      inset: auto !important;
       background: rgba(15, 23, 42, 0.88);
       border: 1px solid rgba(56, 189, 248, 0.35);
       border-radius: 8px;
