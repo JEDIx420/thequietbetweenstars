@@ -195,6 +195,7 @@ export class DesktopApp {
   private currentControlMode: 'keyboard' | 'touch' = 'keyboard';
   private newJourneyCinematic!: NewJourneyCinematic;
   private audioUnlocked = false;
+  private isStartingJourney = false;
 
   // In-Space Minimal Warp Countdown HUD
   private inSpaceWarpCountdownTimer: number | null = null;
@@ -256,6 +257,12 @@ export class DesktopApp {
     this.setupVisibilityListener();
     this.setupGesturePreventListeners();
     this.initTouchControls();
+
+    // Pre-warm and compile all SpaceScene shaders immediately to eliminate runtime compilation freezes
+    this.renderer.compileScene(this.spaceScene.scene, this.renderer.camera);
+    saveManager.hasSavedJourney().then((saved) => {
+      this.hasSavedJourney = saved;
+    });
 
     // Seamlessly transition initial preloader into live space title sequence
     if (typeof (window as any).__dismissPreloader === 'function') {
@@ -500,7 +507,10 @@ export class DesktopApp {
     }
 
     if (this.isTitleRevealActive) {
+      const dt = Math.max(0.001, Math.min((time - this.lastTime) * 0.001, 0.05));
       this.lastTime = time;
+      this.spaceScene.updateSpaceFlight(dt, this.flightModel.position, this.renderer.camera.position, 0.04, 0, 0, false);
+      this.renderer.render(this.spaceScene.scene);
       requestAnimationFrame((t) => this.gameLoop(t));
       return;
     }
@@ -665,8 +675,8 @@ export class DesktopApp {
     }
 
     // Handle T / Target Ahead lock-on on surface
-    const surfaceCandidates = this.collectSurfaceLockCandidates();
     if (this.inputManager.consumeAction('target_lock')) {
+      const surfaceCandidates = this.collectSurfaceLockCandidates();
       const locked = this.targetLockSystem.lockTargetInForwardCone(
         this.surfaceScene.shipPosition,
         this.surfaceScene.shipPhysicsRoot.quaternion,
@@ -915,8 +925,8 @@ export class DesktopApp {
     const scanReach = this.installedModules.has('mod_scanner_deep_ecology') ? 280 : 140;
 
     // Handle T / Target Ahead lock-on
-    const spaceCandidates = this.collectSpaceLockCandidates();
     if (this.inputManager.consumeAction('target_lock')) {
+      const spaceCandidates = this.collectSpaceLockCandidates();
       const locked = this.targetLockSystem.lockTargetInForwardCone(
         shipPos,
         this.flightModel.quaternion,
@@ -959,6 +969,7 @@ export class DesktopApp {
     }
 
     if (!this.shownContextHints.has('hint_target_lock') && !lockedTarget) {
+      const spaceCandidates = this.collectSpaceLockCandidates();
       const forwardTarget = spaceCandidates.find((c) => {
         const d = c.position.distanceTo(shipPos);
         return d > 300 && d < 4500;
@@ -2058,7 +2069,9 @@ export class DesktopApp {
   private async renderTitleScreen(): Promise<void> {
     this.uiState = 'title';
     this.touchControls?.hide();
-    this.hasSavedJourney = await saveManager.hasSavedJourney();
+    if (this.hasSavedJourney === undefined) {
+      this.hasSavedJourney = await saveManager.hasSavedJourney();
+    }
 
     this.uiContainer.innerHTML = `
       <style>
@@ -2210,7 +2223,7 @@ export class DesktopApp {
       audio.playTitleMusic();
     }
 
-    const titleReadyTime = Date.now() + 450;
+    this.isStartingJourney = false;
 
     this.uiContainer.querySelector('#btn-title-settings')?.addEventListener('click', () => {
       audio.playBlip();
@@ -2218,18 +2231,20 @@ export class DesktopApp {
     });
 
     this.uiContainer.querySelector('#btn-continue')?.addEventListener('click', async () => {
-      if (Date.now() < titleReadyTime) return;
+      if (this.isStartingJourney) return;
+      this.isStartingJourney = true;
       audio.playBlip();
-      await audio.start();
+      audio.start().catch((err) => console.warn('[Audio] start error:', err));
       await this.loadSavedJourney();
       this.enterFlightMode();
     });
 
     const btnBegin = this.uiContainer.querySelector('#btn-begin') as HTMLElement;
-    btnBegin.addEventListener('click', async () => {
-      if (Date.now() < titleReadyTime) return;
+    btnBegin?.addEventListener('click', async () => {
+      if (this.isStartingJourney) return;
+      this.isStartingJourney = true;
       audio.playBlip();
-      await audio.start();
+      audio.start().catch((err) => console.warn('[Audio] start error:', err));
       audio.setContext('cinematic');
 
       // CRITICAL ISSUE 3 & 4 FIX:

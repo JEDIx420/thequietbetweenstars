@@ -42,13 +42,16 @@ export class RenderQualityController {
       typeof window !== 'undefined' &&
       ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0) || window.innerWidth < 800);
 
-    const deviceMax = Math.min(window.devicePixelRatio || 1, this.isMobile ? 1.5 : 2.0);
+    const deviceMax = Math.min(
+      window.devicePixelRatio || 1,
+      this.isMobile ? (window.devicePixelRatio >= 2 ? 1.0 : 1.15) : 2.0
+    );
 
-    this.minDpr = options?.minDpr ?? (this.isMobile ? 0.85 : 1.0);
+    this.minDpr = options?.minDpr ?? (this.isMobile ? 0.75 : 1.0);
     this.maxDpr = options?.maxDpr ?? deviceMax;
-    this.stepDownThresholdMs = options?.stepDownThresholdMs ?? 22.0; // < 45 FPS
+    this.stepDownThresholdMs = options?.stepDownThresholdMs ?? (this.isMobile ? 18.0 : 22.0);
     this.stepUpThresholdMs = options?.stepUpThresholdMs ?? 13.5; // > 74 FPS
-    this.cooldownMs = options?.cooldownMs ?? 3000;
+    this.cooldownMs = options?.cooldownMs ?? 2500;
     this.sustainedPoorCycles = options?.sustainedPoorCycles ?? 1;
     this.sustainedGoodCycles = options?.sustainedGoodCycles ?? 1;
 
@@ -128,7 +131,11 @@ export class RenderQualityController {
   }
 
   public reset(): void {
-    this.currentDpr = Math.min(window.devicePixelRatio || 1, this.isMobile ? 1.5 : 2.0);
+    const deviceMax = Math.min(
+      window.devicePixelRatio || 1,
+      this.isMobile ? (window.devicePixelRatio >= 2 ? 1.0 : 1.15) : 2.0
+    );
+    this.currentDpr = deviceMax;
     this.renderer.setPixelRatio(this.currentDpr);
     this.timeSinceLastAdjustment = 0;
     this.sustainedPoorCount = 0;

@@ -31,7 +31,7 @@ export class AudioDirector {
 
   // Tone FX chain
   private filter: Tone.Filter | null = null;
-  private reverb: Tone.Reverb | null = null;
+  private reverb: Tone.Freeverb | Tone.Reverb | null = null;
   private delay: Tone.FeedbackDelay | null = null;
 
   // Direct Web Audio engine for thrusters & responsive sound FX
@@ -90,7 +90,9 @@ export class AudioDirector {
       }
 
       if (!this.padSynth) {
-        this.reverb = new Tone.Reverb({ decay: 5.0, wet: 0.36 }).toDestination();
+        // High-efficiency algorithmic Schroeder reverb (zero offline rendering stalls)
+        this.reverb = new Tone.Freeverb({ roomSize: 0.82, dampening: 2400 }).toDestination();
+        this.reverb.wet.value = 0.36;
         this.delay = new Tone.FeedbackDelay('8n', 0.22).connect(this.reverb);
         this.filter = new Tone.Filter(2800, 'lowpass').connect(this.delay);
 
@@ -165,7 +167,7 @@ export class AudioDirector {
 
     // 1. Deep Brownian Noise Buffer for velvet cosmic slipstream and hull mass
     // Generates brownian noise (integrated pink) that has -6dB/octave slope, rich, warm, and free of vacuum hiss
-    const bufferSize = this.webAudioCtx.sampleRate * 2;
+    const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 0.5);
     const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
     const output = noiseBuffer.getChannelData(0);
     let lastOut = 0.0;

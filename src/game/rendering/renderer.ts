@@ -10,16 +10,23 @@ export class GameRenderer {
   constructor(container: HTMLElement) {
     this.container = container;
 
-    this.renderer = new THREE.WebGLRenderer({
-      powerPreference: 'high-performance',
-      antialias: true,
-      alpha: false,
-    });
-
     const isMobile =
       typeof window !== 'undefined' &&
       ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0) || window.innerWidth < 800);
-    const maxDpr = isMobile ? 1.5 : 2;
+
+    // Disable 4x MSAA on mobile/tablet and high-DPI screens to prevent massive fillrate overhead
+    const shouldAntialias = !isMobile && (typeof window !== 'undefined' ? (window.devicePixelRatio || 1) <= 1.25 : true);
+
+    this.renderer = new THREE.WebGLRenderer({
+      powerPreference: 'high-performance',
+      antialias: shouldAntialias,
+      alpha: false,
+      stencil: false,
+      depth: true,
+    });
+
+    // Mobile/tablet devices with dense pixel pitch run optimally at 1.0 - 1.15 DPR
+    const maxDpr = isMobile ? (typeof window !== 'undefined' && window.devicePixelRatio >= 2 ? 1.0 : 1.15) : 2.0;
 
     const width = typeof window !== 'undefined'
       ? Math.max(window.innerWidth, container.clientWidth || 0)
@@ -80,6 +87,14 @@ export class GameRenderer {
   public render(scene: THREE.Scene, camera?: THREE.PerspectiveCamera): void {
     if (!this.isPaused) {
       this.renderer.render(scene, camera || this.camera);
+    }
+  }
+
+  public compileScene(scene: THREE.Scene, camera?: THREE.Camera): void {
+    try {
+      this.renderer.compile(scene, camera || this.camera);
+    } catch {
+      // Ignored if unsupported in headless test environments
     }
   }
 

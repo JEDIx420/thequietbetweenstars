@@ -368,18 +368,7 @@ export class HolographicNavModal {
     this.camera = new THREE.PerspectiveCamera(45, 1, 1, 2000);
     this.updateCameraOrbit();
 
-    this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: true,
-      powerPreference: 'high-performance',
-    });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.domElement.style.display = 'block';
-    this.renderer.domElement.style.width = '100%';
-    this.renderer.domElement.style.height = '100%';
-    this.canvasContainer.appendChild(this.renderer.domElement);
-
-    // Add Scene Layers
+    // Scene Layers (WebGLRenderer creation deferred until first modal open)
     this.scene.add(this.gridGroup);
     this.scene.add(this.originGroup);
     this.scene.add(this.starNodesGroup);
@@ -501,9 +490,35 @@ export class HolographicNavModal {
     else this.open();
   }
 
+  private ensureRenderer(): void {
+    if (this.renderer || this.isDisposed) return;
+    const isMobile =
+      typeof window !== 'undefined' &&
+      ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0) || window.innerWidth < 800);
+
+    const shouldAntialias = !isMobile && (typeof window !== 'undefined' ? (window.devicePixelRatio || 1) <= 1.25 : true);
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: shouldAntialias,
+      alpha: true,
+      powerPreference: 'high-performance',
+      stencil: false,
+    });
+    const maxDpr = isMobile ? (typeof window !== 'undefined' && window.devicePixelRatio >= 2 ? 1.0 : 1.15) : 1.5;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
+    this.renderer.domElement.style.display = 'block';
+    this.renderer.domElement.style.width = '100%';
+    this.renderer.domElement.style.height = '100%';
+    this.canvasContainer.appendChild(this.renderer.domElement);
+
+    const w = this.canvasContainer.clientWidth || window.innerWidth;
+    const h = this.canvasContainer.clientHeight || window.innerHeight;
+    this.renderer.setSize(w, h);
+  }
+
   public open(): void {
     this.isVisible = true;
     this.container.style.display = 'flex';
+    this.ensureRenderer();
     this.resize();
     this.rebuildStarsAndDestinations();
     this.renderDetailsPanel();
