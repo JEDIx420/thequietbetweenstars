@@ -10,6 +10,7 @@ import { SHIP_MODULE_CATALOG } from '../game/progression/ShipProgression';
 import { audio } from '../audio/AudioEngine';
 import { localAI } from '../ai/LocalIntelligenceService';
 import type { SandboxDialogueContext } from '../ai/LoreContextBuilder';
+import { ProceduralCommsDirector } from '../narrative/ProceduralCommsDirector';
 
 export interface StationModalCallbacks {
   onUndock: () => void;
@@ -31,6 +32,8 @@ export class StationInterfaceModal {
   private saveSlot: PlayerSaveSlot | null = null;
   private callbacks: StationModalCallbacks;
   private commHistory: Array<{ sender: string; text: string; time: string }> = [];
+  private commsInquiryCounts: Map<string, number> = new Map();
+  private stationVisitCounts: Map<string, number> = new Map();
 
   constructor(container: HTMLElement, callbacks: StationModalCallbacks) {
     this.container = container;
@@ -84,20 +87,20 @@ export class StationInterfaceModal {
       }
     }
 
-    // Default opening comms greeting
+    // Track visits per target
+    const currentVisits = (this.stationVisitCounts.get(this.target.id) ?? 0) + 1;
+    this.stationVisitCounts.set(this.target.id, currentVisits);
+
+    // Context-aware procedural comms greeting
     if (this.commHistory.length === 0) {
       const now = new Date().toTimeString().split(' ')[0];
-      const isStation = this.target.entityKind === 'STATION';
-      const speaker = isStation
-        ? `${this.target.name.toUpperCase()} TRAFFIC CONTROL`
-        : `${(this.target as NamedVessel).captainName.toUpperCase()} // BRIDGE`;
-      const greeting = this.target.greeting || (isStation
-        ? 'Umbilical magnetic lock confirmed. Remote logistics link established.'
-        : 'Welcome aboard our vessel. Sub-space docking tether secured.');
+      const commDirector = ProceduralCommsDirector.getInstance();
+      const participant = commDirector.toParticipant(this.target);
+      const greetingObj = commDirector.generateGreeting(participant, currentVisits - 1);
 
       this.commHistory.push({
-        sender: speaker,
-        text: greeting,
+        sender: greetingObj.speaker,
+        text: greetingObj.text,
         time: now,
       });
     }
@@ -885,6 +888,19 @@ export class StationInterfaceModal {
                   ">
                     ${isShip ? '⚡ Telemetry Sync & Shield Check' : '⚡ Umbilical Power & Diagnostics'}
                   </button>
+                  <button class="btn-comms-query" data-query="deep_space_rumors" style="
+                    background: rgba(168, 85, 247, 0.14);
+                    border: 1px solid rgba(168, 85, 247, 0.45);
+                    color: #e9d5ff;
+                    padding: 7px 11px;
+                    border-radius: 6px;
+                    font-size: 0.70rem;
+                    cursor: pointer;
+                    font-family: inherit;
+                    transition: background 0.15s ease;
+                  ">
+                    ${isShip ? '🌌 Subspace Chatter & Rumors' : '🌌 Subspace Rumors & Deep Space Coordinates'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -1037,57 +1053,29 @@ export class StationInterfaceModal {
   }
 
   private handleCommsQuery(queryType: string): void {
+    if (!this.target) return;
     audio.playBlip();
     const now = new Date().toTimeString().split(' ')[0];
-    const isStation = this.target?.entityKind === 'STATION';
-    const speaker = isStation
-      ? `${this.target?.name.toUpperCase()} CONTROL`
-      : `${(this.target as NamedVessel)?.captainName?.toUpperCase() || 'CAPTAIN'}`;
+    const isStation = this.target.entityKind === 'STATION';
 
-    let pilotText = '';
-    let replyText = '';
+    // Track inquiry count for variety and multi-tier lore
+    const key = `${this.target.id}_${queryType}`;
+    const count = (this.commsInquiryCounts.get(key) ?? 0) + 1;
+    this.commsInquiryCounts.set(key, count);
 
-    switch (queryType) {
-      case 'traffic_advisory':
-        if (isStation) {
-          pilotText = 'Flight Control, requesting local orbital approach vectors and hazard report.';
-          replyText = 'Docking corridor alpha clear. Planetary gravity wells steady. All approaching pilots are advised to decelerate below 180 m/s inside station approach perimeter.';
-        } else {
-          pilotText = 'Requesting tactical route scan and deep-space threat analysis.';
-          replyText = 'Long-range sensors detect light debris in Lagrange points. Watch for gravimetric shears when warping through dense asteroid bands.';
-        }
-        break;
+    const commDirector = ProceduralCommsDirector.getInstance();
+    const participant = commDirector.toParticipant(this.target);
+    const proceduralRes = commDirector.generateResponse({
+      target: participant,
+      systemName: this.system?.name,
+      queryType: queryType as any,
+      inquiryCount: count - 1,
+      pilotCredits: this.saveSlot?.credits ?? 0,
+    });
 
-      case 'trade_routes':
-        if (isStation) {
-          pilotText = 'Requesting station commodity manifest and regional demand forecast.';
-          replyText = 'Station holds are low on high-grade minerals. Smelted metals and bio-catalysts fetch peak prices at our commodity exchange today.';
-        } else {
-          pilotText = 'Requesting merchant convoy intelligence and high-yield trade manifests.';
-          replyText = 'Frontier research stations pay top credits for Exotic Bio-Samples and Refined Hyper-Alloys. Planetary mineral ores can be smelted in station fabricators for maximum yield.';
-        }
-        break;
-
-      case 'customs_lore':
-        if (isStation) {
-          pilotText = 'Requesting station history and administrative charter archives.';
-          replyText = this.target?.lore || 'Constructed during the Pioneer Expansion, this station serves as a deep-space refuge for all lawful navigators.';
-        } else {
-          pilotText = 'Inquiring about your vessel charter, crew orders, and mission history.';
-          replyText = this.target?.lore || 'We chart the dark corridors between frontier systems, trading with those who dare push past known space.';
-        }
-        break;
-
-      case 'auxiliary_support':
-        if (isStation) {
-          pilotText = 'Requesting station automated diagnostic sweep and umbilical power hookup.';
-          replyText = 'Automated umbilical connected. Thruster telemetry recalibrated. Docking recharge active. Station facilities are at your service.';
-        } else {
-          pilotText = 'Requesting ship-to-ship telemetry sync and auxiliary shield diagnostic.';
-          replyText = 'Telemetry handshake verified. Navigational vectors synchronized. All sub-space conduits nominal. May the solar winds favour your journey, Commander.';
-        }
-        break;
-    }
+    const pilotText = proceduralRes.pilotText;
+    const replyText = proceduralRes.replyText;
+    const speaker = proceduralRes.speaker;
 
     this.commHistory.push({ sender: 'PILOT // SHIP_LINK', text: pilotText, time: now });
 

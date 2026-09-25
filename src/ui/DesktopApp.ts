@@ -49,6 +49,7 @@ import { StoryDirector } from '../story/StoryDirector';
 import { DockingController } from '../game/docking/DockingController';
 import { SpaceStation } from '../game/stations/SpaceStationManager';
 import { NamedVessel } from '../game/vessels/NamedVesselDirector';
+import type { StructureCollider } from '../game/physics/ShipStructurePhysics';
 import { HarmonicRelay } from '../game/structures/HarmonicRelay';
 import { SpaceInteractionController } from '../game/interaction/SpaceInteractionController';
 import { StationInterfaceModal } from './StationInterfaceModal';
@@ -192,6 +193,9 @@ export class DesktopApp {
   private isRunning = false;
   private isTitleRevealActive = true;
   private lastDeflectionSoundTime = 0;
+  private lastStructureDeflectionTime = 0;
+  private lastProximityWarnTime = 0;
+  private structureCollidersCache: StructureCollider[] = [];
   private currentControlMode: 'keyboard' | 'touch' = 'keyboard';
   private newJourneyCinematic!: NewJourneyCinematic;
   private audioUnlocked = false;
@@ -869,9 +873,83 @@ export class DesktopApp {
     }
   }
 
+  private updateStructurePhysicsColliders(): void {
+    this.structureCollidersCache.length = 0;
+
+    // 1. Space Stations
+    for (const station of this.activeSpaceStations.values()) {
+      let radius = 65;
+      let corridorRadius = 25;
+      switch (station.archetype) {
+        case 'TRADE_HUB': radius = 88; corridorRadius = 30; break;
+        case 'MINING_REFINERY': radius = 60; corridorRadius = 25; break;
+        case 'RESEARCH_ARRAY': radius = 70; corridorRadius = 25; break;
+        case 'SHIPYARD': radius = 65; corridorRadius = 25; break;
+        case 'ORBITAL_HABITAT': radius = 52; corridorRadius = 25; break;
+        case 'ALIEN_BIOSTATION': radius = 55; corridorRadius = 25; break;
+      }
+      this.structureCollidersCache.push({
+        id: station.id,
+        name: station.name,
+        position: station.position,
+        radius,
+        dockingPortOffset: station.dockingPortOffset,
+        dockingCorridorRadius: corridorRadius,
+        entityKind: 'STATION',
+      });
+    }
+
+    // 2. Named NPC Vessels
+    for (const vessel of this.activeNPCVessels.values()) {
+      let radius = 25;
+      switch (vessel.sizeClass) {
+        case 'CAPITAL': radius = 65; break;
+        case 'CARRIER': radius = 50; break;
+        case 'CRUISER': radius = 35; break;
+        case 'FRIGATE': radius = 25; break;
+        case 'TRADER': radius = 24; break;
+        case 'SCOUT':
+        case 'SHUTTLE': radius = 16; break;
+      }
+      this.structureCollidersCache.push({
+        id: vessel.id,
+        name: vessel.name,
+        position: vessel.position,
+        radius,
+        dockingPortOffset: vessel.isDockable ? vessel.dockingPortOffset : undefined,
+        dockingCorridorRadius: vessel.isDockable ? 25 : undefined,
+        entityKind: 'VESSEL',
+      });
+    }
+
+    // 3. Ambient Large Traffic Vessels
+    if (this.spaceScene?.trafficDirector) {
+      for (const tv of this.spaceScene.trafficDirector.vessels) {
+        if (tv.type === 'cargo_freighter' || tv.type === 'science_corvette') {
+          this.structureCollidersCache.push({
+            id: tv.id,
+            name: tv.name,
+            position: tv.position,
+            radius: tv.type === 'cargo_freighter' ? 28 : 18,
+            entityKind: 'TRAFFIC',
+          });
+        }
+      }
+    }
+
+    this.flightModel.structurePhysicsSystem.setColliders(this.structureCollidersCache);
+
+    // If pilot is docked or tethered, set bypass id so docking maneuvers are uninterrupted
+    const dockedTarget = this.dockingController.getActiveTarget();
+    this.flightModel.structurePhysicsSystem.setActiveBypassId(dockedTarget ? dockedTarget.id : null);
+  }
+
   private updateNormalSpaceFlight(dt: number, tick: SchedulerTick, input: NormalizedInputState): void {
     const monitor = PerformanceMonitor.getInstance();
     monitor.startTiming('sim');
+
+    // Update large structure & vessel colliders prior to stepping physics simulation
+    this.updateStructurePhysicsColliders();
 
     // Neutralize flight model inputs and momentum when docking tether or undocking is engaged
     const isDockingActive = this.dockingController.getStatus() !== 'IDLE';
@@ -1263,6 +1341,32 @@ export class DesktopApp {
         audio.playCollisionDeflection(this.flightModel.lastCollision.isDanger);
         const bodyName = this.flightModel.lastCollision.collidedBody?.name || 'CELESTIAL BODY';
         this.showHudNotice(`EXCLUSION SHELL ENGAGED — DEFLECTION ALONG ${bodyName}`);
+      }
+    }
+
+    // Large structure & vessel collision feedback
+    if (this.flightModel.lastStructureCollision.hasCollided) {
+      const now = performance.now();
+      if (now - this.lastStructureDeflectionTime > 400) {
+        this.lastStructureDeflectionTime = now;
+        audio.playCollisionDeflection(false);
+        HapticFeedback.heavy();
+        const colName = this.flightModel.lastStructureCollision.collidedName || 'STRUCTURE HULL';
+        this.showHudNotice(`⚠️ DEFLECTED OFF ${colName.toUpperCase()} DEFENSE SHIELD`);
+      }
+    }
+
+    // High closing speed proximity alert for large vessels & stations
+    const proxWarn = this.flightModel.structurePhysicsSystem.checkProximityWarning(
+      this.flightModel.position,
+      this.flightModel.velocity
+    );
+    if (proxWarn.isWarning) {
+      const now = performance.now();
+      if (now - this.lastProximityWarnTime > 3200) {
+        this.lastProximityWarnTime = now;
+        audio.playHapticTick(440, 0.08, 0.2);
+        this.showHudNotice(`⚠️ PROXIMITY ALERT // CLOSING ON ${proxWarn.colliderName?.toUpperCase()} [${proxWarn.distance}m]`);
       }
     }
 

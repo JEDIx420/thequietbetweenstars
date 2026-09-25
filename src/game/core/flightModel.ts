@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { NormalizedInputState } from '../input/InputSource';
 import type { CelestialPhysicsSystem, CollisionResult } from './celestialPhysics';
 import type { ApproachController } from '../flight/ApproachController';
+import { ShipStructurePhysicsSystem, type StructureCollisionResult } from '../physics/ShipStructurePhysics';
 
 export interface FlightTelemetryState {
   physicsQuat: THREE.Quaternion;
@@ -73,24 +74,32 @@ export class FlightModel {
 
   // Collision & safety systems
   public lastCollision: CollisionResult = { hasCollided: false, penetrationDepth: 0 };
+  public lastStructureCollision: StructureCollisionResult = {
+    hasCollided: false,
+    penetrationDepth: 0,
+    surfaceNormal: new THREE.Vector3(),
+    impactSpeed: 0,
+  };
+  public structurePhysicsSystem: ShipStructurePhysicsSystem = new ShipStructurePhysicsSystem();
   private physicsSystem: CelestialPhysicsSystem | null = null;
   private approachController: ApproachController | null = null;
 
   constructor(
-    shipGroup: THREE.Group,
+    shipGroup?: THREE.Group,
     physicsSystem?: CelestialPhysicsSystem,
     approachController?: ApproachController,
     shipVisualRoot?: THREE.Group
   ) {
-    this.shipPhysicsRoot = shipGroup;
-    this.shipGroup = shipGroup;
+    const root = shipGroup || new THREE.Group();
+    this.shipPhysicsRoot = root;
+    this.shipGroup = root;
 
     if (shipVisualRoot) {
       this.shipVisualRoot = shipVisualRoot;
     } else {
       // Find or create child visual root
-      if (shipGroup.children.length > 0 && (shipGroup.children[0] as THREE.Group).isGroup) {
-        this.shipVisualRoot = shipGroup.children[0] as THREE.Group;
+      if (root.children.length > 0 && (root.children[0] as THREE.Group).isGroup) {
+        this.shipVisualRoot = root.children[0] as THREE.Group;
       } else {
         this.shipVisualRoot = new THREE.Group();
         this.shipPhysicsRoot.add(this.shipVisualRoot);
@@ -259,6 +268,12 @@ export class FlightModel {
     if (this.physicsSystem) {
       this.lastCollision = this.physicsSystem.resolvePhysics(this.position, this.velocity, stepDt);
     }
+
+    this.lastStructureCollision = this.structurePhysicsSystem.resolveCollisions(
+      this.position,
+      this.velocity,
+      stepDt
+    );
   }
 
   private updateCinematicCamera(
