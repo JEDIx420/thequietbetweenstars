@@ -65,23 +65,30 @@ export class SpaceStation implements DockableEntity {
   private buildGeometryForArchetype(archetype: StationArchetype): void {
     const hullMat = new THREE.MeshStandardMaterial({
       color: 0x94a3b8,
-      metalness: 0.8,
-      roughness: 0.3,
+      metalness: 0.30,
+      roughness: 0.52,
+      emissive: 0x1e293b,
+      emissiveIntensity: 0.35,
       flatShading: true,
     });
     const darkMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      metalness: 0.85,
-      roughness: 0.35,
+      color: 0x475569,
+      metalness: 0.32,
+      roughness: 0.55,
+      emissive: 0x0f172a,
+      emissiveIntensity: 0.3,
     });
     const solarMat = new THREE.MeshStandardMaterial({
-      color: 0x1e3a8a,
-      metalness: 0.9,
-      roughness: 0.2,
+      color: 0x1d4ed8,
+      metalness: 0.35,
+      roughness: 0.35,
+      emissive: 0x1e40af,
+      emissiveIntensity: 0.45,
     });
     const cyanGlowMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
     const amberGlowMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
     const emeraldGlowMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
+    const warmWindowMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
 
     switch (archetype) {
       case 'MINING_REFINERY': {
@@ -252,6 +259,12 @@ export class SpaceStation implements DockableEntity {
           ringMesh.add(spoke);
         }
 
+        // Habitat observation window ring on rotating torus
+        const ringWinGeo = new THREE.TorusGeometry(85.5, 0.45, 6, 48);
+        const ringWin = new THREE.Mesh(ringWinGeo, warmWindowMat);
+        ringWin.rotation.x = Math.PI / 2;
+        ringMesh.add(ringWin);
+
         // Solar Arrays
         const solarWingGeo = new THREE.BoxGeometry(110, 1.5, 20);
         const solarWing = new THREE.Mesh(solarWingGeo, solarMat);
@@ -272,18 +285,29 @@ export class SpaceStation implements DockableEntity {
     bayMesh.position.copy(this.dockingPortOffset);
     this.group.add(bayMesh);
 
-    // Docking Guide Lights
+    // Docking Guide Lights (Collar ring)
     for (let l = 0; l < 4; l++) {
-      const light = new THREE.PointLight(lightColorHex, 2.5, 45);
+      const light = new THREE.PointLight(lightColorHex, 2.8, 55);
       const ang = (l / 4) * Math.PI * 2;
       light.position.set(Math.cos(ang) * 18, Math.sin(ang) * 18, this.dockingPortOffset.z + 10);
       this.group.add(light);
       this.bayLights.push(light);
 
       // Light beacon mesh
-      const beaconMesh = new THREE.Mesh(new THREE.SphereGeometry(1.2, 8, 8), glowMat);
+      const beaconMesh = new THREE.Mesh(new THREE.SphereGeometry(1.4, 8, 8), glowMat);
       beaconMesh.position.copy(light.position);
       this.group.add(beaconMesh);
+    }
+
+    // Approach Runway Corridor Lights (guiding incoming pilots along the docking axis)
+    const runwayGeo = new THREE.SphereGeometry(0.8, 6, 6);
+    const runwayMat = new THREE.MeshBasicMaterial({ color: 0x34d399 });
+    for (let zOffset = 30; zOffset <= 120; zOffset += 30) {
+      for (const side of [-22, 22]) {
+        const beacon = new THREE.Mesh(runwayGeo, runwayMat);
+        beacon.position.set(side, -6, this.dockingPortOffset.z + zOffset);
+        this.group.add(beacon);
+      }
     }
   }
 

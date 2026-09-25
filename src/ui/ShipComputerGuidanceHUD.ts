@@ -53,15 +53,17 @@ export class ShipComputerGuidanceHUD {
   }
 
   public showStep(info: TutorialStepInfo): void {
+    const isAdvancing = this.isVisible && this.currentStep !== info.step;
     this.currentStep = info.step;
     this.clearHighlights();
 
     if (info.step === 'COMPLETED') {
+      audio.playConnectChime();
       this.hide();
       return;
     }
 
-    this.render(info);
+    this.render(info, isAdvancing);
     this.applyHighlight(info.highlightSelector);
 
     if (!this.isVisible) {
@@ -71,6 +73,8 @@ export class ShipComputerGuidanceHUD {
         this.container.style.opacity = '1';
         this.container.style.transform = 'translateX(-50%) translateY(0)';
       });
+    } else if (isAdvancing) {
+      audio.playConnectChime();
     }
   }
 
@@ -114,9 +118,19 @@ export class ShipComputerGuidanceHUD {
     return 'desktop';
   }
 
-  private render(info: TutorialStepInfo): void {
+  private render(info: TutorialStepInfo, isAdvancing = false): void {
     const isHomescreenStep = info.step === 'PWA_HOMESCREEN';
     const platform = this.detectPlatform();
+
+    // Segmented progress tracker pips
+    const pipsHtml = Array.from({ length: info.totalSteps }, (_, idx) => {
+      const stepNum = idx + 1;
+      const isPast = stepNum < info.stepIndex;
+      const isCurrent = stepNum === info.stepIndex;
+      const bg = isCurrent ? '#4ade80' : isPast ? '#38bdf8' : 'rgba(148, 163, 184, 0.2)';
+      const shadow = isCurrent ? '0 0 8px #4ade80' : isPast ? '0 0 4px rgba(56, 189, 248, 0.5)' : 'none';
+      return `<span style="flex: 1; height: 3px; border-radius: 2px; background: ${bg}; box-shadow: ${shadow}; transition: all 0.3s ease;"></span>`;
+    }).join('');
 
     let homescreenGuideHtml = '';
     if (isHomescreenStep) {
@@ -156,6 +170,10 @@ export class ShipComputerGuidanceHUD {
     }
 
     this.container.innerHTML = `
+      <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+        ${pipsHtml}
+      </div>
+
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
         <div style="display: flex; align-items: center; gap: 8px;">
           <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 10px #38bdf8; animation: pulseGlow 1.5s infinite;"></span>
@@ -165,6 +183,7 @@ export class ShipComputerGuidanceHUD {
           <span style="font-size: 9px; color: #94a3b8; font-family: ui-monospace, monospace; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(56, 189, 248, 0.2); padding: 1px 6px; border-radius: 4px;">
             STEP ${info.stepIndex} OF ${info.totalSteps}
           </span>
+          ${isAdvancing ? `<span style="font-size: 8px; color: #4ade80; font-weight: 700; letter-spacing: 0.08em; background: rgba(74, 222, 128, 0.15); border: 1px solid rgba(74, 222, 128, 0.4); padding: 1px 6px; border-radius: 4px;">✓ SYNCED</span>` : ''}
         </div>
         <button id="btn-skip-tutorial" style="
           background: none;

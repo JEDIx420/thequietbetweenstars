@@ -40,6 +40,8 @@ export class SpaceScene {
   // Solar illumination & corona
   public sunGroup: THREE.Group;
   public sunDirLight: THREE.DirectionalLight;
+  private hemiLight: THREE.HemisphereLight;
+  private celestialRimLight: THREE.DirectionalLight;
   public sunPos = new THREE.Vector3(1200, 500, -2200);
   private sunCore: THREE.Mesh;
   private sunSurfaceTexture: THREE.CanvasTexture | null = null;
@@ -176,11 +178,18 @@ export class SpaceScene {
     this.warpTunnelGroup.visible = false;
     this.backgroundRoot.add(this.warpTunnelGroup);
 
-    // 2. Ambient and Key Directional Lighting
-    const ambient = new THREE.AmbientLight(0x1a2236, 1.4);
+    // 2. Ambient, Hemisphere, and Key Directional Lighting
+    const ambient = new THREE.AmbientLight(0x223249, 1.25);
     this.worldRoot.add(ambient);
 
-    this.sunDirLight = new THREE.DirectionalLight(0xfff3d6, 2.2);
+    this.hemiLight = new THREE.HemisphereLight(0xbae6fd, 0x1e1b4b, 1.2);
+    this.worldRoot.add(this.hemiLight);
+
+    this.celestialRimLight = new THREE.DirectionalLight(0x7dd3fc, 0.85);
+    this.celestialRimLight.position.set(-900, 1100, -1200);
+    this.worldRoot.add(this.celestialRimLight);
+
+    this.sunDirLight = new THREE.DirectionalLight(0xfff3d6, 2.4);
     this.sunDirLight.position.copy(this.sunPos);
     this.worldRoot.add(this.sunDirLight);
 
@@ -501,6 +510,7 @@ export class SpaceScene {
     // 1. Shift celestial 3D groups directly
     this.sunGroup.position.add(offset);
     this.sunDirLight.position.add(offset);
+    this.celestialRimLight.position.add(offset);
     this.aureliaGroup.position.add(offset);
     this.zephyrGroup.position.add(offset);
 
@@ -1133,6 +1143,8 @@ export class SpaceScene {
     this.sunFlares.material.dispose();
     this.sunLight.dispose();
     this.sunDirLight.dispose();
+    this.hemiLight.dispose();
+    this.celestialRimLight.dispose();
 
     this.scanWave.geometry.dispose();
     (this.scanWave.material as THREE.Material).dispose();

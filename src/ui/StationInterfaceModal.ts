@@ -678,85 +678,214 @@ export class StationInterfaceModal {
       }
 
       case 'comms': {
+        const isShip = !isStation;
+        const vessel = isShip ? (this.target as NamedVessel) : null;
+        const captainName = isShip ? (vessel?.captainName || 'Commander') : 'Station Flight Control';
+        const targetTitle = isShip ? `VESSEL COMMS // ${this.target.name}` : `STATION LINK // ${this.target.name}`;
+        const faction = (this.target as any).faction || (this.target as any).species || 'Independent Coalition';
+        const vArch = vessel?.archetype;
+        const avatarEmoji = isStation ? '🛰️' : vArch === 'ORGANIC_BIO' ? '👾' : vArch === 'INDUSTRIAL_HAULER' ? '⚓' : vArch === 'CATHEDRAL_CAPITAL' ? '🏛️' : '🧑‍🚀';
+
         return `
-          <div style="display: flex; flex-direction: column; gap: 14px; height: 100%;">
-            <!-- Transmission Feed -->
-            <div class="modal-scrollable" data-scrollable="true" style="
-              flex: 1;
-              min-height: 220px;
-              max-height: 260px;
-              background: rgba(3, 7, 18, 0.8);
-              border: 1px solid rgba(255, 255, 255, 0.08);
+          <div style="display: flex; gap: 16px; height: 100%; min-height: 380px;">
+            <!-- Left Column: Holographic Commander / Controller Viewport -->
+            <div style="
+              flex: 0 0 240px;
+              width: 240px;
+              background: rgba(4, 9, 20, 0.88);
+              border: 1px solid rgba(56, 189, 248, 0.28);
               border-radius: 8px;
-              padding: 14px 16px;
-              overflow-y: auto;
-              -webkit-overflow-scrolling: touch;
-              touch-action: pan-y;
+              padding: 14px;
               display: flex;
               flex-direction: column;
-              gap: 10px;
+              gap: 12px;
+              box-sizing: border-box;
             ">
-              ${this.commHistory
-                .map(
-                  (msg) => `
-                <div style="font-size: 0.78rem; line-height: 1.45;">
-                  <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-                    <span style="color: ${msg.sender.startsWith('PILOT') ? '#7dd3fc' : '#38bdf8'}; font-weight: 700; font-size: 0.72rem;">
-                      [${msg.sender}]
-                    </span>
-                    <span style="color: #64748b; font-size: 0.68rem;">${msg.time}</span>
-                  </div>
-                  <div style="color: #e2e8f0; padding-left: 6px; border-left: 2px solid rgba(56, 189, 248, 0.4);">
-                    ${msg.text}
-                  </div>
+              <!-- Holographic CRT Viewport -->
+              <div style="
+                position: relative;
+                height: 145px;
+                background: radial-gradient(circle at 50% 50%, rgba(14, 165, 233, 0.2) 0%, rgba(3, 7, 18, 0.98) 100%);
+                border: 1px solid rgba(56, 189, 248, 0.45);
+                border-radius: 6px;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                box-shadow: inset 0 0 20px rgba(56, 189, 248, 0.2);
+              ">
+                <!-- Scanline FX -->
+                <div style="
+                  position: absolute;
+                  inset: 0;
+                  background: repeating-linear-gradient(0deg, rgba(0,0,0,0.18) 0px, rgba(0,0,0,0.18) 2px, transparent 2px, transparent 4px);
+                  pointer-events: none;
+                "></div>
+
+                <div style="font-size: 44px; filter: drop-shadow(0 0 14px rgba(56, 189, 248, 0.8));">
+                  ${avatarEmoji}
                 </div>
-              `
-                )
-                .join('')}
+
+                <div style="
+                  margin-top: 6px;
+                  font-size: 9.5px;
+                  font-weight: 700;
+                  letter-spacing: 0.1em;
+                  color: #7dd3fc;
+                  text-transform: uppercase;
+                  background: rgba(3, 7, 18, 0.85);
+                  border: 1px solid rgba(56, 189, 248, 0.35);
+                  padding: 2px 8px;
+                  border-radius: 4px;
+                ">
+                  ${captainName}
+                </div>
+
+                <div style="position: absolute; bottom: 4px; font-size: 7.5px; color: #64748b; font-family: ui-monospace, monospace; letter-spacing: 0.05em;">
+                  FREQ: 1420.405 MHz // CARRIER LOCK
+                </div>
+              </div>
+
+              <!-- Animated Frequency Equalizer -->
+              <div style="display: flex; align-items: flex-end; justify-content: center; gap: 4px; height: 16px; padding: 0 8px;">
+                <span style="display:inline-block; width:3px; height:60%; background:#38bdf8; border-radius:2px;"></span>
+                <span style="display:inline-block; width:3px; height:85%; background:#38bdf8; border-radius:2px;"></span>
+                <span style="display:inline-block; width:3px; height:40%; background:#38bdf8; border-radius:2px;"></span>
+                <span style="display:inline-block; width:3px; height:100%; background:#4ade80; border-radius:2px;"></span>
+                <span style="display:inline-block; width:3px; height:75%; background:#38bdf8; border-radius:2px;"></span>
+                <span style="display:inline-block; width:3px; height:50%; background:#38bdf8; border-radius:2px;"></span>
+                <span style="display:inline-block; width:3px; height:90%; background:#4ade80; border-radius:2px;"></span>
+                <span style="display:inline-block; width:3px; height:65%; background:#38bdf8; border-radius:2px;"></span>
+              </div>
+
+              <!-- Tactical Comms Telemetry -->
+              <div style="font-size: 8.5px; line-height: 1.6; color: #94a3b8; font-family: ui-monospace, monospace;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 2px;">
+                  <span>FEED:</span>
+                  <span style="color: #4ade80; font-weight: 700;">QUANTUM LINK</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                  <span>CLASS:</span>
+                  <span style="color: #7dd3fc;">${archetype}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                  <span>FACTION:</span>
+                  <span style="color: #e2e8f0;">${faction}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding-top: 2px;">
+                  <span>CLEARANCE:</span>
+                  <span style="color: #facc15; font-weight: 700;">ALPHA-9 OK</span>
+                </div>
+              </div>
             </div>
 
-            <!-- Interactive Transmission Queries -->
-            <div>
-              <div style="font-size: 0.72rem; color: #94a3b8; letter-spacing: 0.08em; margin-bottom: 8px; text-transform: uppercase;">
-                SELECT INQUIRY PACKET TO TRANSMIT:
+            <!-- Right Column: Subspace Transmission Feed & Interactive Responses -->
+            <div style="flex: 1; min-width: 280px; display: flex; flex-direction: column; gap: 10px; height: 100%;">
+              <div style="font-size: 0.72rem; color: #7dd3fc; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700;">
+                📡 ${targetTitle}
               </div>
-              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button class="btn-comms-query" data-query="traffic_advisory" style="
-                  background: rgba(56, 189, 248, 0.12);
-                  border: 1px solid rgba(56, 189, 248, 0.35);
-                  color: #e0f2fe;
-                  padding: 8px 12px;
-                  border-radius: 6px;
-                  font-size: 0.72rem;
-                  cursor: pointer;
-                  font-family: inherit;
-                ">
-                  [📡 Navigational Hazard Advisory]
-                </button>
-                <button class="btn-comms-query" data-query="trade_routes" style="
-                  background: rgba(56, 189, 248, 0.12);
-                  border: 1px solid rgba(56, 189, 248, 0.35);
-                  color: #e0f2fe;
-                  padding: 8px 12px;
-                  border-radius: 6px;
-                  font-size: 0.72rem;
-                  cursor: pointer;
-                  font-family: inherit;
-                ">
-                  [📈 Local Trade Currents]
-                </button>
-                <button class="btn-comms-query" data-query="customs_lore" style="
-                  background: rgba(56, 189, 248, 0.12);
-                  border: 1px solid rgba(56, 189, 248, 0.35);
-                  color: #e0f2fe;
-                  padding: 8px 12px;
-                  border-radius: 6px;
-                  font-size: 0.72rem;
-                  cursor: pointer;
-                  font-family: inherit;
-                ">
-                  [📜 Station History & Lore]
-                </button>
+
+              <!-- Transmission Feed Box -->
+              <div class="modal-scrollable" data-scrollable="true" style="
+                flex: 1;
+                min-height: 200px;
+                max-height: 250px;
+                background: rgba(2, 6, 18, 0.85);
+                border: 1px solid rgba(56, 189, 248, 0.2);
+                border-radius: 8px;
+                padding: 12px 14px;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                touch-action: pan-y;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+              ">
+                ${this.commHistory
+                  .map(
+                    (msg) => `
+                  <div style="font-size: 0.76rem; line-height: 1.45;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                      <span style="color: ${msg.sender.startsWith('PILOT') ? '#7dd3fc' : '#4ade80'}; font-weight: 700; font-size: 0.70rem;">
+                        ${msg.sender.startsWith('PILOT') ? '🚀' : '📡'} [${msg.sender}]
+                      </span>
+                      <span style="color: #64748b; font-size: 0.65rem;">${msg.time}</span>
+                    </div>
+                    <div style="
+                      color: #e2e8f0;
+                      padding: 6px 10px;
+                      background: ${msg.sender.startsWith('PILOT') ? 'rgba(56, 189, 248, 0.08)' : 'rgba(74, 222, 128, 0.06)'};
+                      border-left: 2px solid ${msg.sender.startsWith('PILOT') ? '#38bdf8' : '#4ade80'};
+                      border-radius: 0 6px 6px 0;
+                    ">
+                      ${msg.text}
+                    </div>
+                  </div>
+                `
+                  )
+                  .join('')}
+              </div>
+
+              <!-- Interactive Dialogue Inquiries -->
+              <div>
+                <div style="font-size: 0.68rem; color: #94a3b8; letter-spacing: 0.08em; margin-bottom: 6px; text-transform: uppercase;">
+                  TRANSMIT TACTICAL INQUIRY:
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button class="btn-comms-query" data-query="traffic_advisory" style="
+                    background: rgba(56, 189, 248, 0.12);
+                    border: 1px solid rgba(56, 189, 248, 0.4);
+                    color: #e0f2fe;
+                    padding: 7px 11px;
+                    border-radius: 6px;
+                    font-size: 0.70rem;
+                    cursor: pointer;
+                    font-family: inherit;
+                    transition: background 0.15s ease;
+                  ">
+                    ${isShip ? '📡 Tactical Route & Threat Scan' : '📡 Flight Control Approach Vectors'}
+                  </button>
+                  <button class="btn-comms-query" data-query="trade_routes" style="
+                    background: rgba(56, 189, 248, 0.12);
+                    border: 1px solid rgba(56, 189, 248, 0.4);
+                    color: #e0f2fe;
+                    padding: 7px 11px;
+                    border-radius: 6px;
+                    font-size: 0.70rem;
+                    cursor: pointer;
+                    font-family: inherit;
+                    transition: background 0.15s ease;
+                  ">
+                    ${isShip ? '📈 Convoy Trade Intel & Rumors' : '📈 Commodity Demand Forecast'}
+                  </button>
+                  <button class="btn-comms-query" data-query="customs_lore" style="
+                    background: rgba(56, 189, 248, 0.12);
+                    border: 1px solid rgba(56, 189, 248, 0.4);
+                    color: #e0f2fe;
+                    padding: 7px 11px;
+                    border-radius: 6px;
+                    font-size: 0.70rem;
+                    cursor: pointer;
+                    font-family: inherit;
+                    transition: background 0.15s ease;
+                  ">
+                    ${isShip ? '📜 Vessel Charter & Mission Log' : '📜 Outpost History & Charter'}
+                  </button>
+                  <button class="btn-comms-query" data-query="auxiliary_support" style="
+                    background: rgba(74, 222, 128, 0.12);
+                    border: 1px solid rgba(74, 222, 128, 0.4);
+                    color: #bbf7d0;
+                    padding: 7px 11px;
+                    border-radius: 6px;
+                    font-size: 0.70rem;
+                    cursor: pointer;
+                    font-family: inherit;
+                    transition: background 0.15s ease;
+                  ">
+                    ${isShip ? '⚡ Telemetry Sync & Shield Check' : '⚡ Umbilical Power & Diagnostics'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -920,18 +1049,43 @@ export class StationInterfaceModal {
 
     switch (queryType) {
       case 'traffic_advisory':
-        pilotText = 'Requesting navigational hazard advisory for local orbital planes.';
-        replyText = 'Local gravity gradients nominal. Maintain cruise sub-light velocity (<160 m/s) when approaching planetary atmosphere entry envelopes.';
+        if (isStation) {
+          pilotText = 'Flight Control, requesting local orbital approach vectors and hazard report.';
+          replyText = 'Docking corridor alpha clear. Planetary gravity wells steady. All approaching pilots are advised to decelerate below 180 m/s inside station approach perimeter.';
+        } else {
+          pilotText = 'Requesting tactical route scan and deep-space threat analysis.';
+          replyText = 'Long-range sensors detect light debris in Lagrange points. Watch for gravimetric shears when warping through dense asteroid bands.';
+        }
         break;
 
       case 'trade_routes':
-        pilotText = 'Requesting economic trade current intelligence.';
-        replyText = 'High demand reported for refined alloys and plasma crystals in research array sectors. Planetary mineral ores can be smelted in the on-site fabricator for higher profit margins.';
+        if (isStation) {
+          pilotText = 'Requesting station commodity manifest and regional demand forecast.';
+          replyText = 'Station holds are low on high-grade minerals. Smelted metals and bio-catalysts fetch peak prices at our commodity exchange today.';
+        } else {
+          pilotText = 'Requesting merchant convoy intelligence and high-yield trade manifests.';
+          replyText = 'Frontier research stations pay top credits for Exotic Bio-Samples and Refined Hyper-Alloys. Planetary mineral ores can be smelted in station fabricators for maximum yield.';
+        }
         break;
 
       case 'customs_lore':
-        pilotText = 'Requesting outpost background and historical telemetry.';
-        replyText = this.target?.lore || 'Operating under independent charter, charting the quiet spaces between frontier systems.';
+        if (isStation) {
+          pilotText = 'Requesting station history and administrative charter archives.';
+          replyText = this.target?.lore || 'Constructed during the Pioneer Expansion, this station serves as a deep-space refuge for all lawful navigators.';
+        } else {
+          pilotText = 'Inquiring about your vessel charter, crew orders, and mission history.';
+          replyText = this.target?.lore || 'We chart the dark corridors between frontier systems, trading with those who dare push past known space.';
+        }
+        break;
+
+      case 'auxiliary_support':
+        if (isStation) {
+          pilotText = 'Requesting station automated diagnostic sweep and umbilical power hookup.';
+          replyText = 'Automated umbilical connected. Thruster telemetry recalibrated. Docking recharge active. Station facilities are at your service.';
+        } else {
+          pilotText = 'Requesting ship-to-ship telemetry sync and auxiliary shield diagnostic.';
+          replyText = 'Telemetry handshake verified. Navigational vectors synchronized. All sub-space conduits nominal. May the solar winds favour your journey, Commander.';
+        }
         break;
     }
 

@@ -165,16 +165,19 @@ export class SpaceTrafficDirector {
     let name = '';
     let commMessage = '';
 
-    // Shared Materials for Emissive Navigation Lights
+    // Shared Materials for Emissive Navigation Lights and Windows
     const portMat = SpaceTrafficDirector.getSharedMat('mat_port', () => new THREE.MeshBasicMaterial({ color: 0xef4444 }));
     const starMat = SpaceTrafficDirector.getSharedMat('mat_starboard', () => new THREE.MeshBasicMaterial({ color: 0x22c55e }));
     const beaconMat = new THREE.MeshBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.9 });
     const strobeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.1 });
     const glowMat = SpaceTrafficDirector.getSharedMat('mat_glow', () => new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
     const windowMat = SpaceTrafficDirector.getSharedMat('mat_window', () => new THREE.MeshBasicMaterial({ color: 0xe0f2fe }));
+    const warmWindowMat = SpaceTrafficDirector.getSharedMat('mat_warm_win', () => new THREE.MeshBasicMaterial({ color: 0xfef08a }));
+    const sensorEmitterMat = SpaceTrafficDirector.getSharedMat('mat_sensor_emitter', () => new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+    const hazardMat = SpaceTrafficDirector.getSharedMat('mat_hazard', () => new THREE.MeshBasicMaterial({ color: 0xfbbf24 }));
 
-    const navLightGeo = SpaceTrafficDirector.getSharedGeo('geo_nav_light', () => new THREE.SphereGeometry(0.5, 6, 4));
-    const engineGeo = SpaceTrafficDirector.getSharedGeo('geo_engine_glow', () => new THREE.SphereGeometry(1.0, 6, 6));
+    const navLightGeo = SpaceTrafficDirector.getSharedGeo('geo_nav_light', () => new THREE.SphereGeometry(0.55, 6, 4));
+    const engineGeo = SpaceTrafficDirector.getSharedGeo('geo_engine_glow', () => new THREE.SphereGeometry(1.2, 6, 6));
 
     const portMesh = new THREE.Mesh(navLightGeo, portMat);
     const starboardMesh = new THREE.Mesh(navLightGeo, starMat);
@@ -189,70 +192,120 @@ export class SpaceTrafficDirector {
         speed = 20;
 
         const hullMat = SpaceTrafficDirector.getSharedMat('freighter_hull', () => new THREE.MeshStandardMaterial({
-          color: 0x1e293b,
-          roughness: 0.35,
-          metalness: 0.85,
+          color: 0x475569,
+          roughness: 0.52,
+          metalness: 0.32,
+          emissive: 0x0f172a,
+          emissiveIntensity: 0.35,
           flatShading: true,
         }));
-        const containerMat = SpaceTrafficDirector.getSharedMat('freighter_container', () => new THREE.MeshStandardMaterial({
-          color: 0xf59e0b,
-          roughness: 0.4,
-          metalness: 0.5,
+        const spineMat = SpaceTrafficDirector.getSharedMat('freighter_spine_mat', () => new THREE.MeshStandardMaterial({
+          color: 0x334155,
+          roughness: 0.58,
+          metalness: 0.38,
+          emissive: 0x090d16,
+          emissiveIntensity: 0.25,
+        }));
+        const containerMatAmber = SpaceTrafficDirector.getSharedMat('freighter_container_amber', () => new THREE.MeshStandardMaterial({
+          color: 0xd97706,
+          roughness: 0.45,
+          metalness: 0.25,
+          emissive: 0x451a03,
+          emissiveIntensity: 0.35,
+        }));
+        const containerMatBlue = SpaceTrafficDirector.getSharedMat('freighter_container_blue', () => new THREE.MeshStandardMaterial({
+          color: 0x0284c7,
+          roughness: 0.45,
+          metalness: 0.25,
+          emissive: 0x0369a1,
+          emissiveIntensity: 0.35,
         }));
 
-        const spineGeo = SpaceTrafficDirector.getSharedGeo('freighter_spine', () => new THREE.BoxGeometry(4.8, 4.8, 52));
-        const spine = new THREE.Mesh(spineGeo, hullMat);
+        // Heavy central keel spine
+        const spineGeo = SpaceTrafficDirector.getSharedGeo('freighter_spine', () => new THREE.BoxGeometry(4.2, 4.2, 54));
+        const spine = new THREE.Mesh(spineGeo, spineMat);
         group.add(spine);
 
-        const containerGeo = SpaceTrafficDirector.getSharedGeo('freighter_container_box', () => new THREE.BoxGeometry(3.8, 3.8, 6.2));
+        // Gantry cross-ribs
+        const ribGeo = SpaceTrafficDirector.getSharedGeo('freighter_rib', () => new THREE.BoxGeometry(13.5, 5.0, 1.6));
+        for (let z = -20; z <= 18; z += 9) {
+          const rib = new THREE.Mesh(ribGeo, hullMat);
+          rib.position.set(0, 0, z);
+          group.add(rib);
+        }
+
+        // Modular cargo pods with alternating colors and latch lights
+        const containerGeo = SpaceTrafficDirector.getSharedGeo('freighter_container_box', () => new THREE.BoxGeometry(3.8, 3.8, 6.8));
+        const latchGeo = SpaceTrafficDirector.getSharedGeo('freighter_latch_strip', () => new THREE.BoxGeometry(0.3, 0.4, 5.5));
+        let podIdx = 0;
         for (let z = -18; z <= 18; z += 9) {
-          for (let side of [-4.8, 4.8]) {
-            const container = new THREE.Mesh(containerGeo, containerMat);
+          for (const side of [-5.0, 5.0]) {
+            const isAmber = (podIdx % 2 === 0);
+            podIdx++;
+            const container = new THREE.Mesh(containerGeo, isAmber ? containerMatAmber : containerMatBlue);
             container.position.set(side, 0, z);
             group.add(container);
+
+            const latch = new THREE.Mesh(latchGeo, isAmber ? hazardMat : glowMat);
+            latch.position.set(side + (side > 0 ? 2.0 : -2.0), 0, z);
+            group.add(latch);
           }
         }
 
+        // Forward command superstructure
         const bridgeGeo = SpaceTrafficDirector.getSharedGeo('freighter_bridge', () => {
-          const g = new THREE.ConeGeometry(4.2, 8.5, 4);
+          const g = new THREE.ConeGeometry(5.0, 10.0, 6);
           g.rotateX(-Math.PI / 2);
           return g;
         });
         const bridge = new THREE.Mesh(bridgeGeo, hullMat);
-        bridge.position.set(0, 3.8, -27);
+        bridge.position.set(0, 3.2, -28);
         group.add(bridge);
 
-        const windowStripGeo = SpaceTrafficDirector.getSharedGeo('freighter_window', () => new THREE.BoxGeometry(3.2, 0.8, 0.4));
-        const windowStrip = new THREE.Mesh(windowStripGeo, windowMat);
-        windowStrip.position.set(0, 4.2, -29);
+        // Bridge panoramic observation window deck
+        const windowStripGeo = SpaceTrafficDirector.getSharedGeo('freighter_window', () => new THREE.BoxGeometry(4.0, 0.9, 0.8));
+        const windowStrip = new THREE.Mesh(windowStripGeo, warmWindowMat);
+        windowStrip.position.set(0, 4.4, -30.5);
         group.add(windowStrip);
 
+        // Antenna comms mast
+        const mastGeo = SpaceTrafficDirector.getSharedGeo('freighter_mast', () => new THREE.CylinderGeometry(0.15, 0.25, 4.5, 6));
+        const mast = new THREE.Mesh(mastGeo, spineMat);
+        mast.position.set(0, 7.5, -28);
+        group.add(mast);
+
+        // Heavy aft twin thruster blocks with cooling radiator panels
         const thrusterGeo = SpaceTrafficDirector.getSharedGeo('freighter_thruster', () => {
-          const g = new THREE.CylinderGeometry(2.4, 3.0, 6.5, 8);
+          const g = new THREE.CylinderGeometry(2.6, 3.4, 7.5, 10);
           g.rotateX(Math.PI / 2);
           return g;
         });
+        const radiatorGeo = SpaceTrafficDirector.getSharedGeo('freighter_radiator', () => new THREE.BoxGeometry(0.4, 4.2, 6.0));
         const amberPlumeMat = SpaceTrafficDirector.getSharedMat('plume_amber', () => new THREE.MeshBasicMaterial({ color: 0xfbbf24 }));
         const plumeGeo = SpaceTrafficDirector.getSharedGeo('freighter_plume', () => {
-          const g = new THREE.ConeGeometry(2.0, 7.0, 8);
+          const g = new THREE.ConeGeometry(2.2, 9.0, 8);
           g.rotateX(Math.PI / 2);
           return g;
         });
 
-        for (let x of [-3.8, 3.8]) {
+        for (const x of [-4.2, 4.2]) {
           const thruster = new THREE.Mesh(thrusterGeo, hullMat);
-          thruster.position.set(x, 0, 27);
+          thruster.position.set(x, 0, 28);
           group.add(thruster);
 
+          const rad = new THREE.Mesh(radiatorGeo, sensorEmitterMat);
+          rad.position.set(x > 0 ? x + 3.0 : x - 3.0, 1.0, 27);
+          group.add(rad);
+
           const plume = new THREE.Mesh(plumeGeo, amberPlumeMat);
-          plume.position.set(x, 0, 32);
+          plume.position.set(x, 0, 34);
           group.add(plume);
         }
 
-        portMesh.position.set(-7, 2, -10);
-        starboardMesh.position.set(7, 2, -10);
-        beaconMesh.position.set(0, 6.5, -27);
-        strobeMesh.position.set(0, 6.5, 27);
+        portMesh.position.set(-8.5, 2.2, -10);
+        starboardMesh.position.set(8.5, 2.2, -10);
+        beaconMesh.position.set(0, 9.8, -28);
+        strobeMesh.position.set(0, 5.5, 28);
         group.add(portMesh, starboardMesh, beaconMesh, strobeMesh);
         break;
       }
@@ -263,54 +316,93 @@ export class SpaceTrafficDirector {
         speed = 40;
 
         const cutterMat = SpaceTrafficDirector.getSharedMat('cutter_hull', () => new THREE.MeshStandardMaterial({
-          color: 0x06b6d4,
-          roughness: 0.25,
-          metalness: 0.9,
+          color: 0x0ea5e9,
+          roughness: 0.42,
+          metalness: 0.30,
+          emissive: 0x0369a1,
+          emissiveIntensity: 0.4,
           flatShading: true,
         }));
         const wingMat = SpaceTrafficDirector.getSharedMat('cutter_wings', () => new THREE.MeshStandardMaterial({
-          color: 0xf8fafc,
-          roughness: 0.3,
-          metalness: 0.7,
+          color: 0xe2e8f0,
+          roughness: 0.38,
+          metalness: 0.25,
+          emissive: 0x334155,
+          emissiveIntensity: 0.25,
         }));
 
+        // Sleek supersonic lifting body fuselage
         const hullGeo = SpaceTrafficDirector.getSharedGeo('cutter_hull', () => {
-          const g = new THREE.ConeGeometry(3.4, 22.0, 4);
+          const g = new THREE.ConeGeometry(3.2, 24.0, 6);
           g.rotateX(-Math.PI / 2);
           return g;
         });
         const hull = new THREE.Mesh(hullGeo, cutterMat);
         group.add(hull);
 
-        const wingGeo = SpaceTrafficDirector.getSharedGeo('cutter_wing', () => new THREE.BoxGeometry(16.0, 0.4, 7.0));
+        // Forward sensor lance spike
+        const lanceGeo = SpaceTrafficDirector.getSharedGeo('cutter_lance', () => {
+          const g = new THREE.CylinderGeometry(0.08, 0.25, 7.0, 6);
+          g.rotateX(-Math.PI / 2);
+          return g;
+        });
+        const lance = new THREE.Mesh(lanceGeo, sensorEmitterMat);
+        lance.position.set(0, 0, -15);
+        group.add(lance);
+
+        // Swept delta wings with angled winglets
+        const wingGeo = SpaceTrafficDirector.getSharedGeo('cutter_wing', () => new THREE.BoxGeometry(18.0, 0.45, 8.0));
         const wings = new THREE.Mesh(wingGeo, wingMat);
-        wings.position.set(0, 0, 3);
+        wings.position.set(0, 0, 4);
         group.add(wings);
 
-        const canardGeo = SpaceTrafficDirector.getSharedGeo('cutter_canard', () => new THREE.BoxGeometry(6.5, 0.25, 2.8));
+        // Winglet vertical tips
+        const wingletGeo = SpaceTrafficDirector.getSharedGeo('cutter_winglet', () => new THREE.BoxGeometry(0.3, 3.2, 4.0));
+        for (const side of [-8.9, 8.9]) {
+          const w = new THREE.Mesh(wingletGeo, cutterMat);
+          w.position.set(side, 1.2, 5);
+          group.add(w);
+        }
+
+        // Forward canards
+        const canardGeo = SpaceTrafficDirector.getSharedGeo('cutter_canard', () => new THREE.BoxGeometry(7.0, 0.3, 3.2));
         const canards = new THREE.Mesh(canardGeo, cutterMat);
         canards.position.set(0, 0.6, -7);
         group.add(canards);
 
-        const canopyGeo = SpaceTrafficDirector.getSharedGeo('cutter_canopy', () => new THREE.BoxGeometry(2.0, 1.2, 5.0));
-        const canopy = new THREE.Mesh(canopyGeo, windowMat);
-        canopy.position.set(0, 1.4, -4);
+        // Glowing pilot canopy with HUD illumination
+        const canopyGeo = SpaceTrafficDirector.getSharedGeo('cutter_canopy', () => new THREE.BoxGeometry(2.2, 1.3, 5.5));
+        const canopy = new THREE.Mesh(canopyGeo, glowMat);
+        canopy.position.set(0, 1.5, -4);
         group.add(canopy);
 
+        // Twin ion thruster nozzles
         const cyanPlumeMat = SpaceTrafficDirector.getSharedMat('plume_cyan', () => new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
         const plumeGeo = SpaceTrafficDirector.getSharedGeo('cutter_plume', () => {
-          const g = new THREE.ConeGeometry(1.6, 9.0, 8);
+          const g = new THREE.ConeGeometry(1.4, 10.0, 8);
           g.rotateX(Math.PI / 2);
           return g;
         });
-        const plume = new THREE.Mesh(plumeGeo, cyanPlumeMat);
-        plume.position.set(0, 0, 14);
-        group.add(plume);
 
-        portMesh.position.set(-8.2, 0.4, 4);
-        starboardMesh.position.set(8.2, 0.4, 4);
-        beaconMesh.position.set(0, 2.2, -4);
-        strobeMesh.position.set(0, 1.2, 11);
+        for (const x of [-1.8, 1.8]) {
+          const nozzleGeo = SpaceTrafficDirector.getSharedGeo('cutter_nozzle', () => {
+            const g = new THREE.CylinderGeometry(1.1, 1.5, 3.0, 8);
+            g.rotateX(Math.PI / 2);
+            return g;
+          });
+          const nozzle = new THREE.Mesh(nozzleGeo, cutterMat);
+          nozzle.position.set(x, 0.2, 11);
+          group.add(nozzle);
+
+          const plume = new THREE.Mesh(plumeGeo, cyanPlumeMat);
+          plume.position.set(x, 0.2, 16);
+          group.add(plume);
+        }
+
+        portMesh.position.set(-9.2, 2.5, 5);
+        starboardMesh.position.set(9.2, 2.5, 5);
+        beaconMesh.position.set(0, 2.8, -4);
+        strobeMesh.position.set(0, 2.2, 12);
         group.add(portMesh, starboardMesh, beaconMesh, strobeMesh);
         break;
       }
@@ -322,52 +414,124 @@ export class SpaceTrafficDirector {
         speed = 28;
 
         const hullMat = SpaceTrafficDirector.getSharedMat('corvette_hull', () => new THREE.MeshStandardMaterial({
-          color: 0x3b82f6,
-          roughness: 0.3,
-          metalness: 0.8,
+          color: 0x38bdf8,
+          roughness: 0.46,
+          metalness: 0.30,
+          emissive: 0x075985,
+          emissiveIntensity: 0.45,
           flatShading: true,
         }));
+        const secondaryHullMat = SpaceTrafficDirector.getSharedMat('corvette_secondary', () => new THREE.MeshStandardMaterial({
+          color: 0x1e293b,
+          roughness: 0.55,
+          metalness: 0.30,
+          emissive: 0x0f172a,
+          emissiveIntensity: 0.35,
+        }));
         const ringMat = SpaceTrafficDirector.getSharedMat('corvette_ring', () => new THREE.MeshStandardMaterial({
-          color: 0x67e8f9,
-          roughness: 0.2,
-          metalness: 0.9,
+          color: 0x06b6d4,
+          roughness: 0.35,
+          metalness: 0.40,
+          emissive: 0x0891b2,
+          emissiveIntensity: 0.8,
         }));
 
-        const hullGeo = SpaceTrafficDirector.getSharedGeo('corvette_body', () => new THREE.CylinderGeometry(2.8, 3.2, 28, 8));
+        // Elongated streamlined scientific research fuselage
+        const hullGeo = SpaceTrafficDirector.getSharedGeo('corvette_body', () => new THREE.CylinderGeometry(2.8, 3.6, 28, 12));
         const body = new THREE.Mesh(hullGeo, hullMat);
         body.rotation.x = Math.PI / 2;
         group.add(body);
 
-        const discGeo = SpaceTrafficDirector.getSharedGeo('corvette_disc', () => new THREE.CylinderGeometry(8.5, 8.5, 1.8, 16));
+        // Forward primary sensor saucer disc
+        const discGeo = SpaceTrafficDirector.getSharedGeo('corvette_disc', () => new THREE.CylinderGeometry(9.0, 9.0, 2.2, 20));
         const disc = new THREE.Mesh(discGeo, hullMat);
-        disc.position.set(0, 0, -10);
+        disc.position.set(0, 0, -11);
         disc.rotation.x = Math.PI / 2;
         group.add(disc);
 
-        const ringGeo = SpaceTrafficDirector.getSharedGeo('corvette_grav_ring', () => new THREE.TorusGeometry(6.5, 0.45, 6, 24));
+        // Long forward deep-space resonance probe boom
+        const probeBoomGeo = SpaceTrafficDirector.getSharedGeo('corvette_probe_boom', () => {
+          const g = new THREE.CylinderGeometry(0.2, 0.4, 9.0, 8);
+          g.rotateX(-Math.PI / 2);
+          return g;
+        });
+        const probeBoom = new THREE.Mesh(probeBoomGeo, secondaryHullMat);
+        probeBoom.position.set(0, 0, -16.5);
+        group.add(probeBoom);
+
+        const probeTip = new THREE.Mesh(navLightGeo, sensorEmitterMat);
+        probeTip.position.set(0, 0, -21.2);
+        group.add(probeTip);
+
+        // Glowing panoramic observation bridges (warm research cabins)
+        const warmDeckGeo = SpaceTrafficDirector.getSharedGeo('corvette_warm_bridge', () => new THREE.BoxGeometry(6.4, 0.85, 2.2));
+        const warmDeck = new THREE.Mesh(warmDeckGeo, warmWindowMat);
+        warmDeck.position.set(0, 2.2, -11.2);
+        group.add(warmDeck);
+
+        const labWindowGeo = SpaceTrafficDirector.getSharedGeo('corvette_lab_window', () => new THREE.BoxGeometry(5.2, 0.65, 1.8));
+        const labWindow = new THREE.Mesh(labWindowGeo, windowMat);
+        labWindow.position.set(0, -1.8, -11.0);
+        group.add(labWindow);
+
+        // Midship rotating graviton ring
+        const ringGeo = SpaceTrafficDirector.getSharedGeo('corvette_grav_ring', () => new THREE.TorusGeometry(7.2, 0.6, 8, 28));
         const ring = new THREE.Mesh(ringGeo, ringMat);
         ring.position.set(0, 0, 4);
         group.add(ring);
 
-        const domeGeo = SpaceTrafficDirector.getSharedGeo('corvette_dome', () => new THREE.SphereGeometry(3.2, 12, 8));
-        const bridge = new THREE.Mesh(domeGeo, windowMat);
-        bridge.position.set(0, 1.6, -11);
-        group.add(bridge);
+        // Lateral outrigger sensor nacelles on angled pylons
+        const pylonGeo = SpaceTrafficDirector.getSharedGeo('corvette_pylon', () => new THREE.BoxGeometry(16.0, 0.6, 3.2));
+        const pylons = new THREE.Mesh(pylonGeo, secondaryHullMat);
+        pylons.position.set(0, 0.5, 6);
+        group.add(pylons);
 
-        const whitePlumeMat = SpaceTrafficDirector.getSharedMat('plume_white', () => new THREE.MeshBasicMaterial({ color: 0xe0f2fe }));
-        const plumeGeo = SpaceTrafficDirector.getSharedGeo('corvette_plume', () => {
-          const g = new THREE.ConeGeometry(1.8, 7.5, 8);
+        const nacelleGeo = SpaceTrafficDirector.getSharedGeo('corvette_nacelle', () => {
+          const g = new THREE.CylinderGeometry(1.3, 1.6, 12.0, 8);
           g.rotateX(Math.PI / 2);
           return g;
         });
-        const plume = new THREE.Mesh(plumeGeo, whitePlumeMat);
-        plume.position.set(0, 0, 17);
-        group.add(plume);
+        const nacelleRadiatorGeo = SpaceTrafficDirector.getSharedGeo('corvette_nacelle_rad', () => new THREE.BoxGeometry(0.3, 2.2, 8.0));
 
-        portMesh.position.set(-8.6, 0, -10);
-        starboardMesh.position.set(8.6, 0, -10);
-        beaconMesh.position.set(0, 3.8, -10);
-        strobeMesh.position.set(0, 4.2, 4);
+        for (const x of [-8.0, 8.0]) {
+          const nacelle = new THREE.Mesh(nacelleGeo, hullMat);
+          nacelle.position.set(x, 0.5, 6);
+          group.add(nacelle);
+
+          const rad = new THREE.Mesh(nacelleRadiatorGeo, sensorEmitterMat);
+          rad.position.set(x > 0 ? x + 1.2 : x - 1.2, 0.5, 6);
+          group.add(rad);
+        }
+
+        // Upper communications dome
+        const domeGeo = SpaceTrafficDirector.getSharedGeo('corvette_dome', () => new THREE.SphereGeometry(2.4, 12, 8));
+        const bridge = new THREE.Mesh(domeGeo, glowMat);
+        bridge.position.set(0, 2.4, -4);
+        group.add(bridge);
+
+        // Triple aft ion thruster exhaust plumes
+        const whitePlumeMat = SpaceTrafficDirector.getSharedMat('plume_white', () => new THREE.MeshBasicMaterial({ color: 0x7dd3fc }));
+        const plumeGeo = SpaceTrafficDirector.getSharedGeo('corvette_plume', () => {
+          const g = new THREE.ConeGeometry(1.6, 8.5, 8);
+          g.rotateX(Math.PI / 2);
+          return g;
+        });
+
+        const mainPlume = new THREE.Mesh(plumeGeo, whitePlumeMat);
+        mainPlume.position.set(0, 0, 18);
+        group.add(mainPlume);
+
+        for (const x of [-8.0, 8.0]) {
+          const nacellePlume = new THREE.Mesh(plumeGeo, whitePlumeMat);
+          nacellePlume.scale.set(0.7, 0.7, 0.7);
+          nacellePlume.position.set(x, 0.5, 14);
+          group.add(nacellePlume);
+        }
+
+        portMesh.position.set(-9.4, 0.6, -11);
+        starboardMesh.position.set(9.4, 0.6, -11);
+        beaconMesh.position.set(0, 4.4, -11);
+        strobeMesh.position.set(0, 4.5, 4);
         group.add(portMesh, starboardMesh, beaconMesh, strobeMesh);
         break;
       }

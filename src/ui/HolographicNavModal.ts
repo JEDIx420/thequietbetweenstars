@@ -281,7 +281,7 @@ export class HolographicNavModal {
           ">📍 DESTINATIONS ▾</button>
 
           <!-- 3D Overlay Help Tag -->
-          <div style="position: absolute; bottom: 16px; left: 16px; pointer-events: none; font-size: 11px; color: rgba(148, 163, 184, 0.7); font-family: ui-monospace, monospace;">
+          <div id="holo-current-sector-tag" style="position: absolute; bottom: 16px; left: 16px; pointer-events: none; font-size: 11px; color: rgba(148, 163, 184, 0.9); font-family: ui-monospace, monospace; text-shadow: 0 2px 8px rgba(0,0,0,0.8);">
             CURRENT SECTOR: [${this.playerWorldPos.sector.x}, ${this.playerWorldPos.sector.y}, ${this.playerWorldPos.sector.z}]
           </div>
         </div>
@@ -381,45 +381,114 @@ export class HolographicNavModal {
     this.setupEvents();
   }
 
+  private updateSectorTag(): void {
+    const tag = this.container.querySelector('#holo-current-sector-tag');
+    if (!tag) return;
+    const sx = this.playerWorldPos.sector.x;
+    const sy = this.playerWorldPos.sector.y;
+    const sz = this.playerWorldPos.sector.z;
+    const coreDistSectors = Math.hypot(sx, sy, sz);
+    const coreDistLy = (coreDistSectors * 3.26).toFixed(1);
+
+    let region = 'GALACTIC CORE SYSTEM [SOLARA]';
+    if (coreDistSectors >= 8) region = 'OUTER RIM TERRITORY';
+    else if (coreDistSectors >= 4) region = 'MID-SPIRAL EXPEDITION';
+    else if (coreDistSectors >= 1) region = 'INNER CORE SECTOR';
+
+    const bearingRad = Math.atan2(-sz, -sx);
+    const bearingDeg = Math.round(((bearingRad * 180 / Math.PI) + 360) % 360);
+
+    tag.innerHTML = `
+      <div style="font-weight: 700; color: #38bdf8; letter-spacing: 0.08em; margin-bottom: 2px;">
+        SECTOR: [${sx}, ${sy}, ${sz}] // ${region}
+      </div>
+      <div style="color: #94a3b8; font-size: 10px;">
+        ${coreDistSectors < 0.1 ? '⚡ ANCHORED AT GALACTIC ORIGIN (0,0,0)' : `📍 DISTANCE TO CORE: ${coreDistLy} LY // BEARING: ${bearingDeg}°`}
+      </div>
+    `;
+  }
+
   /**
-   * Build clean holographic polar distance grid on the reference plane
+   * Build galactic cartography sector lattice on the reference plane
+   * Aligns grid lines with integer galactic sector coordinates
    */
   private buildCartographyGrid(): void {
     while (this.gridGroup.children.length > 0) {
       this.gridGroup.remove(this.gridGroup.children[0]);
     }
 
+    const playerSector = this.playerWorldPos.sector;
+    const step = 36.0;
+    const range = 5;
+    const minCoord = -range * step;
+    const maxCoord = range * step;
+
     const gridMat = new THREE.LineBasicMaterial({
       color: 0x0284c7,
       transparent: true,
-      opacity: 0.2,
+      opacity: 0.18,
       depthWrite: false,
     });
 
-    // Concentric range rings: 30, 60, 90, 120 units
-    const radii = [30, 60, 90, 120, 150];
-    for (const r of radii) {
-      const ringGeo = new THREE.BufferGeometry();
-      const points: THREE.Vector3[] = [];
-      const segments = 64;
-      for (let i = 0; i <= segments; i++) {
-        const theta = (i / segments) * Math.PI * 2;
-        points.push(new THREE.Vector3(Math.cos(theta) * r, 0, Math.sin(theta) * r));
+    const axisMat = new THREE.LineBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+    });
+
+    const coreAxisMat = new THREE.LineBasicMaterial({
+      color: 0xf59e0b,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    });
+
+    const gridPoints: THREE.Vector3[] = [];
+    const coreAxisPoints: THREE.Vector3[] = [];
+
+    // X-axis sector lattice lines (aligned to absolute sector X)
+    for (let s = -range; s <= range; s++) {
+      const absSectorX = playerSector.x + s;
+      const x = s * step;
+      if (absSectorX === 0) {
+        coreAxisPoints.push(new THREE.Vector3(x, 0, minCoord), new THREE.Vector3(x, 0, maxCoord));
+      } else {
+        gridPoints.push(new THREE.Vector3(x, 0, minCoord), new THREE.Vector3(x, 0, maxCoord));
       }
-      ringGeo.setFromPoints(points);
-      const ringLine = new THREE.Line(ringGeo, gridMat);
-      this.gridGroup.add(ringLine);
     }
 
-    // Radial crosshair axes
-    const crossGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-150, 0, 0),
-      new THREE.Vector3(150, 0, 0),
-      new THREE.Vector3(0, 0, -150),
-      new THREE.Vector3(0, 0, 150),
-    ]);
-    const crossLine = new THREE.LineSegments(crossGeo, gridMat);
-    this.gridGroup.add(crossLine);
+    // Z-axis sector lattice lines (aligned to absolute sector Z)
+    for (let s = -range; s <= range; s++) {
+      const absSectorZ = playerSector.z + s;
+      const z = s * step;
+      if (absSectorZ === 0) {
+        coreAxisPoints.push(new THREE.Vector3(minCoord, 0, z), new THREE.Vector3(maxCoord, 0, z));
+      } else {
+        gridPoints.push(new THREE.Vector3(minCoord, 0, z), new THREE.Vector3(maxCoord, 0, z));
+      }
+    }
+
+    if (gridPoints.length > 0) {
+      const geo = new THREE.BufferGeometry().setFromPoints(gridPoints);
+      this.gridGroup.add(new THREE.LineSegments(geo, gridMat));
+    }
+
+    if (coreAxisPoints.length > 0) {
+      const coreGeo = new THREE.BufferGeometry().setFromPoints(coreAxisPoints);
+      this.gridGroup.add(new THREE.LineSegments(coreGeo, coreAxisMat));
+    }
+
+    // Local Sensor Radar boundary ring (1 sector jump envelope)
+    const localR = 36.0;
+    const ringGeo = new THREE.BufferGeometry();
+    const ringPts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 64; i++) {
+      const theta = (i / 64) * Math.PI * 2;
+      ringPts.push(new THREE.Vector3(Math.cos(theta) * localR, 0, Math.sin(theta) * localR));
+    }
+    ringGeo.setFromPoints(ringPts);
+    this.gridGroup.add(new THREE.Line(ringGeo, axisMat));
   }
 
   /**
@@ -591,6 +660,12 @@ export class HolographicNavModal {
     }
     this.starNodes = [];
 
+    // 0. Update Sector Grid and Telemetry Overlay for Current Sector
+    this.buildCartographyGrid();
+    this.updateSectorTag();
+
+    const playerSector = this.playerWorldPos.sector;
+
     // 1. Build Player Origin Beacon at (0, 0, 0) (using shared persistent geometries)
     const originMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
     const originMesh = new THREE.Mesh(this.sharedOriginGeo, originMat);
@@ -607,9 +682,70 @@ export class HolographicNavModal {
     this.originGroup.add(originRing);
     this.nodeMaterials.push(originRingMat);
 
+    // 1b. Galactic Core Beacon & Bearing Vector (pointing towards Sector 0,0,0)
+    const coreDx = 0 - playerSector.x;
+    const coreDy = 0 - playerSector.y;
+    const coreDz = 0 - playerSector.z;
+    const coreDistSectors = Math.hypot(coreDx, coreDy, coreDz);
+
+    if (coreDistSectors > 0.05) {
+      const coreRelX = coreDx * 36.0;
+      const coreRelY = coreDy * 18.0;
+      const coreRelZ = coreDz * 36.0;
+      const corePos = new THREE.Vector3(coreRelX, coreRelY, coreRelZ);
+
+      const bearingDir = corePos.clone().normalize();
+      const lineLen = Math.min(corePos.length(), 150.0);
+      const bearingEnd = bearingDir.clone().multiplyScalar(lineLen);
+
+      const bearingGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        bearingEnd,
+      ]);
+      const bearingMat = new THREE.LineDashedMaterial({
+        color: 0xf59e0b,
+        dashSize: 3,
+        gapSize: 2,
+        transparent: true,
+        opacity: 0.75,
+      });
+      const bearingLine = new THREE.Line(bearingGeo, bearingMat);
+      bearingLine.computeLineDistances();
+      this.originGroup.add(bearingLine);
+      this.nodeMaterials.push(bearingMat);
+
+      if (corePos.length() <= 160) {
+        const coreMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
+        const coreMesh = new THREE.Mesh(new THREE.SphereGeometry(3.5, 16, 16), coreMat);
+        coreMesh.position.copy(corePos);
+        this.originGroup.add(coreMesh);
+        this.nodeMaterials.push(coreMat);
+
+        const coronaMat = new THREE.MeshBasicMaterial({
+          color: 0xf59e0b,
+          transparent: true,
+          opacity: 0.45,
+          side: THREE.DoubleSide,
+        });
+        const coronaMesh = new THREE.Mesh(new THREE.RingGeometry(4.2, 5.8, 32), coronaMat);
+        coronaMesh.rotation.x = Math.PI / 2;
+        coronaMesh.position.copy(corePos);
+        this.originGroup.add(coronaMesh);
+        this.nodeMaterials.push(coronaMat);
+      } else {
+        const arrowGeo = new THREE.ConeGeometry(2.2, 5.5, 8);
+        arrowGeo.rotateX(Math.PI / 2);
+        const arrowMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+        const arrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
+        arrowMesh.position.copy(bearingEnd);
+        arrowMesh.lookAt(bearingEnd.clone().add(bearingDir));
+        this.originGroup.add(arrowMesh);
+        this.nodeMaterials.push(arrowMat);
+      }
+    }
+
     // 2. Fetch destination systems using ultra-lightweight summaries
     const systemEntries = this.sectorManager.getSystemSummariesInRadius(this.playerWorldPos.sector, 4);
-    const playerSector = this.playerWorldPos.sector;
     const stemPoints: THREE.Vector3[] = [];
 
     // Filter to destination systems
