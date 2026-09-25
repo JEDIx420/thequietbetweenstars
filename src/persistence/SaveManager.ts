@@ -57,6 +57,7 @@ export interface ShipModule {
     scanRadiusBonus?: number;
     warpStability?: number;
     sampleBonus?: number;
+    cargoBonus?: number;
   };
   visualPart: 'thruster_ring' | 'wing_extension' | 'sensor_crown' | 'hull_reinforcement';
   description: string;
@@ -90,6 +91,8 @@ export interface PlayerSaveSlot {
   knownStations?: string[];
   knownVessels?: string[];
   collectedCreditIds?: string[];
+  marketStockDeltas?: Record<string, Record<string, number>>;
+  cargoCapacity?: number;
   stats: {
     systemsVisited: number;
     planetsScanned: number;
@@ -152,6 +155,8 @@ export const DEFAULT_SAVE_SLOT: PlayerSaveSlot = {
   knownStations: [],
   knownVessels: [],
   collectedCreditIds: [],
+  marketStockDeltas: {},
+  cargoCapacity: 60,
   stats: {
     systemsVisited: 1,
     planetsScanned: 0,
@@ -343,10 +348,17 @@ export class SaveManager {
       if (!raw.commodityInventory) raw.commodityInventory = {};
       if (!raw.knownStations) raw.knownStations = [];
       if (!raw.knownVessels) raw.knownVessels = [];
+      if (!raw.marketStockDeltas) raw.marketStockDeltas = {};
+      if (raw.cargoCapacity === undefined) raw.cargoCapacity = 60;
       if (raw.story) {
         raw.story.freeExplorationMode = true;
       }
     }
+    if (!raw.commodityInventory) raw.commodityInventory = {};
+    if (!raw.knownStations) raw.knownStations = [];
+    if (!raw.knownVessels) raw.knownVessels = [];
+    if (!raw.marketStockDeltas) raw.marketStockDeltas = {};
+    if (raw.cargoCapacity === undefined) raw.cargoCapacity = 60;
 
     // Consolidate NPC memories: top-level raw.npcMemories is canonical
     if (!raw.npcMemories) raw.npcMemories = {};
@@ -398,9 +410,21 @@ export class SaveManager {
     }
   }
 
+  public getCurrentMemorySlot(): PlayerSaveSlot {
+    return { ...this.memorySaveSlot };
+  }
+
   public async saveJourney(slot: PlayerSaveSlot): Promise<void> {
     slot.updatedAt = Date.now();
-    slot.saveVersion = 5;
+    if (slot.story) {
+      slot.story.freeExplorationMode = true;
+    }
+    slot.saveVersion = 6;
+    if (!slot.commodityInventory) slot.commodityInventory = {};
+    if (!slot.knownStations) slot.knownStations = [];
+    if (!slot.knownVessels) slot.knownVessels = [];
+    if (!slot.marketStockDeltas) slot.marketStockDeltas = {};
+    if (slot.cargoCapacity === undefined) slot.cargoCapacity = 60;
     this.memorySaveSlot = { ...slot };
 
     if (!this.db) {

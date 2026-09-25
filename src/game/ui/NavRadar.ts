@@ -823,12 +823,17 @@ export class NavRadar {
             ? '<span style="color:#94a3b8;">[Tap / TARGET: Cycle]</span>'
             : '<span style="color:#94a3b8;">[TAB: Cycle · T: Target Ahead]</span>';
 
-        const isStory = active.isStoryTarget || active.anomaly?.hasResonance || active.anomaly?.signature?.isResonanceAnomaly || active.id.startsWith('story_') || active.type === 'station' || active.type === 'vessel' || active.type === 'relay';
+        const isStoryObjective = active.isStoryTarget || active.id.startsWith('story_');
+        const badgeLabel = isStoryObjective ? '✦ MISSION' : '✦ CONTACT';
         const storyBadge = isObjective
-          ? '<span class="radar-objective-badge" style="color:#fbbf24; font-size:8px; font-weight:700; letter-spacing:0.1em; border:1px solid rgba(251, 191, 36, 0.7); background:rgba(251, 191, 36, 0.18); border-radius:3px; padding:1px 4px; margin-left:5px; cursor:pointer;">✦ MISSION</span>'
-          : isStory
-            ? '<span style="color:#a78bfa; font-size:8px; font-weight:700; letter-spacing:0.1em; border:1px solid rgba(167, 139, 250, 0.6); border-radius:3px; padding:1px 4px; margin-left:5px;">RESONANCE</span>'
-            : '';
+          ? `<span class="radar-objective-badge" style="color:#fbbf24; font-size:8px; font-weight:700; letter-spacing:0.1em; border:1px solid rgba(251, 191, 36, 0.7); background:rgba(251, 191, 36, 0.18); border-radius:3px; padding:1px 4px; margin-left:5px; cursor:pointer;">${badgeLabel}</span>`
+          : active.type === 'station'
+            ? '<span style="color:#38bdf8; font-size:8px; font-weight:700; letter-spacing:0.1em; border:1px solid rgba(56, 189, 248, 0.6); border-radius:3px; padding:1px 4px; margin-left:5px;">STATION</span>'
+            : active.type === 'vessel'
+              ? '<span style="color:#c084fc; font-size:8px; font-weight:700; letter-spacing:0.1em; border:1px solid rgba(192, 132, 252, 0.6); border-radius:3px; padding:1px 4px; margin-left:5px;">VESSEL</span>'
+              : active.isAnomaly
+                ? '<span style="color:#f59e0b; font-size:8px; font-weight:700; letter-spacing:0.1em; border:1px solid rgba(245, 158, 11, 0.6); border-radius:3px; padding:1px 4px; margin-left:5px;">ANOMALY</span>'
+                : '';
         const typeLabel = active.isAnomaly ? `⚡ ${active.type}` : active.type;
         const objectiveActionHtml = isObjective && !autoOn
           ? '<div style="margin-top: 3px;"><button id="radar-btn-track-objective" style="background: rgba(251, 191, 36, 0.18); border: 1px solid rgba(251, 191, 36, 0.7); color: #fbbf24; font-size: 8px; font-weight: 700; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-family: inherit;">🎯 TRACK OBJECTIVE</button></div>'

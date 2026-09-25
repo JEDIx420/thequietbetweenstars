@@ -46,18 +46,16 @@ import { TargetLockSystem, type LockableTarget } from '../game/targeting/TargetL
 import { TargetLockReticle } from '../game/ui/TargetLockReticle';
 import type { SpaceEncounter } from '../game/scenes/SpaceEncounterManager';
 import { StoryDirector } from '../story/StoryDirector';
-import { StoryEncounterPlanner } from '../story/StoryEncounterPlanner';
 import { DockingController } from '../game/docking/DockingController';
 import { SpaceStation } from '../game/stations/SpaceStationManager';
 import { NamedVessel } from '../game/vessels/NamedVesselDirector';
 import { HarmonicRelay } from '../game/structures/HarmonicRelay';
 import { SpaceInteractionController } from '../game/interaction/SpaceInteractionController';
 import { StationInterfaceModal } from './StationInterfaceModal';
-import { StoryObjectiveHUD } from '../story/StoryObjectiveHUD';
-import { StoryPresentationDirector } from '../story/StoryPresentationDirector';
 import { StagedScanHUD } from '../game/ui/StagedScanHUD';
 import { StagedScanController } from '../game/scanning/StagedScanController';
 import { MissionHelpModal } from './MissionHelpModal';
+import { PlayerStateStore } from '../game/progression/PlayerStateStore';
 
 const scratchShipForward = new THREE.Vector3();
 
@@ -140,10 +138,11 @@ export class DesktopApp {
     }
   }
   public activeHarmonicRelay: HarmonicRelay | null = null;
-  public storyObjectiveHud!: StoryObjectiveHUD;
-  public storyPresentationDirector!: StoryPresentationDirector;
   public stagedScanHud!: StagedScanHUD;
   private shownContextHints = new Set<string>();
+
+  // Canonical Sandbox Progression Store
+  public readonly playerState: PlayerStateStore = new PlayerStateStore();
 
   // Real journey stats & tracking
   public visitedSystems = new Set<string>();
@@ -159,6 +158,23 @@ export class DesktopApp {
   public npcMemories: Record<string, any> = {};
   public activeNPCInConversation: NPCIdentity | null = null;
   private journeyStartTime = Date.now();
+
+  public syncFromPlayerState(): void {
+    this.credits = this.playerState.getCredits();
+    this.sampleInventory = this.playerState.getSampleInventory();
+    this.installedModules = this.playerState.getInstalledModules();
+    this.pendingOrders = this.playerState.getPendingOrders();
+    this.npcMemories = this.playerState.getNpcMemories();
+    this.collectedCreditIds = this.playerState.getCollectedCreditIds();
+    this.updateFlightHud();
+  }
+
+  public updateFlightHud(): void {
+    const credEl = document.getElementById('telemetry-credits');
+    if (credEl) {
+      credEl.textContent = String(this.playerState.getCredits());
+    }
+  }
 
   // F3 Debug Telemetry Overlay
   private debugTelemetryVisible = false;
@@ -227,6 +243,10 @@ export class DesktopApp {
     this.container.appendChild(this.canvasContainer);
     this.container.appendChild(this.uiContainer);
     this.container.appendChild(this.touchLayer);
+
+    this.playerState.subscribe(() => {
+      this.syncFromPlayerState();
+    });
 
     this.initGameEngine();
     this.setupDebugKeyListeners();
@@ -390,6 +410,20 @@ export class DesktopApp {
       onClose: () => {
         audio.playBlip();
       },
+      onModuleInstalled: (modId) => {
+        this.playerState.installModule(modId);
+        this.applyInstalledModules();
+        this.saveCurrentJourney();
+        this.updateFlightHud();
+      },
+      onSave: () => {
+        const slot = this.stationModal.getSaveSlot();
+        if (slot) {
+          this.playerState.loadFromSaveSlot(slot);
+        }
+        this.saveCurrentJourney();
+        this.updateFlightHud();
+      },
     });
 
     this.spaceInteractionController = new SpaceInteractionController(
@@ -399,49 +433,8 @@ export class DesktopApp {
     );
     this.spaceInteractionController.setStationModal(this.stationModal);
 
-    // 6. Story Presentation & Objective HUD Subsystems
-    this.storyObjectiveHud = new StoryObjectiveHUD(this.canvasContainer);
-    this.storyObjectiveHud.setOnToggleFreeRoam(() => {
-      const next = !this.storyDirector.isFreeExploration();
-      this.storyDirector.setFreeExploration(next);
-      if (next) {
-        this.storyObjectiveHud.hide();
-        this.showHudNotice('FREE ROAM ACTIVE // Story paused. Explore systems freely.');
-      } else {
-        this.storyObjectiveHud.update(this.storyDirector.getState());
-        this.storyObjectiveHud.show();
-        this.storyObjectiveHud.toggleCollapse(false);
-        this.showHudNotice('STORY OBJECTIVES ACTIVE // CHAPTER 1 ONLINE');
-        const state = this.storyDirector.getState();
-        if (state.currentBeat === 'beat_0_awakening') {
-          this.storyPresentationDirector.beginStoryOpening();
-        }
-      }
-      this.storyPresentationDirector.refresh();
-      this.updateStoryModeToggleBtn();
-      audio.playBlip();
-    });
-    this.storyObjectiveHud.setOnTrackObjective(() => {
-      this.lockAndTrackActiveStoryObjective();
-    });
+    // 6. Staged Scan HUD & Sandbox Flight Environment
     this.stagedScanHud = new StagedScanHUD(this.canvasContainer);
-    this.storyPresentationDirector = new StoryPresentationDirector(
-      this.storyDirector,
-      this.dialoguePresenter,
-      this.storyObjectiveHud,
-      {
-        reconcileWorldState: () => this.reconcileStoryWorldState(),
-        highlightNavigationTarget: (targetId: string, _name: string) => {
-          this.navRadar.selectTargetById(targetId);
-          const candidate = this.collectSpaceLockCandidates().find((c) => c.id === targetId);
-          if (candidate) {
-            this.targetLockSystem.lockTarget(candidate);
-          }
-        },
-        showHudNotice: (text: string) => this.showHudNotice(text),
-        saveJourney: () => this.saveCurrentJourney(),
-      }
-    );
     this.storyDirector.setFreeExploration(true);
 
     // 7. Cinematic Director
@@ -805,9 +798,6 @@ export class DesktopApp {
       }
       this.renderSurfaceHUD();
       this.updateControlContext(FlightPhase.SURFACE_FLIGHT);
-      if (!this.storyDirector.isFreeExploration()) {
-        this.storyObjectiveHud?.show();
-      }
       this.showHudNotice(`ATMOSPHERIC PENETRATION COMPLETE // COMMENCING HOVER RECONNAISSANCE`);
     }
   }
@@ -1007,43 +997,20 @@ export class DesktopApp {
     const dockStatus = this.dockingController.update(dt, this.flightModel.position, this.flightModel.quaternion);
     const dockedTarget = this.dockingController.getActiveTarget() || this.activeSpaceStation;
     if (dockStatus.isDocked && dockedTarget && !this.stationModal.isOpen()) {
-      const currentSlot: PlayerSaveSlot = {
+      if (dockedTarget.entityKind === 'STATION') {
+        this.playerState.discoverStation(dockedTarget.id);
+      } else {
+        this.playerState.discoverVessel(dockedTarget.id);
+      }
+      const currentSlot = this.playerState.toSaveSlot({
         slotId: 'current_journey',
-        saveVersion: 6,
-        updatedAt: Date.now(),
         universeSeed: this.sectorManager.universeSeed,
         playerSector: { ...this.worldPosition.sector },
         playerLocalPos: { ...this.flightModel.position },
         currentSystem: this.spaceScene.currentSystem,
         flightPhase: 'DOCKED',
-        credits: this.credits,
-        sampleInventory: this.sampleInventory,
-        commodityInventory: (saveManager as any).memorySaveSlot?.commodityInventory || {},
-        installedModules: Array.from(this.installedModules),
-        pendingOrders: this.pendingOrders,
-        npcMemories: this.npcMemories,
-        knownStations: Array.from(new Set([(saveManager as any).memorySaveSlot?.knownStations || [], dockedTarget.id].flat())),
-        knownVessels: (saveManager as any).memorySaveSlot?.knownVessels || [],
-        stats: {
-          systemsVisited: Math.max(1, this.visitedSystems.size),
-          planetsScanned: this.scannedPlanets.size,
-          surfacesVisited: this.visitedSurfaces.size,
-          speciesDiscovered: this.discoveredSpecies.size,
-          sentientDiscovered: Object.keys(this.npcMemories).length,
-          loreLearned: 0,
-          samplesCollected: Object.values(this.sampleInventory).reduce((a, b) => a + b, 0),
-          modulesInstalled: this.installedModules.size,
-          anomaliesDiscovered: this.discoveredAnomalies.size,
-          flightTimeSeconds: Math.round((Date.now() - this.journeyStartTime) / 1000),
-        },
-        tutorial: this.tutorialDirector.getState(),
-        narrative: {
-          triggeredEventIds: this.narrativeDirector.getTriggeredEventIds(),
-          resonanceFlags: this.narrativeDirector.getResonanceFlags(),
-        },
-        story: this.storyDirector.getState(),
-      };
-      this.stationModal.show(dockedTarget as any, this.storyDirector, currentSlot, this.spaceScene.currentSystem);
+      });
+      this.stationModal.show(dockedTarget as any, null, currentSlot, this.spaceScene.currentSystem);
     }
 
     // Show docking guidance telemetry when tethering or undocking
@@ -1386,9 +1353,8 @@ export class DesktopApp {
     this.targetLockSystem.clearLockedTarget();
     this.targetLockReticle.update(null, this.renderer.camera, window.innerWidth, window.innerHeight);
 
-    // Hide mobile touch controls and story HUD during descent for a clean plasma view
+    // Hide mobile touch controls during descent for a clean plasma view
     this.touchControls?.hide();
-    this.storyObjectiveHud?.hide();
     this.uiContainer.innerHTML = '';
 
     const selectedSite = this.activeOrbitSites[this.selectedSiteIndex];
@@ -2246,13 +2212,8 @@ export class DesktopApp {
       this.shownContextHints.clear();
       this.storyDirector.reset();
       this.storyDirector.setFreeExploration(true);
-      this.npcMemories = { ...DEFAULT_SAVE_SLOT.npcMemories };
-      this.storyDirector.setNpcMemories(this.npcMemories);
-      this.credits = 250;
-      this.sampleInventory = {};
-      this.installedModules.clear();
-      this.pendingOrders = [];
-      this.collectedCreditIds.clear();
+      this.playerState.loadFromSaveSlot(DEFAULT_SAVE_SLOT);
+      this.syncFromPlayerState();
       this.visitedSystems.clear();
       this.scannedPlanets.clear();
       this.visitedSurfaces.clear();
@@ -2264,7 +2225,7 @@ export class DesktopApp {
       // Establish origin star system (0, 0, 0)
       const originSystem = this.sectorManager.getFullSystem(0, 0, 0);
       this.spaceScene.loadSystem(originSystem);
-      this.reconcileStoryWorldState();
+      this.syncSystemEntities(originSystem);
       await this.saveCurrentJourney();
 
       await storage.updateSettings({ introSeen: true });
@@ -2272,11 +2233,9 @@ export class DesktopApp {
       // Trigger in-engine New Journey Cinematic
       this.uiState = 'cinematic';
       this.uiContainer.innerHTML = '';
-      this.storyObjectiveHud.hide(true);
       this.newJourneyCinematic.play(
         this.flightModel.position,
         () => {
-          this.storyObjectiveHud.hide(true);
           const briefing = new ExpeditionBriefing(this.container);
           briefing.show(() => {
             this.enterFlightMode();
@@ -2324,29 +2283,17 @@ export class DesktopApp {
         this.shownContextHints.add(id);
       }
     }
-    let storyRepaired = false;
     if (slot.story) {
-      storyRepaired = this.storyDirector.loadState(slot.story);
+      this.storyDirector.loadState(slot.story);
     }
-    this.reconcileStoryWorldState();
-    this.storyObjectiveHud?.update(this.storyDirector.getState());
-    if (storyRepaired) {
-      await this.saveCurrentJourney();
-    }
+    this.syncSystemEntities(this.spaceScene?.currentSystem);
     if (slot.targetSystem) {
       this.holographicNavModal.activeCourseSystem = slot.targetSystem;
     }
 
-    // Restore v0.0.7 progression state
-    this.credits = slot.credits ?? 0;
-    this.collectedCreditIds = new Set(slot.collectedCreditIds || []);
-    this.sampleInventory = slot.sampleInventory ? { ...slot.sampleInventory } : {};
-    this.installedModules = new Set(slot.installedModules || []);
-    this.pendingOrders = slot.pendingOrders ? [...slot.pendingOrders] : [];
-    this.npcMemories = slot.npcMemories ? { ...slot.npcMemories } : { ...DEFAULT_SAVE_SLOT.npcMemories };
-    this.storyDirector.setNpcMemories(this.npcMemories);
-
-    // Apply installed modules to ship models and flight dynamics
+    // Restore sandbox progression state via canonical PlayerStateStore
+    this.playerState.loadFromSaveSlot(slot);
+    this.syncFromPlayerState();
     this.applyInstalledModules();
   }
 
@@ -2393,9 +2340,9 @@ export class DesktopApp {
   public async saveCurrentJourney(): Promise<void> {
     const flightTimeSec = Math.round((Date.now() - this.journeyStartTime) / 1000);
 
-    const slot: PlayerSaveSlot = {
+    const slot: PlayerSaveSlot = this.playerState.toSaveSlot({
       slotId: 'current_journey',
-      saveVersion: 5,
+      saveVersion: 6,
       updatedAt: Date.now(),
       universeSeed: this.sectorManager.universeSeed,
       playerSector: { ...this.worldPosition.sector },
@@ -2407,12 +2354,6 @@ export class DesktopApp {
       currentSystem: this.spaceScene.currentSystem,
       targetSystem: this.holographicNavModal.activeCourseSystem,
       flightPhase: this.stateMachine.getPhase(),
-      credits: this.credits,
-      collectedCreditIds: Array.from(this.collectedCreditIds),
-      sampleInventory: { ...this.sampleInventory },
-      installedModules: Array.from(this.installedModules),
-      pendingOrders: [...this.pendingOrders],
-      npcMemories: { ...this.npcMemories },
       stats: {
         systemsVisited: Math.max(1, this.visitedSystems.size),
         planetsScanned: this.scannedPlanets.size,
@@ -2431,55 +2372,37 @@ export class DesktopApp {
         resonanceFlags: this.narrativeDirector.getResonanceFlags(),
       },
       story: this.storyDirector.getState(),
-    };
+    });
 
     await saveManager.saveJourney(slot);
     this.showSaveIndicator();
   }
 
-  public syncStoryEntitiesForSystem(system: StarSystemDescriptor | null): void {
+  public syncSystemEntities(system: StarSystemDescriptor | null): void {
     if (!system) return;
-
-    this.storyDirector.emit({
-      type: 'SYSTEM_ENTERED',
-      payload: { systemSeed: system.seed },
-      timestamp: Date.now(),
-    });
-
-    this.reconcileStoryWorldState();
+    this.reconcileSystemEntities();
   }
 
-  public reconcileStoryWorldState(): void {
+  public syncStoryEntitiesForSystem(system: StarSystemDescriptor | null): void {
+    this.syncSystemEntities(system);
+  }
+
+  public reconcileSystemEntities(): void {
     const system = this.spaceScene?.currentSystem;
     if (!system) return;
 
-    const plan = StoryEncounterPlanner.planSystem(system, this.storyDirector);
-
-    // 1. Incorporate story-injected anomalies into runtime system descriptor
+    // 1. Synchronize physical 3D encounter layer with runtime system descriptors
     if (!system.anomalies) {
       system.anomalies = [];
     }
-    for (const injected of plan.injectedAnomalies) {
-      const existingIdx = system.anomalies.findIndex((a) => a.id === injected.id);
-      if (existingIdx >= 0) {
-        system.anomalies[existingIdx] = injected;
-      } else {
-        system.anomalies.push(injected);
-      }
-    }
-
-    // Synchronize physical 3D encounter layer with augmented runtime descriptors
     this.spaceScene.syncAnomalies(system.anomalies);
 
-    // 2. Station reconciliation (procedural population + story injected)
+    // 2. Station reconciliation directly from procedural population
     const targetStationsMap = new Map<string, any>();
     if (system.population?.stations) {
       for (const st of system.population.stations) {
         targetStationsMap.set(st.id, st);
       }
-    }
-    if (plan.injectedStation) {
-      targetStationsMap.set(plan.injectedStation.id, plan.injectedStation);
     }
 
     // Remove obsolete stations
@@ -2503,18 +2426,12 @@ export class DesktopApp {
       }
     }
 
-    // 3. Named & Procedural Vessel reconciliation
+    // 3. Named & Procedural Vessel reconciliation directly from procedural population
     const targetVesselsMap = new Map<string, any>();
     if (system.population?.vessels) {
       for (const v of system.population.vessels) {
         targetVesselsMap.set(v.id, v);
       }
-    }
-    if (plan.injectedVessel) {
-      targetVesselsMap.set(plan.injectedVessel.id, {
-        ...plan.injectedVessel,
-        species: 'Nomad Avian',
-      });
     }
 
     // Remove obsolete vessels
@@ -2538,40 +2455,24 @@ export class DesktopApp {
       }
     }
 
-    // 4. Harmonic Relay reconciliation
-    if (plan.injectedRelay) {
-      if (!this.activeHarmonicRelay || this.activeHarmonicRelay.id !== plan.injectedRelay.id) {
-        if (this.activeHarmonicRelay) {
-          this.spaceScene.worldRoot.remove(this.activeHarmonicRelay.group);
-          this.activeHarmonicRelay.dispose();
-          this.activeHarmonicRelay = null;
-        }
-        this.activeHarmonicRelay = new HarmonicRelay({
-          ...plan.injectedRelay,
-          position: new THREE.Vector3(
-            plan.injectedRelay.position.x,
-            plan.injectedRelay.position.y,
-            plan.injectedRelay.position.z
-          ),
-        });
-        this.spaceScene.worldRoot.add(this.activeHarmonicRelay.group);
-      }
-      this.activeHarmonicRelay.restoreFromState(this.storyDirector.getState().harmonicRelayState);
-    } else if (this.activeHarmonicRelay) {
+    // 4. Harmonic Relay cleanup if any
+    if (this.activeHarmonicRelay) {
       this.spaceScene.worldRoot.remove(this.activeHarmonicRelay.group);
       this.activeHarmonicRelay.dispose();
       this.activeHarmonicRelay = null;
     }
 
-    // 5. Radar Targets with Story Highlights
-    const activeObj = this.storyDirector.getActiveObjectiveTarget();
-    this.navRadar?.setActiveStoryObjective(activeObj?.targetId || null, activeObj?.label || null);
+    // 5. Radar Targets
     this.navRadar?.setPlanets(
       this.spaceScene.activePlanetList,
       system.anomalies,
       this.spaceScene.activeCourierPod?.position,
       this.collectExtraRadarTargets()
     );
+  }
+
+  public reconcileStoryWorldState(): void {
+    this.reconcileSystemEntities();
   }
 
   public collectExtraRadarTargets(): RadarTargetItem[] {
@@ -2869,28 +2770,6 @@ export class DesktopApp {
     }
     this.renderFlightHUD(activeMode);
 
-    const storyState = this.storyDirector.getState();
-    const isFree = this.storyDirector.isFreeExploration();
-
-    if (isFree) {
-      // In Free Roam sandbox, keep mission HUD completely hidden to provide pristine cinematic view
-      this.storyObjectiveHud.hide(true);
-      this.storyPresentationDirector.refresh();
-    } else {
-      this.storyObjectiveHud.show();
-      this.storyObjectiveHud.toggleCollapse(false);
-      if (storyState.currentBeat === 'beat_0_awakening') {
-        this.storyPresentationDirector.beginStoryOpening();
-      } else if (
-        storyState.currentBeat === 'beat_7_chapter1_climax' &&
-        !storyState.completedBeats.includes('beat_7_chapter1_climax')
-      ) {
-        this.storyPresentationDirector.playChapter1ClimaxPresentation();
-      } else {
-        this.storyPresentationDirector.refresh();
-      }
-    }
-    this.updateStoryModeToggleBtn();
 
     // Initialize & display on-screen touch controls if on mobile, tablet, or touch screen
     if (isTouch) {

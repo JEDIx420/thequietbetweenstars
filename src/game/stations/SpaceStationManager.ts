@@ -24,6 +24,7 @@ export interface StationConfig {
 }
 
 export class SpaceStation implements DockableEntity {
+  public readonly entityKind: 'STATION' = 'STATION';
   public id: string;
   public name: string;
   public faction: string;

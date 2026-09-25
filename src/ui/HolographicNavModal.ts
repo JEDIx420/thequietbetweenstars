@@ -36,6 +36,20 @@ export class HolographicNavModal {
   public selectedSystem: StarSystemDescriptor | null = null;
   public activeCourseSystem: StarSystemDescriptor | null = null;
 
+  private visitedSystems: Set<string> = new Set();
+  private knownStations: Set<string> = new Set();
+  private knownVessels: Set<string> = new Set();
+
+  public setDiscoveryContext(
+    visitedSystems: Set<string>,
+    knownStations: Set<string>,
+    knownVessels: Set<string>
+  ): void {
+    this.visitedSystems = visitedSystems;
+    this.knownStations = knownStations;
+    this.knownVessels = knownVessels;
+  }
+
   // Shared persistent geometries & materials
   private sharedStarGeo = new THREE.SphereGeometry(2.2, 16, 16);
   private sharedRingGeo = new THREE.RingGeometry(4.0, 4.6, 32);
@@ -1065,12 +1079,25 @@ export class HolographicNavModal {
         </div>
         ${
           sys.population
-            ? `
-            <div style="display: flex; justify-content: space-between; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 6px; margin-top: 4px;">
-              <span style="color: #94a3b8;">CONTACTS:</span>
-              <span style="color: #38bdf8; font-weight: 600; text-align: right;">${sys.population.populationDescription}</span>
-            </div>
-            `
+            ? (() => {
+                const isVisited = this.visitedSystems.has(sys.name) || this.visitedSystems.has(String(sys.seed));
+                if (!isVisited) {
+                  return `
+                    <div style="display: flex; justify-content: space-between; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 6px; margin-top: 4px;">
+                      <span style="color: #94a3b8;">CONTACTS:</span>
+                      <span style="color: #38bdf8; font-weight: 600; text-align: right;">SIGNALS: ${sys.population.stations.length} STATIONS · ${sys.population.vessels.length} TRAFFIC</span>
+                    </div>
+                  `;
+                }
+                const knownCount = sys.population.stations.filter((s) => this.knownStations.has(s.id)).length +
+                  sys.population.vessels.filter((v) => this.knownVessels.has(v.id)).length;
+                return `
+                  <div style="display: flex; justify-content: space-between; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 6px; margin-top: 4px;">
+                    <span style="color: #94a3b8;">CONTACTS:</span>
+                    <span style="color: #38bdf8; font-weight: 600; text-align: right;">${sys.population.populationDescription} (${knownCount} identified)</span>
+                  </div>
+                `;
+              })()
             : ''
         }
       </div>

@@ -67,4 +67,15 @@ export const SHIP_MODULE_CATALOG: ShipModule[] = [
     visualPart: 'sensor_crown',
     description: 'Projects a localized gravitic funnel that automatically magnetizes and draws survey credit motes from 85m away.',
   },
+  {
+    id: 'mod_cargo_expanded_hold',
+    name: 'Expanded Sub-Deck Hold',
+    category: 'CARGO',
+    tier: 1,
+    costCredits: 220,
+    sampleRequirements: [{ category: 'MINERAL', count: 2 }],
+    statModifiers: { cargoBonus: 40 },
+    visualPart: 'hull_reinforcement',
+    description: 'Pressurized internal cargo cells expanding total freight capacity by +40 units.',
+  },
 ];

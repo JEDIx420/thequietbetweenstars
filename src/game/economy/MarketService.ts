@@ -19,7 +19,8 @@ export class MarketService {
   public static getMarketQuotes(
     archetype: StationArchetype,
     systemSeed: number,
-    stationId: string
+    stationId: string,
+    saveSlot?: PlayerSaveSlot | null
   ): { commodities: MarketPriceQuote[]; samples: MarketPriceQuote[] } {
     const seed = systemSeed + SeededRandom.hashString(stationId);
     const rng = new SeededRandom(seed);
@@ -79,7 +80,10 @@ export class MarketService {
 
       const buyPrice = Math.max(10, Math.round(baseAdjusted * 1.15));
       const sellPrice = Math.max(5, Math.round(baseAdjusted * 0.85));
-      const stationStock = rng.rangeInt(10, 85);
+      const rawStock = rng.rangeInt(10, 85);
+
+      const purchasedDelta = saveSlot?.marketStockDeltas?.[stationId]?.[item.id] || 0;
+      const stationStock = Math.max(0, rawStock - purchasedDelta);
 
       return {
         id: item.id,
@@ -129,9 +133,30 @@ export class MarketService {
   ): { success: boolean; message: string; cost?: number } {
     if (quantity <= 0) return { success: false, message: 'Invalid quantity' };
 
-    const quotes = this.getMarketQuotes(archetype, systemSeed, stationId);
+    const quotes = this.getMarketQuotes(archetype, systemSeed, stationId, saveSlot);
     const quote = quotes.commodities.find((c) => c.id === commodityId);
     if (!quote) return { success: false, message: 'Commodity not traded at this station' };
+
+    // Enforce stock availability
+    if (quantity > quote.stationStock) {
+      return {
+        success: false,
+        message: `Station stock depleted. Only ${quote.stationStock}x ${quote.name} available.`,
+      };
+    }
+
+    // Enforce cargo capacity
+    const samplesCount = Object.values(saveSlot.sampleInventory || {}).reduce((a, b) => a + b, 0);
+    const commoditiesCount = Object.values(saveSlot.commodityInventory || {}).reduce((a, b) => a + b, 0);
+    const totalCargoUsed = samplesCount + commoditiesCount;
+    const capacity = saveSlot.cargoCapacity ?? 60;
+    if (totalCargoUsed + quantity > capacity) {
+      const freeSpace = Math.max(0, capacity - totalCargoUsed);
+      return {
+        success: false,
+        message: `Cargo hold full. Requires ${quantity} units, only ${freeSpace} available (Capacity: ${capacity}).`,
+      };
+    }
 
     const totalCost = quote.buyPrice * quantity;
     const currentCredits = saveSlot.credits ?? 0;
@@ -150,6 +175,16 @@ export class MarketService {
       saveSlot.commodityInventory = {};
     }
     saveSlot.commodityInventory[commodityId] = (saveSlot.commodityInventory[commodityId] || 0) + quantity;
+
+    // Track stock purchase delta
+    if (!saveSlot.marketStockDeltas) {
+      saveSlot.marketStockDeltas = {};
+    }
+    if (!saveSlot.marketStockDeltas[stationId]) {
+      saveSlot.marketStockDeltas[stationId] = {};
+    }
+    saveSlot.marketStockDeltas[stationId][commodityId] =
+      (saveSlot.marketStockDeltas[stationId][commodityId] || 0) + quantity;
 
     return {
       success: true,

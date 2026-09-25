@@ -5,6 +5,7 @@ export interface CraftingValidation {
   canCraft: boolean;
   missingCredits: number;
   missingIngredients: Array<{ id: string; countNeeded: number; countAvailable: number }>;
+  cargoFull?: boolean;
 }
 
 export class CraftingService {
@@ -34,10 +35,27 @@ export class CraftingService {
       }
     }
 
+    let cargoFull = false;
+    if (recipe.result.type === 'COMMODITY') {
+      let consumed = 0;
+      for (const ing of recipe.ingredients) consumed += ing.count;
+      const netCargoChange = recipe.result.count - consumed;
+      if (netCargoChange > 0) {
+        const samplesCount = Object.values(samples).reduce((a, b) => a + b, 0);
+        const commoditiesCount = Object.values(commodities).reduce((a, b) => a + b, 0);
+        const capacity = saveSlot.cargoCapacity ?? 60;
+        if (samplesCount + commoditiesCount + netCargoChange > capacity) {
+          canCraft = false;
+          cargoFull = true;
+        }
+      }
+    }
+
     return {
       canCraft,
       missingCredits,
       missingIngredients,
+      cargoFull,
     };
   }
 
@@ -52,6 +70,9 @@ export class CraftingService {
 
     const validation = this.validateRecipe(saveSlot, recipe);
     if (!validation.canCraft) {
+      if (validation.cargoFull) {
+        return { success: false, message: 'Cargo capacity exceeded' };
+      }
       if (validation.missingCredits > 0) {
         return { success: false, message: `Insufficient credits (need ${recipe.creditsCost} CR)` };
       }

@@ -142,6 +142,47 @@ export class LocalIntelligenceService {
   }
 
   /**
+   * Generates a conversational reply using sandbox context (no StoryState required).
+   */
+  public async generateSandboxReply(
+    context: import('./LoreContextBuilder').SandboxDialogueContext,
+    userTopic: string,
+    fallbackReply: string
+  ): Promise<string> {
+    if (!this.isEnabled || this.status !== 'READY' || !this.wllamaInstance) {
+      return fallbackReply;
+    }
+
+    const systemPrompt = LoreContextBuilder.buildSandboxPrompt(context);
+    const userPrompt = `Inquire about: ${userTopic}`;
+    const formattedPrompt = `<|im_start|>system\n${systemPrompt}\nRespond directly in 1-2 concise sentences without thinking tags or roleplay prefixes.<|im_end|>\n<|im_start|>user\n${userPrompt}<|im_end|>\n<|im_start|>assistant\n`;
+
+    try {
+      this.status = 'BUSY';
+      const timeoutPromise = new Promise<string>((_, reject) => {
+        setTimeout(() => reject(new Error('LLM Generation Timeout')), 3500);
+      });
+
+      const generationPromise = this.wllamaInstance.createCompletion(formattedPrompt, {
+        n_predict: 80,
+        sampling: {
+          temp: 0.7,
+          top_p: 0.8,
+        },
+      });
+
+      const rawResult = await Promise.race([generationPromise, timeoutPromise]);
+      this.status = 'READY';
+
+      return CanonFirewall.validateAndSanitize(rawResult, fallbackReply);
+    } catch (err) {
+      console.warn('[LocalIntelligenceService] Generation failed or timed out, using fallback:', err);
+      this.status = 'READY';
+      return fallbackReply;
+    }
+  }
+
+  /**
    * Generates a conversational reply using the local LLM if ready,
    * otherwise immediately returns the canonical fallback text.
    */

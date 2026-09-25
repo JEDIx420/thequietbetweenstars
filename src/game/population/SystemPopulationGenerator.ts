@@ -52,6 +52,16 @@ const VESSEL_NAMES = [
   'Ghost of Cygnus', 'Nebula Runner', 'Solar Wind Echo', 'Chronos Spire'
 ];
 
+export const COMPATIBLE_ARCHETYPES_BY_SIZE: Record<VesselSizeClass, VesselArchetype[]> = {
+  SCOUT: ['SOLAR_SAIL', 'MANTA_WING'],
+  SHUTTLE: ['SOLAR_SAIL', 'MANTA_WING', 'ROTATING_RING'],
+  TRADER: ['INDUSTRIAL_HAULER', 'SOLAR_SAIL', 'ROTATING_RING'],
+  FRIGATE: ['MANTA_WING', 'INDUSTRIAL_HAULER', 'ORGANIC_BIO'],
+  CRUISER: ['SOLAR_SAIL', 'ROTATING_RING', 'ORGANIC_BIO', 'INDUSTRIAL_HAULER'],
+  CARRIER: ['INDUSTRIAL_HAULER', 'ROTATING_RING', 'CATHEDRAL_CAPITAL', 'ORGANIC_BIO'],
+  CAPITAL: ['CATHEDRAL_CAPITAL', 'ROTATING_RING', 'ORGANIC_BIO'],
+};
+
 export class SystemPopulationGenerator {
   public static generatePopulation(system: StarSystemDescriptor): SystemPopulationDescriptor {
     const seed = system.seed + 881923;
@@ -119,6 +129,7 @@ export class SystemPopulationGenerator {
       }
 
       stations.push({
+        entityKind: 'STATION',
         id: `station_${system.id}_${s + 1}`,
         name: stationName,
         archetype,
@@ -149,18 +160,31 @@ export class SystemPopulationGenerator {
         ? 'CRUISER'
         : rng.pick(sizeClasses);
 
-      const archetypes: VesselArchetype[] = [
-        'SOLAR_SAIL',
-        'INDUSTRIAL_HAULER',
-        'ROTATING_RING',
-        'ORGANIC_BIO',
-        'MANTA_WING',
-        'CATHEDRAL_CAPITAL',
-      ];
-      const archetype = isOrigin && v === 0 ? 'SOLAR_SAIL' : rng.pick(archetypes);
+      const compatibleArchetypes = COMPATIBLE_ARCHETYPES_BY_SIZE[sizeClass] || ['SOLAR_SAIL'];
+      const archetype = isOrigin && v === 0 ? 'SOLAR_SAIL' : rng.pick(compatibleArchetypes);
 
-      const isLargeShip = sizeClass === 'CARRIER' || sizeClass === 'CAPITAL' || (sizeClass === 'TRADER' && rng.chance(0.5));
+      const isLargeShip = sizeClass === 'CARRIER' || sizeClass === 'CAPITAL' || (sizeClass === 'TRADER' && archetype === 'INDUSTRIAL_HAULER');
       const isDockable = isLargeShip;
+
+      const vesselServices: StationServiceType[] = ['COMMS'];
+      if (sizeClass === 'CARRIER' || sizeClass === 'CAPITAL') {
+        vesselServices.push('MARKET', 'SHIPYARD', 'SERVICES');
+      } else if (sizeClass === 'TRADER') {
+        vesselServices.push('MARKET');
+      } else if (archetype === 'ORGANIC_BIO') {
+        vesselServices.push('FABRICATOR', 'SERVICES');
+      }
+
+      const marketArchetype: StationArchetype =
+        archetype === 'ORGANIC_BIO'
+          ? 'ALIEN_BIOSTATION'
+          : archetype === 'INDUSTRIAL_HAULER'
+          ? 'MINING_REFINERY'
+          : archetype === 'CATHEDRAL_CAPITAL'
+          ? 'SHIPYARD'
+          : 'TRADE_HUB';
+
+      const vesselFaction = isOrigin && v === 0 ? 'Nomad Avian Cartel' : rng.pick(FACTIONS);
 
       const vesselName = isOrigin && v === 0
         ? 'The Wanderer-7'
@@ -191,10 +215,12 @@ export class SystemPopulationGenerator {
       }
 
       vessels.push({
+        entityKind: 'VESSEL',
         id: isOrigin && v === 0 ? 'the_wanderer_7' : `vessel_${system.id}_${v + 1}`,
         name: vesselName,
         captainName: captainFirst,
         species,
+        faction: vesselFaction,
         archetype,
         sizeClass,
         position: { x: Math.round(vx), y: Math.round(vy), z: Math.round(vz) },
@@ -206,6 +232,8 @@ export class SystemPopulationGenerator {
         dialogueTopic: `stellar trade routes and ${species} customs`,
         greeting: `Subspace comms established with ${vesselName}. ${captainFirst} transmitting greetings across the quiet.`,
         lore: `A ${sizeClass.toLowerCase()} class vessel of ${species} origin, powered by ${archetype.replace('_', ' ').toLowerCase()} drives.`,
+        services: vesselServices,
+        marketArchetype,
       });
     }
 

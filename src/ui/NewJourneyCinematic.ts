@@ -87,14 +87,14 @@ export class NewJourneyCinematic {
         fov: 52,
       },
 
-      // 9.0s - 13.5s: SCENE 3 - Something in the Static
+      // 9.0s - 13.5s: SCENE 3 - The Uncharted Frontier
       {
         timeSeconds: 9.01,
         cameraPosition: shipPosition.clone().add(new THREE.Vector3(12, -3, 14)),
         targetPosition: shipPosition.clone().add(new THREE.Vector3(0, 0, -2)),
         fov: 44,
-        captionTitle: 'SOMETHING IN THE STATIC',
-        captionBody: 'For the first time, long-range instruments detect something beneath cosmic noise: a repeating harmonic carrier wave, mathematically structured and too precise to be natural.',
+        captionTitle: 'THE UNCHARTED FRONTIER',
+        captionBody: 'Beyond settled space, infinite procedural star systems wait. Orbital outposts trade in rare alloys, independent captains roam the lanes, and deep-space anomalies await discovery.',
       },
       {
         timeSeconds: 13.5,
@@ -103,14 +103,14 @@ export class NewJourneyCinematic {
         fov: 58,
       },
 
-      // 13.5s - 17.0s: SCENE 4 - The Journey (Ignition)
+      // 13.5s - 17.0s: SCENE 4 - Engines Online (Ignition)
       {
         timeSeconds: 13.51,
         cameraPosition: shipPosition.clone().add(new THREE.Vector3(0, 3.8, 14.5)),
         targetPosition: shipPosition.clone().add(new THREE.Vector3(0, 0, -50)),
         fov: 68,
-        captionTitle: 'THE JOURNEY',
-        captionBody: 'Follow the signal into the dark, or choose another star. The universe will still be there.',
+        captionTitle: 'ENGINES ONLINE',
+        captionBody: 'Initialize sub-light drives. Set your own coordinates. The quiet between stars is yours to explore.',
       },
       {
         timeSeconds: 17.0,

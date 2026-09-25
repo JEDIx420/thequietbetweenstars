@@ -1,16 +1,14 @@
 import { localAI } from '../ai/LocalIntelligenceService';
 import { audio } from '../audio/AudioEngine';
-import { StoryDirector } from '../story/StoryDirector';
 
 export class SettingsModal {
   private container: HTMLElement;
   private modalEl: HTMLElement | null = null;
   private isVisible = false;
   private isCached = false;
-  private storyDirector: StoryDirector | null = null;
 
-  public setStoryDirector(director: StoryDirector): void {
-    this.storyDirector = director;
+  public setStoryDirector(_director?: any): void {
+    // No-op in sandbox mode
   }
 
   constructor(parent: HTMLElement) {
@@ -84,7 +82,6 @@ export class SettingsModal {
     const status = localAI.getStatus();
     const isEnabled = localAI.isAiEnabled();
     const progress = Math.round(localAI.getProgress() * 100);
-    const isFreeRoam = this.storyDirector ? this.storyDirector.isFreeExploration() : false;
 
     this.modalEl.innerHTML = `
       <div style="
@@ -272,59 +269,6 @@ export class SettingsModal {
             * Note: When disabled or unavailable, the game transparently utilizes canon-authored deterministic dialogue. The full story and all progression are 100% playable without downloading this model.
           </div>
         </div>
-
-        <!-- Exploration & Mission Mode Card -->
-        <div style="
-          background: rgba(15, 23, 42, 0.65);
-          border: 1px solid rgba(56, 189, 248, 0.25);
-          border-radius: 12px;
-          padding: 24px;
-          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-          margin-top: 24px;
-        ">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
-            <div>
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <h3 style="margin: 0; font-size: 1.15rem; color: #f8fafc; font-weight: 600;">Exploration & Mission Mode</h3>
-                <span style="
-                  font-size: 10px;
-                  font-weight: 700;
-                  letter-spacing: 0.1em;
-                  padding: 2px 8px;
-                  border-radius: 9999px;
-                  background: ${isFreeRoam ? 'rgba(34, 197, 94, 0.2)' : 'rgba(56, 189, 248, 0.2)'};
-                  color: ${isFreeRoam ? '#4ade80' : '#38bdf8'};
-                  border: 1px solid ${isFreeRoam ? 'rgba(34, 197, 94, 0.4)' : 'rgba(56, 189, 248, 0.4)'};
-                ">
-                  ${isFreeRoam ? 'FREE ROAM' : 'STORY CAMPAIGN'}
-                </span>
-              </div>
-              <p style="margin: 8px 0 0 0; font-size: 0.88rem; color: #cbd5e1; line-height: 1.5; max-width: 520px;">
-                ${isFreeRoam 
-                  ? 'Free Roam is active. Narrative waypoints, story reminders, and radar beacons are paused so you can explore the galaxy freely.'
-                  : 'Story campaign is active. Objective waypoints, radar signals, and narrative encounters guide your journey.'}
-              </p>
-              <div style="margin-top: 10px; font-size: 0.78rem; color: #94a3b8; font-family: ui-monospace, monospace;">
-                ${isFreeRoam ? 'Mode: Free Sandbox Exploration' : 'Mode: Chapter 1 // The Resonance'} • Switch anytime without losing story progress
-              </div>
-            </div>
-
-            <button id="btn-settings-toggle-freeroam" style="
-              background: ${isFreeRoam ? 'rgba(34, 197, 94, 0.25)' : 'rgba(56, 189, 248, 0.2)'};
-              border: 1px solid ${isFreeRoam ? '#4ade80' : '#38bdf8'};
-              color: #f8fafc;
-              padding: 10px 20px;
-              border-radius: 6px;
-              font-size: 12px;
-              font-weight: 600;
-              letter-spacing: 0.05em;
-              cursor: pointer;
-              transition: all 0.2s;
-            ">
-              ${isFreeRoam ? '▶ RESUME STORY MISSIONS' : '⏸ ACTIVATE FREE ROAM'}
-            </button>
-          </div>
-        </div>
       </div>
     `;
 
@@ -375,15 +319,6 @@ export class SettingsModal {
       await localAI.removeModel();
       await this.refreshCacheStatus();
       this.render();
-    });
-
-    this.modalEl.querySelector('#btn-settings-toggle-freeroam')?.addEventListener('click', () => {
-      audio.playBlip();
-      if (this.storyDirector) {
-        const next = !this.storyDirector.isFreeExploration();
-        this.storyDirector.setFreeExploration(next);
-        this.render();
-      }
     });
   }
 }

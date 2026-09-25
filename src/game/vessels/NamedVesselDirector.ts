@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { DockableEntity, DockingStatus } from '../docking/DockableEntity';
-import type { VesselArchetype, VesselSizeClass } from '../population/PopulationTypes';
+import type { StationArchetype, StationServiceType, VesselArchetype, VesselSizeClass } from '../population/PopulationTypes';
 
 export type VesselSilhouette =
   | VesselArchetype
@@ -8,11 +8,31 @@ export type VesselSilhouette =
   | 'organic_bio_hull'
   | 'counter_rotating_rings';
 
+export interface VesselSizeProfile {
+  scale: number;
+  captureRadius: number;
+  approachDistance: number;
+  hailRadius: number;
+  dockingOffsetZ: number;
+  label: string;
+}
+
+export const VESSEL_SIZE_PROFILES: Record<VesselSizeClass, VesselSizeProfile> = {
+  SCOUT: { scale: 0.65, captureRadius: 65, approachDistance: 200, hailRadius: 700, dockingOffsetZ: 25, label: 'Fast Recon' },
+  SHUTTLE: { scale: 0.85, captureRadius: 75, approachDistance: 240, hailRadius: 800, dockingOffsetZ: 32, label: 'Transport' },
+  TRADER: { scale: 1.45, captureRadius: 110, approachDistance: 320, hailRadius: 950, dockingOffsetZ: 50, label: 'Heavy Hauler' },
+  FRIGATE: { scale: 1.9, captureRadius: 130, approachDistance: 400, hailRadius: 1100, dockingOffsetZ: 70, label: 'Escort Frigate' },
+  CRUISER: { scale: 2.7, captureRadius: 160, approachDistance: 500, hailRadius: 1300, dockingOffsetZ: 95, label: 'Heavy Cruiser' },
+  CARRIER: { scale: 4.4, captureRadius: 220, approachDistance: 700, hailRadius: 1650, dockingOffsetZ: 155, label: 'Fleet Carrier' },
+  CAPITAL: { scale: 6.8, captureRadius: 320, approachDistance: 980, hailRadius: 2100, dockingOffsetZ: 240, label: 'Cathedral Flagship' },
+};
+
 export interface NamedVesselConfig {
   id: string;
   name: string;
   captainName: string;
   species: string;
+  faction?: string;
   silhouetteType?: VesselSilhouette;
   archetype?: VesselArchetype;
   sizeClass?: VesselSizeClass;
@@ -25,13 +45,17 @@ export interface NamedVesselConfig {
   dialogueTopic?: string;
   greeting?: string;
   lore?: string;
+  services?: StationServiceType[];
+  marketArchetype?: StationArchetype;
 }
 
 export class NamedVessel implements DockableEntity {
+  public readonly entityKind: 'VESSEL' = 'VESSEL';
   public id: string;
   public name: string;
   public captainName: string;
   public species: string;
+  public faction: string;
   public silhouetteType: VesselSilhouette;
   public archetype: VesselArchetype;
   public sizeClass: VesselSizeClass;
@@ -46,6 +70,8 @@ export class NamedVessel implements DockableEntity {
   public dialogueTopic?: string;
   public greeting?: string;
   public lore?: string;
+  public services: StationServiceType[];
+  public marketArchetype: StationArchetype;
 
   private dockingStatus: DockingStatus = 'IDLE';
   private rotatingParts: THREE.Object3D[] = [];
@@ -59,8 +85,8 @@ export class NamedVessel implements DockableEntity {
     this.name = config.name;
     this.captainName = config.captainName;
     this.species = config.species;
+    this.faction = config.faction || 'Nomad Cartel';
     this.sizeClass = config.sizeClass || 'CRUISER';
-    this.hailRadius = config.hailRadius || 900;
     this.patrolRadius = config.patrolRadius || 35;
     this.dialogueTopic = config.dialogueTopic;
     this.greeting = config.greeting;
@@ -84,18 +110,55 @@ export class NamedVessel implements DockableEntity {
       this.silhouetteType = 'avian_solar_sail';
     }
 
+    // Resolve services & market archetype
+    this.services = config.services ? [...config.services] : ['COMMS'];
+    if (this.sizeClass === 'CARRIER' || this.sizeClass === 'CAPITAL') {
+      if (!this.services.includes('MARKET')) this.services.push('MARKET');
+      if (!this.services.includes('SHIPYARD')) this.services.push('SHIPYARD');
+      if (!this.services.includes('SERVICES')) this.services.push('SERVICES');
+    } else if (this.sizeClass === 'TRADER') {
+      if (!this.services.includes('MARKET')) this.services.push('MARKET');
+    }
+    this.marketArchetype = config.marketArchetype || (this.archetype === 'ORGANIC_BIO' ? 'ALIEN_BIOSTATION' : this.archetype === 'INDUSTRIAL_HAULER' ? 'MINING_REFINERY' : 'TRADE_HUB');
+
+    const profile = VESSEL_SIZE_PROFILES[this.sizeClass] || VESSEL_SIZE_PROFILES.CRUISER;
+
     this.isDockable = config.isDockable ?? (this.sizeClass === 'CARRIER' || this.sizeClass === 'CAPITAL');
-    this.captureRadius = config.captureRadius || (this.isDockable ? 100 : 0);
-    this.approachDistance = config.approachDistance || 350;
-    this.dockingPortOffset = new THREE.Vector3(0, 0, 40);
+    this.hailRadius = config.hailRadius || profile.hailRadius;
+    this.captureRadius = config.captureRadius || (this.isDockable ? profile.captureRadius : 0);
+    this.approachDistance = config.approachDistance || profile.approachDistance;
+    this.dockingPortOffset = new THREE.Vector3(0, 0, profile.dockingOffsetZ);
 
     this.position = config.position.clone();
     this.basePosition = config.position.clone();
 
     this.group = new THREE.Group();
     this.group.position.copy(this.position);
+    this.group.scale.setScalar(profile.scale);
 
     this.buildGeometryForArchetype(this.archetype);
+
+    // Visible Docking Bay / Clamp geometry for all dockable vessels
+    if (this.isDockable) {
+      const localZ = profile.dockingOffsetZ / profile.scale;
+
+      const collarGeo = new THREE.TorusGeometry(3.6, 0.7, 8, 20);
+      const collarMat = new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.75,
+        roughness: 0.3,
+        metalness: 0.8,
+      });
+      const collar = new THREE.Mesh(collarGeo, collarMat);
+      collar.position.set(0, 0, localZ);
+      this.group.add(collar);
+
+      // Docking guide strobe beacon
+      const guideLight = new THREE.PointLight(0x38bdf8, 2.5, 50);
+      guideLight.position.set(0, 0, localZ + 1);
+      this.group.add(guideLight);
+    }
   }
 
   private buildGeometryForArchetype(archetype: VesselArchetype): void {

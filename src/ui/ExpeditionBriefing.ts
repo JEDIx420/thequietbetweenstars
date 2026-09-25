@@ -90,15 +90,15 @@ export class ExpeditionBriefing {
       {
         badge: 'EXPEDITION BRIEFING // 01',
         title: 'Your Journey',
-        summary: 'Follow the mysterious harmonic signal, or chart your own path. The story waits for you. Exploration does not.',
+        summary: 'Explore an infinite procedural space sandbox. The galaxy is yours to chart, trade, and conquer.',
         sections: [
           {
             heading: 'INDEPENDENT SURVEY PILOT',
-            text: 'You command the SC-1, a deep-range survey craft designed for long solo expeditions. Your mission is discovery, observation, and cataloguing the unknown.',
+            text: 'You command the SC-1, a deep-range survey craft designed for long solo expeditions. Your mission is discovery, trade, and engineering upgrades.',
           },
           {
-            heading: 'OPEN GALAXY // MAIN STORY',
-            text: 'An ancient resonance is echoing across this sector. You can pursue this central mystery or freely explore any star, planet, and moon without restrictions.',
+            heading: 'PROCEDURAL SANDBOX GALAXY',
+            text: 'Every solar system contains planets, moons, space stations, and independent starships. Dock with orbital outposts, trade commodities, craft modules, and forge your own path.',
           },
         ],
       },
@@ -181,22 +181,22 @@ export class ExpeditionBriefing {
           },
         ],
       },
-      // SCREEN 5: THE SIGNAL
+      // SCREEN 5: DOCKING & COMMERCE
       {
         badge: 'EXPEDITION BRIEFING // 05',
-        title: 'The Subcarrier Signal',
-        summary: 'A persistent, structured transmission is modulating the hyperlane grid of this star system.',
+        title: 'Docking, Trade & Engineering',
+        summary: 'Establish moorings with orbital platforms and massive starships across the frontier.',
         sections: [
           {
-            heading: 'CURRENT PRIORITY // ANOMALOUS CARRIER',
-            text: 'Frequency: 432.8 Hz · Mathematically structured · Non-stellar origin · Location: within local star system.',
+            heading: 'DOCKING & COMMERCE',
+            text: 'Approach any orbital station or large capital ship and align with docking clamps. Sell collected planetary samples, buy industrial commodities, and profit from local price disparities.',
           },
           {
-            heading: 'FIRST OBJECTIVE',
-            text: 'Review navigation telemetry with Mnemosyne, locate the source of the resonance, and begin Chapter 1: The Resonance.',
+            heading: 'FABRICATION & SHIP UPGRADES',
+            text: 'Use station fabricators and shipyards to craft advanced materials and install functional modules, from expanded cargo bays to ion thrusters.',
           },
         ],
-        closingQuote: 'The quiet is not empty. Something is answering.',
+        closingQuote: 'Chart your own course across the quiet between stars.',
       },
     ];
 

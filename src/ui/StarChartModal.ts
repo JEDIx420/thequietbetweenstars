@@ -30,6 +30,20 @@ export class StarChartModal {
   private animFrameId: number | null = null;
   private animTime = 0;
 
+  private visitedSystems: Set<string> = new Set();
+  private knownStations: Set<string> = new Set();
+  private knownVessels: Set<string> = new Set();
+
+  public setDiscoveryContext(
+    visitedSystems: Set<string>,
+    knownStations: Set<string>,
+    knownVessels: Set<string>
+  ): void {
+    this.visitedSystems = visitedSystems;
+    this.knownStations = knownStations;
+    this.knownVessels = knownVessels;
+  }
+
   constructor(
     parent: HTMLElement,
     sectorManager: SectorManager,
@@ -445,34 +459,57 @@ export class StarChartModal {
 
         ${
           sys.population && (sys.population.stations.length > 0 || sys.population.vessels.length > 0)
-            ? `
-              <div style="margin-top: 14px;">
-                <div style="font-size: 10px; letter-spacing: 0.15em; color: #38bdf8; text-transform: uppercase; margin-bottom: 6px;">
-                  ORBITAL INFRASTRUCTURE & CONTACTS
-                </div>
-                <div style="font-size: 11px; color: #94a3b8; margin-bottom: 6px;">
-                  ${sys.population.populationDescription}
-                </div>
-                ${sys.population.stations
-                  .map(
-                    (st) => `
-                  <div style="font-size: 11px; color: #cbd5e1; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 6px 10px; margin-bottom: 4px;">
-                    🛰️ <strong>${st.name}</strong> — <span style="color:#38bdf8;">${st.archetype.replace('_', ' ')}</span>
+            ? (() => {
+                const isVisited = this.visitedSystems.has(sys.name) || this.visitedSystems.has(String(sys.seed));
+                if (!isVisited) {
+                  return `
+                    <div style="margin-top: 14px;">
+                      <div style="font-size: 10px; letter-spacing: 0.15em; color: #38bdf8; text-transform: uppercase; margin-bottom: 6px;">
+                        LONG-RANGE SENSOR TELEMETRY
+                      </div>
+                      <div style="font-size: 11px; color: #94a3b8; margin-bottom: 6px;">
+                        UNEXPLORED SYSTEM // UNVERIFIED EMISSIONS
+                      </div>
+                      <div style="font-size: 11px; color: #cbd5e1; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 6px 10px; margin-bottom: 4px;">
+                        🛰️ <strong>STRUCTURAL SIGNATURES:</strong> <span style="color:#38bdf8;">${sys.population.stations.length}</span>
+                      </div>
+                      <div style="font-size: 11px; color: #cbd5e1; background: rgba(192, 132, 252, 0.1); border: 1px solid rgba(192, 132, 252, 0.25); border-radius: 6px; padding: 6px 10px; margin-bottom: 4px;">
+                        🚀 <strong>TRAFFIC CONTACTS:</strong> <span style="color:#c084fc;">${sys.population.vessels.length}</span>
+                      </div>
+                    </div>
+                  `;
+                }
+                return `
+                  <div style="margin-top: 14px;">
+                    <div style="font-size: 10px; letter-spacing: 0.15em; color: #38bdf8; text-transform: uppercase; margin-bottom: 6px;">
+                      ORBITAL INFRASTRUCTURE & CONTACTS
+                    </div>
+                    <div style="font-size: 11px; color: #94a3b8; margin-bottom: 6px;">
+                      ${sys.population.populationDescription}
+                    </div>
+                    ${sys.population.stations
+                      .map((st) => {
+                        const known = this.knownStations.has(st.id);
+                        return `
+                          <div style="font-size: 11px; color: #cbd5e1; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 6px 10px; margin-bottom: 4px;">
+                            🛰️ <strong>${known ? st.name : 'Uncharted Station'}</strong> — <span style="color:${known ? '#38bdf8' : '#64748b'};">${known ? st.archetype.replace('_', ' ') : 'ORBITAL SIGNATURE'}</span>
+                          </div>
+                        `;
+                      })
+                      .join('')}
+                    ${sys.population.vessels
+                      .map((v) => {
+                        const known = this.knownVessels.has(v.id);
+                        return `
+                          <div style="font-size: 11px; color: #cbd5e1; background: rgba(192, 132, 252, 0.1); border: 1px solid rgba(192, 132, 252, 0.25); border-radius: 6px; padding: 6px 10px; margin-bottom: 4px;">
+                            🚀 <strong>${known ? v.name : 'Unidentified Starship'}</strong> — <span style="color:${known ? '#c084fc' : '#64748b'};">${known ? `${v.sizeClass}${v.isDockable ? ' · DOCKABLE' : ''}` : `${v.sizeClass} SIGNATURE`}</span>
+                          </div>
+                        `;
+                      })
+                      .join('')}
                   </div>
-                `
-                  )
-                  .join('')}
-                ${sys.population.vessels
-                  .map(
-                    (v) => `
-                  <div style="font-size: 11px; color: #cbd5e1; background: rgba(192, 132, 252, 0.1); border: 1px solid rgba(192, 132, 252, 0.25); border-radius: 6px; padding: 6px 10px; margin-bottom: 4px;">
-                    🚀 <strong>${v.name}</strong> — <span style="color:#c084fc;">${v.sizeClass}${v.isDockable ? ' · DOCKABLE' : ''}</span>
-                  </div>
-                `
-                  )
-                  .join('')}
-              </div>
-            `
+                `;
+              })()
             : ''
         }
 

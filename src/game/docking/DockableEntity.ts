@@ -10,9 +10,12 @@ export type DockingStatus =
   | 'DOCKED'
   | 'UNDOCKING';
 
+export type DockableEntityKind = 'STATION' | 'VESSEL';
+
 export interface DockableEntity {
   id: string;
   name: string;
+  entityKind: DockableEntityKind;
   position: THREE.Vector3;
   dockingPortOffset: THREE.Vector3;
   captureRadius: number; // e.g., 90u

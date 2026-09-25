@@ -444,6 +444,19 @@ export class SurveyCraft {
 
         this.moduleVisualsGroup.add(group);
         this.installedModuleVisuals.set(id, group);
+      } else if (id === 'mod_cargo_expanded_hold') {
+        // Dual external reinforced cargo pods along lower fuselage flanks
+        const group = new THREE.Group();
+        const podGeo = new THREE.CylinderGeometry(0.2, 0.2, 1.8, 8);
+        podGeo.rotateX(Math.PI / 2);
+        const leftPod = new THREE.Mesh(podGeo, upgradeMat);
+        leftPod.position.set(-0.85, -0.22, 0.2);
+        const rightPod = new THREE.Mesh(podGeo, upgradeMat);
+        rightPod.position.set(0.85, -0.22, 0.2);
+        group.add(leftPod);
+        group.add(rightPod);
+        this.moduleVisualsGroup.add(group);
+        this.installedModuleVisuals.set(id, group);
       }
     }
   }

@@ -14,6 +14,7 @@ export type StationServiceType =
   | 'COMMS';
 
 export interface StationDescriptor {
+  entityKind: 'STATION';
   id: string;
   name: string;
   archetype: StationArchetype;
@@ -45,10 +46,12 @@ export type VesselSizeClass =
   | 'CAPITAL';
 
 export interface NPCVesselDescriptor {
+  entityKind: 'VESSEL';
   id: string;
   name: string;
   captainName: string;
   species: string;
+  faction?: string;
   archetype: VesselArchetype;
   sizeClass: VesselSizeClass;
   position: { x: number; y: number; z: number };
@@ -60,6 +63,8 @@ export interface NPCVesselDescriptor {
   dialogueTopic: string;
   greeting: string;
   lore: string;
+  services?: StationServiceType[];
+  marketArchetype?: StationArchetype;
 }
 
 export interface SystemPopulationDescriptor {

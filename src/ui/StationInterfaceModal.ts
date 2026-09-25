@@ -9,6 +9,7 @@ import { CRAFTING_RECIPES } from '../game/economy/CraftingCatalog';
 import { SHIP_MODULE_CATALOG } from '../game/progression/ShipProgression';
 import { audio } from '../audio/AudioEngine';
 import { localAI } from '../ai/LocalIntelligenceService';
+import type { SandboxDialogueContext } from '../ai/LoreContextBuilder';
 
 export interface StationModalCallbacks {
   onUndock: () => void;
@@ -27,7 +28,6 @@ export class StationInterfaceModal {
   private activeTab: DockedTerminalTab = 'market';
   private target: SpaceStation | NamedVessel | null = null;
   private system: StarSystemDescriptor | null = null;
-  private storyDirector: StoryDirector | null = null;
   private saveSlot: PlayerSaveSlot | null = null;
   private callbacks: StationModalCallbacks;
   private commHistory: Array<{ sender: string; text: string; time: string }> = [];
@@ -37,30 +37,49 @@ export class StationInterfaceModal {
     this.callbacks = callbacks;
   }
 
+  private getSupportedTabs(): DockedTerminalTab[] {
+    if (!this.target) return ['comms'];
+    const services = (this.target.services || []) as string[];
+    const tabs: DockedTerminalTab[] = [];
+    if (services.includes('MARKET')) tabs.push('market');
+    if (services.includes('FABRICATOR')) tabs.push('fabricator');
+    if (services.includes('SHIPYARD')) tabs.push('shipyard');
+    if (services.includes('SERVICES')) tabs.push('services');
+    if (services.includes('COMMS') || tabs.length === 0) tabs.push('comms');
+    return tabs;
+  }
+
   public show(
     target: SpaceStation | NamedVessel,
-    storyDirector: StoryDirector,
+    storyDirector: StoryDirector | null | undefined,
     saveSlot: PlayerSaveSlot,
     system?: StarSystemDescriptor | null
   ): void {
     if (this.isVisible) return;
     this.isVisible = true;
     this.target = target;
-    this.storyDirector = storyDirector;
     this.saveSlot = saveSlot;
-    this.system = system ?? (storyDirector as any).currentSystem ?? null;
+    this.system = system ?? (storyDirector as any)?.currentSystem ?? null;
+
+    // Set active tab to supported service
+    const supported = this.getSupportedTabs();
+    if (!supported.includes(this.activeTab)) {
+      this.activeTab = supported[0] || 'comms';
+    }
 
     // Track station/vessel discovery in saveSlot
     if (this.target) {
-      if ('archetype' in this.target && typeof (this.target as any).archetype === 'string') {
+      if (this.target.entityKind === 'STATION') {
         if (!saveSlot.knownStations) saveSlot.knownStations = [];
         if (!saveSlot.knownStations.includes(this.target.id)) {
           saveSlot.knownStations.push(this.target.id);
+          this.callbacks.onSave?.();
         }
       } else {
         if (!saveSlot.knownVessels) saveSlot.knownVessels = [];
         if (!saveSlot.knownVessels.includes(this.target.id)) {
           saveSlot.knownVessels.push(this.target.id);
+          this.callbacks.onSave?.();
         }
       }
     }
@@ -68,7 +87,7 @@ export class StationInterfaceModal {
     // Default opening comms greeting
     if (this.commHistory.length === 0) {
       const now = new Date().toTimeString().split(' ')[0];
-      const isStation = 'archetype' in this.target;
+      const isStation = this.target.entityKind === 'STATION';
       const speaker = isStation
         ? `${this.target.name.toUpperCase()} TRAFFIC CONTROL`
         : `${(this.target as NamedVessel).captainName.toUpperCase()} // BRIDGE`;
@@ -125,13 +144,32 @@ export class StationInterfaceModal {
     return this.isVisible;
   }
 
+  public getSaveSlot(): PlayerSaveSlot | null {
+    return this.saveSlot;
+  }
+
+  public getTarget(): SpaceStation | NamedVessel | null {
+    return this.target;
+  }
+
   private render(): void {
     if (!this.modalEl || !this.target || !this.saveSlot) return;
 
     const credits = this.saveSlot.credits ?? 0;
-    const isStation = 'archetype' in this.target;
-    const archetype = isStation ? (this.target as SpaceStation).archetype : 'TRADE_HUB';
+    const isStation = this.target.entityKind === 'STATION';
+    const archetype = isStation
+      ? (this.target as SpaceStation).archetype
+      : ((this.target as NamedVessel).marketArchetype || 'TRADE_HUB');
     const faction = (this.target as any).faction || (this.target as any).species || 'Independent';
+
+    const supportedTabs = this.getSupportedTabs();
+    if (!supportedTabs.includes(this.activeTab)) {
+      this.activeTab = supportedTabs[0] || 'comms';
+    }
+
+    const currentCargoUsed = Object.values(this.saveSlot.sampleInventory || {}).reduce((a, b) => a + b, 0) +
+      Object.values(this.saveSlot.commodityInventory || {}).reduce((a, b) => a + b, 0);
+    const maxCargo = this.saveSlot.cargoCapacity || 60;
 
     this.modalEl.innerHTML = `
       <div style="
@@ -167,7 +205,7 @@ export class StationInterfaceModal {
               </span>
             </div>
             <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px; font-family: ui-monospace, monospace;">
-              AFFILIATION: <span style="color: #cbd5e1;">${faction.toUpperCase()}</span> // UMBILICAL POWER: <span style="color: #4ade80;">100% ONLINE</span> // BALANCE: <span style="color: #38bdf8; font-weight: 700;">${credits} CR</span>
+              AFFILIATION: <span style="color: #cbd5e1;">${faction.toUpperCase()}</span> // CARGO: <span style="color: #4ade80;">${currentCargoUsed} / ${maxCargo} UNITS</span> // BALANCE: <span style="color: #38bdf8; font-weight: 700;">${credits} CR</span>
             </div>
           </div>
 
@@ -191,20 +229,26 @@ export class StationInterfaceModal {
         </div>
 
         <!-- Channel Navigation Tabs -->
-        <div style="
+        <div class="modal-scrollable-x" data-scrollable="true" style="
           display: flex;
           border-bottom: 1px solid rgba(255, 255, 255, 0.08);
           background: rgba(8, 14, 28, 0.75);
           padding: 0 16px;
           gap: 4px;
           overflow-x: auto;
+          white-space: nowrap;
           -webkit-overflow-scrolling: touch;
         ">
-          ${this.renderTabButton('market', 'CH 01 // COMMERCE MARKET')}
-          ${this.renderTabButton('fabricator', 'CH 02 // FABRICATOR WORKSHOP')}
-          ${this.renderTabButton('shipyard', 'CH 03 // SHIPYARD MODULES')}
-          ${this.renderTabButton('services', 'CH 04 // STATION SERVICES')}
-          ${this.renderTabButton('comms', 'CH 05 // SUBSPACE COMMS')}
+          ${supportedTabs.map((tab, idx) => {
+            const labels: Record<DockedTerminalTab, string> = {
+              market: `CH 0${idx + 1} // COMMERCE MARKET`,
+              fabricator: `CH 0${idx + 1} // FABRICATOR WORKSHOP`,
+              shipyard: `CH 0${idx + 1} // SHIPYARD MODULES`,
+              services: `CH 0${idx + 1} // TERMINAL SERVICES`,
+              comms: `CH 0${idx + 1} // SUBSPACE COMMS`,
+            };
+            return this.renderTabButton(tab, labels[tab]);
+          }).join('')}
         </div>
 
         <!-- Tab Content Area -->
@@ -269,13 +313,15 @@ export class StationInterfaceModal {
   private renderActiveTabContent(): string {
     if (!this.target || !this.saveSlot) return '';
 
-    const isStation = 'archetype' in this.target;
-    const archetype = isStation ? (this.target as SpaceStation).archetype : 'TRADE_HUB';
+    const isStation = this.target.entityKind === 'STATION';
+    const archetype = isStation
+      ? (this.target as SpaceStation).archetype
+      : ((this.target as NamedVessel).marketArchetype || 'TRADE_HUB');
     const sysSeed = this.system?.seed ?? 104729;
 
     switch (this.activeTab) {
       case 'market': {
-        const quotes = MarketService.getMarketQuotes(archetype, sysSeed, this.target.id);
+        const quotes = MarketService.getMarketQuotes(archetype, sysSeed, this.target.id, this.saveSlot);
         const playerSamples = this.saveSlot.sampleInventory || {};
         const playerCommodities = this.saveSlot.commodityInventory || {};
 
@@ -722,8 +768,10 @@ export class StationInterfaceModal {
   private bindTabActionListeners(): void {
     if (!this.modalEl || !this.target || !this.saveSlot) return;
 
-    const isStation = 'archetype' in this.target;
-    const archetype = isStation ? (this.target as SpaceStation).archetype : 'TRADE_HUB';
+    const isStation = this.target.entityKind === 'STATION';
+    const archetype = isStation
+      ? (this.target as SpaceStation).archetype
+      : ((this.target as NamedVessel).marketArchetype || 'TRADE_HUB');
     const sysSeed = this.system?.seed ?? 104729;
 
     // BUY Commodity
@@ -862,7 +910,7 @@ export class StationInterfaceModal {
   private handleCommsQuery(queryType: string): void {
     audio.playBlip();
     const now = new Date().toTimeString().split(' ')[0];
-    const isStation = 'archetype' in (this.target || {});
+    const isStation = this.target?.entityKind === 'STATION';
     const speaker = isStation
       ? `${this.target?.name.toUpperCase()} CONTROL`
       : `${(this.target as NamedVessel)?.captainName?.toUpperCase() || 'CAPTAIN'}`;
@@ -891,9 +939,19 @@ export class StationInterfaceModal {
 
     // Optional local AI generation if available
     if (localAI.isAiEnabled() && localAI.getStatus() === 'READY') {
-      const storyState = this.storyDirector?.getState() as any;
+      const vessel = !isStation ? (this.target as NamedVessel) : undefined;
+      const context: SandboxDialogueContext = {
+        systemName: this.system?.name || 'Frontier Space',
+        speaker,
+        entityName: this.target?.name,
+        faction: (this.target as any)?.faction || (isStation ? 'Independent Outpost' : 'Free Trader'),
+        species: vessel?.species || (isStation ? 'Cosmic Station Crew' : 'Spacefarer'),
+        role: isStation ? 'Station Operations' : vessel?.sizeClass || vessel?.archetype || 'Independent Vessel',
+        familiarity: 0.2,
+      };
+
       localAI
-        .generateReply(speaker, pilotText, storyState, 'Pilot', replyText)
+        .generateSandboxReply(context, pilotText, replyText)
         .then((aiReply) => {
           this.commHistory.push({ sender: speaker, text: aiReply, time: new Date().toTimeString().split(' ')[0] });
           this.render();
