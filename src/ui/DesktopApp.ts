@@ -33,7 +33,7 @@ import { saveManager, DEFAULT_SAVE_SLOT, type PlayerSaveSlot, type ShipModule } 
 import { TitleRevealSequence } from './TitleRevealSequence';
 import { AtmosphericEntrySequence } from '../game/surface/AtmosphericEntrySequence';
 import { NewJourneyCinematic } from './NewJourneyCinematic';
-import { ExpeditionBriefing } from './ExpeditionBriefing';
+import { ShipComputerGuidanceHUD } from './ShipComputerGuidanceHUD';
 import { ShipEmoteDirector, type EmoteType } from '../game/scenes/ShipEmoteDirector';
 import type { NPCIdentity } from '../game/ecology/SentientSpeciesProfile';
 import type { StarSystemDescriptor } from '../game/systems/PlanetDescriptor';
@@ -105,6 +105,7 @@ export class DesktopApp {
   public dialoguePresenter!: DialoguePresenter;
   public narrativeDirector!: NarrativeDirector;
   public tutorialDirector!: TutorialDirector;
+  public guidanceHud!: ShipComputerGuidanceHUD;
 
   // Story Domain, Stations, Vessels, and Docking Subsystems
   public storyDirector: StoryDirector = StoryDirector.getInstance();
@@ -305,6 +306,25 @@ export class DesktopApp {
     this.tutorialDirector = new TutorialDirector(this.narrativeDirector, () => this.getNarrativeContext());
     this.tutorialDirector.setCallbacks((prompt) => this.updateContextPrompt(prompt || ''));
 
+    this.guidanceHud = new ShipComputerGuidanceHUD(this.container);
+    this.guidanceHud.setCallbacks(
+      () => {
+        this.tutorialDirector.skip();
+        this.guidanceHud.hide();
+      },
+      () => {
+        this.tutorialDirector.skipStep();
+      }
+    );
+
+    this.tutorialDirector.setOnStepChange((info) => {
+      if (this.tutorialDirector.isComplete()) {
+        this.guidanceHud.hide();
+      } else {
+        this.guidanceHud.showStep(info);
+      }
+    });
+
     // Wire interactive conversation choices
     this.dialoguePresenter.setChoiceCallback((topic: string) => {
       this.handleConversationChoice(topic);
@@ -412,6 +432,7 @@ export class DesktopApp {
       },
       onModuleInstalled: (modId) => {
         this.playerState.installModule(modId);
+        this.tutorialDirector.onPlayerUpgrade();
         this.applyInstalledModules();
         this.saveCurrentJourney();
         this.updateFlightHud();
@@ -421,6 +442,8 @@ export class DesktopApp {
         if (slot) {
           this.playerState.loadFromSaveSlot(slot);
         }
+        this.tutorialDirector.onPlayerTrade();
+        this.tutorialDirector.onPlayerCraft();
         this.saveCurrentJourney();
         this.updateFlightHud();
       },
@@ -793,6 +816,7 @@ export class DesktopApp {
         this.surfaceScene.finishPreparation();
       }
       this.stateMachine.transitionTo(FlightPhase.SURFACE_FLIGHT);
+      this.tutorialDirector.onPlayerLand();
       if (this.orbitController.planet) {
         audio.setPlanetGenome(this.orbitController.planet.seed, this.orbitController.planet);
       }
@@ -997,6 +1021,7 @@ export class DesktopApp {
     const dockStatus = this.dockingController.update(dt, this.flightModel.position, this.flightModel.quaternion);
     const dockedTarget = this.dockingController.getActiveTarget() || this.activeSpaceStation;
     if (dockStatus.isDocked && dockedTarget && !this.stationModal.isOpen()) {
+      this.tutorialDirector.onPlayerDock(dockedTarget.name);
       if (dockedTarget.entityKind === 'STATION') {
         this.playerState.discoverStation(dockedTarget.id);
       } else {
@@ -1331,6 +1356,7 @@ export class DesktopApp {
     this.targetLockSystem.clearLockedTarget();
     this.targetLockReticle.update(null, this.renderer.camera, window.innerWidth, window.innerHeight);
     this.stateMachine.transitionTo(FlightPhase.ORBIT);
+    this.tutorialDirector.onPlayerOrbit();
     this.orbitController.enterOrbit(target.planet, target.position, this.flightModel.position);
 
     // Generate deterministic landing sites for inspection UI
@@ -2236,10 +2262,7 @@ export class DesktopApp {
       this.newJourneyCinematic.play(
         this.flightModel.position,
         () => {
-          const briefing = new ExpeditionBriefing(this.container);
-          briefing.show(() => {
-            this.enterFlightMode();
-          });
+          this.enterFlightMode();
         },
         this.spaceScene.scene
       );
@@ -2764,11 +2787,16 @@ export class DesktopApp {
     const activeMode = isTouch ? 'touch' : mode;
     this.currentControlMode = activeMode;
 
+    this.renderFlightHUD(activeMode);
+
     this.tutorialDirector.setInputMode(activeMode);
     if (!this.tutorialDirector.isComplete()) {
       this.tutorialDirector.start();
+      const currentStep = this.tutorialDirector.getState().step;
+      this.guidanceHud.showStep(this.tutorialDirector.getStepInfo(currentStep));
+    } else {
+      this.guidanceHud.hide();
     }
-    this.renderFlightHUD(activeMode);
 
 
     // Initialize & display on-screen touch controls if on mobile, tablet, or touch screen

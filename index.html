@@ -48,6 +48,29 @@
         -webkit-overflow-scrolling: touch !important;
         overscroll-behavior-x: contain !important;
       }
+      /* Interactive Ship Computer Tutorial Target Highlights */
+      @keyframes tutorialPulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.75), inset 0 0 10px rgba(56, 189, 248, 0.4);
+          border-color: #38bdf8 !important;
+          transform: scale(1);
+        }
+        50% {
+          box-shadow: 0 0 0 12px rgba(56, 189, 248, 0), inset 0 0 18px rgba(56, 189, 248, 0.8);
+          border-color: #7dd3fc !important;
+          transform: scale(1.04);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(56, 189, 248, 0), inset 0 0 10px rgba(56, 189, 248, 0.4);
+          border-color: #38bdf8 !important;
+          transform: scale(1);
+        }
+      }
+      .tutorial-target-highlight {
+        animation: tutorialPulse 1.4s infinite ease-in-out !important;
+        border: 2px solid #38bdf8 !important;
+        z-index: 1000 !important;
+      }
       /* Prevent mobile WebKit GPU lag from backdrop-filter during scroll */
       @media (max-width: 850px), (pointer: coarse) {
         #help-modal,
