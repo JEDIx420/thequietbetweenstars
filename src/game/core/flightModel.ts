@@ -50,7 +50,9 @@ export class FlightModel {
   private readonly autoBankFactor = 0.52; // Visual roll into turns
   private readonly horizonAssistStrength = 0.85; // Gentle upright restorative tendency
 
-  // Cinematic Chase Camera Rig
+  // Cinematic Chase & Cockpit POV Camera Rig
+  public cameraViewMode: 'CHASE' | 'COCKPIT' = 'CHASE';
+  public viewTransitionProgress = 0.0;
   private cameraTargetPos: THREE.Vector3 = new THREE.Vector3(0, 2.8, 12.5);
   private cameraLookTarget: THREE.Vector3 = new THREE.Vector3(0, 0.6, -6.0);
   private currentCameraUp: THREE.Vector3 = new THREE.Vector3(0, 1, 0);
@@ -128,6 +130,19 @@ export class FlightModel {
     }
   }
 
+  public setCameraViewMode(mode: 'CHASE' | 'COCKPIT'): void {
+    this.cameraViewMode = mode;
+  }
+
+  public getCameraViewMode(): 'CHASE' | 'COCKPIT' {
+    return this.cameraViewMode;
+  }
+
+  public toggleCameraViewMode(): 'CHASE' | 'COCKPIT' {
+    this.cameraViewMode = this.cameraViewMode === 'CHASE' ? 'COCKPIT' : 'CHASE';
+    return this.cameraViewMode;
+  }
+
   // Static persistent scratch vectors & quaternions for zero GC per frame
   private static readonly scratchRight = new THREE.Vector3();
   private static readonly scratchUp = new THREE.Vector3();
@@ -142,6 +157,9 @@ export class FlightModel {
   private static readonly scratchDesiredCamPos = new THREE.Vector3();
   private static readonly scratchDesiredLookTarget = new THREE.Vector3();
   private static readonly scratchDesiredUp = new THREE.Vector3();
+  private static readonly scratchCockpitCamPos = new THREE.Vector3();
+  private static readonly scratchCockpitLookTarget = new THREE.Vector3();
+  private static readonly scratchCockpitUp = new THREE.Vector3();
 
   public update(input: NormalizedInputState, dt: number, camera: THREE.PerspectiveCamera): void {
     const clampedDt = Math.max(0.001, Math.min(dt, 0.05));
@@ -283,8 +301,11 @@ export class FlightModel {
     speed: number
   ): void {
     FlightModel.scratchUp.set(0, 1, 0).applyQuaternion(this.quaternion);
+    FlightModel.scratchRight.set(1, 0, 0).applyQuaternion(this.quaternion);
 
     const speedRatio = Math.min(1, speed / this.maxCruiseSpeed);
+
+    // 1. Chase Camera Targets
     const distanceBehind = 12.5 + speedRatio * 2.5;
     const heightAbove = 2.8 + speedRatio * 0.4;
 
@@ -306,6 +327,35 @@ export class FlightModel {
       .lerp(FlightModel.scratchWorldUp, 0.15)
       .normalize();
 
+    // 2. Cockpit POV Camera Targets
+    // Pilot eye location: (0, 0.49, -0.42) relative to ship origin, plus dynamic G-force head shift
+    const headGForceZ = -speedRatio * 0.025;
+    const headGForceX = -this.yawVelocity * 0.015;
+
+    FlightModel.scratchCockpitCamPos
+      .copy(this.position)
+      .addScaledVector(FlightModel.scratchUp, 0.49)
+      .addScaledVector(forward, 0.42 + headGForceZ)
+      .addScaledVector(FlightModel.scratchRight, headGForceX);
+
+    FlightModel.scratchCockpitLookTarget
+      .copy(FlightModel.scratchCockpitCamPos)
+      .addScaledVector(forward, 100.0)
+      .addScaledVector(FlightModel.scratchUp, 0.2);
+
+    FlightModel.scratchCockpitUp.copy(FlightModel.scratchUp);
+
+    // 3. Smooth View Transition (Chase <-> Cockpit)
+    const targetProgress = this.cameraViewMode === 'COCKPIT' ? 1.0 : 0.0;
+    this.viewTransitionProgress += (targetProgress - this.viewTransitionProgress) * Math.min(1.0, dt * 7.5);
+
+    // Blend between Chase and Cockpit
+    if (this.viewTransitionProgress > 0.001) {
+      FlightModel.scratchDesiredCamPos.lerp(FlightModel.scratchCockpitCamPos, this.viewTransitionProgress);
+      FlightModel.scratchDesiredLookTarget.lerp(FlightModel.scratchCockpitLookTarget, this.viewTransitionProgress);
+      FlightModel.scratchDesiredUp.lerp(FlightModel.scratchCockpitUp, this.viewTransitionProgress).normalize();
+    }
+
     if (!this.isCameraInitialized) {
       this.cameraTargetPos.copy(FlightModel.scratchDesiredCamPos);
       this.cameraLookTarget.copy(FlightModel.scratchDesiredLookTarget);
@@ -313,20 +363,25 @@ export class FlightModel {
       this.isCameraInitialized = true;
     } else {
       // High-precision frame-rate independent critical damping follow
-      const posLerp = 1 - Math.exp(-14.0 * dt);
-      const lookLerp = 1 - Math.exp(-18.0 * dt);
+      const posFollowRate = THREE.MathUtils.lerp(14.0, 28.0, this.viewTransitionProgress);
+      const lookFollowRate = THREE.MathUtils.lerp(18.0, 32.0, this.viewTransitionProgress);
+      const posLerp = 1 - Math.exp(-posFollowRate * dt);
+      const lookLerp = 1 - Math.exp(-lookFollowRate * dt);
       this.cameraTargetPos.lerp(FlightModel.scratchDesiredCamPos, posLerp);
       this.cameraLookTarget.lerp(FlightModel.scratchDesiredLookTarget, lookLerp);
-      this.currentCameraUp.lerp(FlightModel.scratchDesiredUp, Math.min(1, dt * 8.0)).normalize();
+      this.currentCameraUp.lerp(FlightModel.scratchDesiredUp, Math.min(1, dt * 10.0)).normalize();
     }
 
     camera.position.copy(this.cameraTargetPos);
     camera.up.copy(this.currentCameraUp);
     camera.lookAt(this.cameraLookTarget);
 
-    // Dynamic FOV easing (60° cruise to 69° boost) - only update projection matrix when delta > 0.05
-    const targetFov = 60 + speedRatio * 9;
-    this.currentFov += (targetFov - this.currentFov) * Math.min(1, dt * 4.0);
+    // Dynamic FOV easing (60° cruise to 69° boost in chase; 72° to 78° in cockpit)
+    const chaseTargetFov = 60 + speedRatio * 9;
+    const cockpitTargetFov = 72 + speedRatio * 6;
+    const targetFov = THREE.MathUtils.lerp(chaseTargetFov, cockpitTargetFov, this.viewTransitionProgress);
+
+    this.currentFov += (targetFov - this.currentFov) * Math.min(1, dt * 5.0);
     if (Math.abs(camera.fov - this.currentFov) > 0.05) {
       camera.fov = this.currentFov;
       camera.updateProjectionMatrix();

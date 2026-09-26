@@ -176,6 +176,10 @@ export class HelpModal {
               <td style="padding: 10px 0; color: #38bdf8;">X</td>
               <td style="color: #cbd5e1;">Engage Autopilot alignment / Deep Cruise</td>
             </tr>
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+              <td style="padding: 10px 0; color: #38bdf8;">V / C</td>
+              <td style="color: #cbd5e1;">Toggle Camera View (Chase Cam ↔ First-Person Cockpit POV)</td>
+            </tr>
           </table>
           <p style="margin-top: 20px; font-size: 13px; color: #94a3b8;">
             * In surface flight, the craft automatically engages terrain stabilization with gentle banking limits and radar altimeter tracking.

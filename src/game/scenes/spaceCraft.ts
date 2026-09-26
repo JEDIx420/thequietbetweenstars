@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CockpitInteriorRig, type CockpitInputState } from './CockpitInteriorRig';
 
 export type CraftFlightMode = 'space' | 'surface' | 'warp';
 
@@ -47,6 +48,11 @@ export class SurveyCraft {
   private clock = 0;
   private currentMode: CraftFlightMode = 'space';
   private wingSpreadFactor = 1.0; // 1.0 = full X deployment in space, 0.25 = tucked in atmospheric/surface flight
+  // Cockpit Interior Rig (Pilot POV)
+  public cockpitInterior: CockpitInteriorRig;
+  private exteriorCanopy!: THREE.Mesh;
+  private exteriorRib!: THREE.Mesh;
+  private cameraViewMode: 'CHASE' | 'COCKPIT' = 'CHASE';
 
   constructor() {
     this.group = new THREE.Group();
@@ -55,11 +61,13 @@ export class SurveyCraft {
     this.cockpitGroup = new THREE.Group();
     this.sensorGroup = new THREE.Group();
     this.moduleVisualsGroup = new THREE.Group();
+    this.cockpitInterior = new CockpitInteriorRig();
 
     this.group.add(this.hullGroup);
     this.group.add(this.cockpitGroup);
     this.group.add(this.sensorGroup);
     this.group.add(this.moduleVisualsGroup);
+    this.group.add(this.cockpitInterior.group);
 
     // Modern Sci-Fi Materials
     const primaryMat = new THREE.MeshStandardMaterial({
@@ -157,15 +165,15 @@ export class SurveyCraft {
     // Elongated canopy dome
     const canopyGeo = new THREE.SphereGeometry(0.55, 16, 12);
     canopyGeo.scale(0.82, 0.52, 2.1);
-    const canopy = new THREE.Mesh(canopyGeo, canopyMat);
-    canopy.position.set(0, 0.46, -0.5);
-    this.cockpitGroup.add(canopy);
+    this.exteriorCanopy = new THREE.Mesh(canopyGeo, canopyMat);
+    this.exteriorCanopy.position.set(0, 0.46, -0.5);
+    this.cockpitGroup.add(this.exteriorCanopy);
 
     // Longitudinal cockpit rib
     const ribGeo = new THREE.BoxGeometry(0.12, 0.1, 2.2);
-    const rib = new THREE.Mesh(ribGeo, darkMat);
-    rib.position.set(0, 0.72, -0.5);
-    this.cockpitGroup.add(rib);
+    this.exteriorRib = new THREE.Mesh(ribGeo, darkMat);
+    this.exteriorRib.position.set(0, 0.72, -0.5);
+    this.cockpitGroup.add(this.exteriorRib);
   }
 
   private buildSensorSuite(darkMat: THREE.Material, glowMat: THREE.Material): void {
@@ -524,6 +532,27 @@ export class SurveyCraft {
     for (const s of this.strobes) {
       s.visible = strobeState;
     }
+  }
+
+  // Camera View Mode (Chase Cam vs. First-Person Cockpit POV)
+  public setCameraViewMode(mode: 'CHASE' | 'COCKPIT'): void {
+    this.cameraViewMode = mode;
+    const isCockpit = mode === 'COCKPIT';
+    this.cockpitInterior.setVisible(isCockpit);
+    if (this.exteriorCanopy) {
+      this.exteriorCanopy.visible = !isCockpit;
+    }
+    if (this.exteriorRib) {
+      this.exteriorRib.visible = !isCockpit;
+    }
+  }
+
+  public getCameraViewMode(): 'CHASE' | 'COCKPIT' {
+    return this.cameraViewMode;
+  }
+
+  public updateCockpit(dt: number, state: CockpitInputState): void {
+    this.cockpitInterior.update(dt, state);
   }
 
   // Backward compatibility alias for legacy callers

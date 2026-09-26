@@ -70,6 +70,25 @@ export class SurfaceScene {
   private smoothedCamPos = new THREE.Vector3();
   private smoothedCamLook = new THREE.Vector3();
   private isCamInitialized = false;
+  public cameraViewMode: 'CHASE' | 'COCKPIT' = 'CHASE';
+  private viewTransitionProgress = 0.0;
+  private scratchCockpitCamPos = new THREE.Vector3();
+  private scratchCockpitCamLook = new THREE.Vector3();
+
+  public setCameraViewMode(mode: 'CHASE' | 'COCKPIT'): void {
+    this.cameraViewMode = mode;
+    this.surveyCraft.setCameraViewMode(mode);
+  }
+
+  public getCameraViewMode(): 'CHASE' | 'COCKPIT' {
+    return this.cameraViewMode;
+  }
+
+  public toggleCameraViewMode(): 'CHASE' | 'COCKPIT' {
+    this.cameraViewMode = this.cameraViewMode === 'CHASE' ? 'COCKPIT' : 'CHASE';
+    this.surveyCraft.setCameraViewMode(this.cameraViewMode);
+    return this.cameraViewMode;
+  }
 
   // Survey Credit Pickup Manager
   public creditPickupManager: SurveyCreditPickupManager;
@@ -472,6 +491,14 @@ export class SurfaceScene {
 
     this.shipPhysicsRoot.position.copy(this.shipPosition);
     this.surveyCraft.updateVisuals(clampedDt, input.throttle, 'surface');
+    this.surveyCraft.updateCockpit(clampedDt, {
+      throttle: input.throttle,
+      pitchInput: input.axes.y,
+      yawInput: input.axes.x,
+      rollInput: input.roll,
+      speed: this.shipVelocity.length(),
+      maxSpeed: 65,
+    });
 
     // 6. Horizon-Stabilized Camera with Decoupled Target Smoothing
     const maxCameraBankRad = 0.10;
@@ -489,13 +516,34 @@ export class SurfaceScene {
       .addScaledVector(this.scratchForward, lookDist)
       .add(this.scratchLookOffset);
 
+    // Cockpit POV view transition
+    const targetProgress = this.cameraViewMode === 'COCKPIT' ? 1.0 : 0.0;
+    this.viewTransitionProgress += (targetProgress - this.viewTransitionProgress) * Math.min(1.0, clampedDt * 7.5);
+
+    if (this.viewTransitionProgress > 0.001) {
+      this.scratchCockpitCamPos
+        .copy(this.shipPosition)
+        .addScaledVector(SurfaceScene.WORLD_UP, 0.49)
+        .addScaledVector(this.scratchForward, 0.42);
+
+      this.scratchCockpitCamLook
+        .copy(this.scratchCockpitCamPos)
+        .addScaledVector(this.scratchForward, 80.0)
+        .addScaledVector(SurfaceScene.WORLD_UP, 0.2);
+
+      this.scratchTargetCamPos.lerp(this.scratchCockpitCamPos, this.viewTransitionProgress);
+      this.scratchTargetCamLook.lerp(this.scratchCockpitCamLook, this.viewTransitionProgress);
+    }
+
     if (!this.isCamInitialized) {
       this.smoothedCamPos.copy(this.scratchTargetCamPos);
       this.smoothedCamLook.copy(this.scratchTargetCamLook);
       this.isCamInitialized = true;
     } else {
-      this.smoothedCamPos.lerp(this.scratchTargetCamPos, clampedDt * 5.0);
-      this.smoothedCamLook.lerp(this.scratchTargetCamLook, clampedDt * 6.5);
+      const followRate = THREE.MathUtils.lerp(5.0, 18.0, this.viewTransitionProgress);
+      const lookFollowRate = THREE.MathUtils.lerp(6.5, 22.0, this.viewTransitionProgress);
+      this.smoothedCamPos.lerp(this.scratchTargetCamPos, clampedDt * followRate);
+      this.smoothedCamLook.lerp(this.scratchTargetCamLook, clampedDt * lookFollowRate);
     }
 
     this.scratchRight.crossVectors(this.scratchForward, SurfaceScene.WORLD_UP).normalize();

@@ -21,7 +21,8 @@ export type GameAction =
   | 'altitude_up'
   | 'altitude_down'
   | 'tractor'
-  | 'settings';
+  | 'settings'
+  | 'toggle_camera';
 
 export type ActionState = 'down' | 'up' | 'trigger';
 

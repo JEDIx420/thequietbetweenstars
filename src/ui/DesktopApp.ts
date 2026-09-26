@@ -967,6 +967,14 @@ export class DesktopApp {
     const shipPos = this.flightModel.position;
     const throttle = isDockingActive ? 0 : this.flightModel.getThrottle();
     this.spaceScene.updateSpaceFlight(dt, shipPos, this.renderer.camera.position, throttle, effectiveInput.axes.x, effectiveInput.axes.y, tick.didSimTick);
+    this.spaceScene.surveyCraft.updateCockpit(dt, {
+      throttle,
+      pitchInput: effectiveInput.axes.y,
+      yawInput: effectiveInput.axes.x,
+      rollInput: effectiveInput.roll,
+      speed: this.flightModel.getSpeed(),
+      maxSpeed: 160,
+    });
     monitor.stopTiming('sim');
 
     // Relativistic camera FOV expansion strictly during warp drive
@@ -1460,6 +1468,36 @@ export class DesktopApp {
         } else {
           this.showHudNotice('AUTOPILOT DISENGAGED // MANUAL FLIGHT RESUMED');
         }
+      }
+    }
+
+    if (this.inputManager.consumeAction('toggle_camera')) {
+      this.toggleCameraView();
+    }
+  }
+
+  public toggleCameraView(): void {
+    const newMode = this.flightModel.toggleCameraViewMode();
+    this.surfaceScene?.setCameraViewMode(newMode);
+    this.spaceScene.surveyCraft.setCameraViewMode(newMode);
+
+    audio.playConnectChime();
+    HapticFeedback.light();
+
+    const isCockpit = newMode === 'COCKPIT';
+    const notice = isCockpit
+      ? '👁️ COCKPIT POV // FIRST-PERSON FLIGHT DECK'
+      : '🎥 CHASE CAM // EXTERIOR SURVEY PERSPECTIVE';
+    this.showHudNotice(notice);
+
+    const btn = this.uiContainer.querySelector('#btn-toggle-camera-view') as HTMLElement;
+    if (btn) {
+      btn.style.borderColor = isCockpit ? 'rgba(56, 189, 248, 0.8)' : 'rgba(56, 189, 248, 0.35)';
+      btn.style.background = isCockpit ? 'rgba(56, 189, 248, 0.22)' : 'rgba(15, 23, 42, 0.75)';
+      const label = btn.querySelector('#camera-view-label');
+      if (label) {
+        const isTouch = this.currentControlMode === 'touch' || isTouchDevice();
+        label.textContent = isTouch ? (isCockpit ? 'POV' : 'CHASE') : (isCockpit ? 'POV [V]' : 'CHASE [V]');
       }
     }
   }
@@ -3194,6 +3232,25 @@ export class DesktopApp {
               ">LOG [J]</button>
             ` : ''}
 
+            <!-- Camera View Mode Toggle (Chase Cam vs. First-Person Cockpit POV) -->
+            <button id="btn-toggle-camera-view" style="
+              background: rgba(15, 23, 42, 0.75);
+              border: 1px solid rgba(56, 189, 248, 0.35);
+              border-radius: 8px;
+              color: #38bdf8;
+              padding: 5px 10px;
+              font-size: 10.5px;
+              font-weight: 600;
+              cursor: pointer;
+              touch-action: manipulation;
+              display: flex;
+              align-items: center;
+              gap: 4px;
+            " title="Toggle Cockpit POV / Chase Camera [V]">
+              <span style="font-size: 11px;">💺</span>
+              <span id="camera-view-label">${isTouch ? 'CAM' : 'CAM [V]'}</span>
+            </button>
+
             <button id="btn-open-help" style="
               background: rgba(15, 23, 42, 0.75);
               border: 1px solid rgba(148, 163, 184, 0.25);
@@ -3375,6 +3432,10 @@ export class DesktopApp {
     bindTapAction('#btn-open-journal', () => {
       audio.playBlip();
       this.journalModal.toggle();
+    });
+
+    bindTapAction('#btn-toggle-camera-view', () => {
+      this.toggleCameraView();
     });
 
     bindTapAction('#btn-open-help', () => {

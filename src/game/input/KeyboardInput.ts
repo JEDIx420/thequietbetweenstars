@@ -59,6 +59,8 @@ export class KeyboardInput implements InputSource {
       this.triggeredActions.add('help');
     } else if (code === 'KeyO') {
       this.triggeredActions.add('settings');
+    } else if (code === 'KeyV' || code === 'KeyC') {
+      this.triggeredActions.add('toggle_camera');
     }
   }
 
