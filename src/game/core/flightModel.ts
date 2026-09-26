@@ -143,6 +143,8 @@ export class FlightModel {
     return this.cameraViewMode;
   }
 
+  public readonly localPilotSeatOffset = new THREE.Vector3(0, 0.52, -0.32);
+
   // Static persistent scratch vectors & quaternions for zero GC per frame
   private static readonly scratchRight = new THREE.Vector3();
   private static readonly scratchUp = new THREE.Vector3();
@@ -158,8 +160,11 @@ export class FlightModel {
   private static readonly scratchDesiredLookTarget = new THREE.Vector3();
   private static readonly scratchDesiredUp = new THREE.Vector3();
   private static readonly scratchCockpitCamPos = new THREE.Vector3();
-  private static readonly scratchCockpitLookTarget = new THREE.Vector3();
-  private static readonly scratchCockpitUp = new THREE.Vector3();
+  private static readonly scratchCockpitQuat = new THREE.Quaternion();
+  private static readonly scratchChaseCamQuat = new THREE.Quaternion();
+  private static readonly scratchHeadMotionQuat = new THREE.Quaternion();
+  private static readonly scratchHeadEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+  private static readonly scratchTempMat = new THREE.Matrix4();
 
   public update(input: NormalizedInputState, dt: number, camera: THREE.PerspectiveCamera): void {
     const clampedDt = Math.max(0.001, Math.min(dt, 0.05));
@@ -327,33 +332,36 @@ export class FlightModel {
       .lerp(FlightModel.scratchWorldUp, 0.15)
       .normalize();
 
-    // 2. Cockpit POV Camera Targets
-    // Pilot eye location: (0, 0.49, -0.42) relative to ship origin, plus dynamic G-force head shift
-    const headGForceZ = -speedRatio * 0.025;
-    const headGForceX = -this.yawVelocity * 0.015;
-
+    // 2. Physical Cockpit Seat Transform & Pose
+    // Authoritative physical seat position: ship position + shipQuaternion * localPilotSeatOffset
     FlightModel.scratchCockpitCamPos
-      .copy(this.position)
-      .addScaledVector(FlightModel.scratchUp, 0.49)
-      .addScaledVector(forward, 0.42 + headGForceZ)
-      .addScaledVector(FlightModel.scratchRight, headGForceX);
+      .copy(this.localPilotSeatOffset)
+      .applyQuaternion(this.quaternion)
+      .add(this.position);
 
-    FlightModel.scratchCockpitLookTarget
-      .copy(FlightModel.scratchCockpitCamPos)
-      .addScaledVector(forward, 100.0)
-      .addScaledVector(FlightModel.scratchUp, 0.2);
+    // Extremely subtle inertial head lag (never large bob)
+    const headGForceZ = -speedRatio * 0.012;
+    const headGForceX = -this.yawVelocity * 0.008;
+    FlightModel.scratchRight.set(1, 0, 0).applyQuaternion(this.quaternion);
+    FlightModel.scratchCockpitCamPos
+      .addScaledVector(FlightModel.scratchRight, headGForceX)
+      .addScaledVector(forward, headGForceZ);
 
-    FlightModel.scratchCockpitUp.copy(FlightModel.scratchUp);
+    // Authoritative physical ship quaternion with very subtle head tilt
+    const headPitch = THREE.MathUtils.clamp(-this.pitchVelocity * 0.005, -0.015, 0.015);
+    const headYaw = THREE.MathUtils.clamp(-this.yawVelocity * 0.005, -0.015, 0.015);
+    const headRoll = THREE.MathUtils.clamp(-this.rollVelocity * 0.003, -0.010, 0.010);
+    FlightModel.scratchHeadEuler.set(headPitch, headYaw, headRoll);
+    FlightModel.scratchHeadMotionQuat.setFromEuler(FlightModel.scratchHeadEuler);
+    FlightModel.scratchCockpitQuat.copy(this.quaternion).multiply(FlightModel.scratchHeadMotionQuat);
 
-    // 3. Smooth View Transition (Chase <-> Cockpit)
-    const targetProgress = this.cameraViewMode === 'COCKPIT' ? 1.0 : 0.0;
-    this.viewTransitionProgress += (targetProgress - this.viewTransitionProgress) * Math.min(1.0, dt * 7.5);
-
-    // Blend between Chase and Cockpit
-    if (this.viewTransitionProgress > 0.001) {
-      FlightModel.scratchDesiredCamPos.lerp(FlightModel.scratchCockpitCamPos, this.viewTransitionProgress);
-      FlightModel.scratchDesiredLookTarget.lerp(FlightModel.scratchCockpitLookTarget, this.viewTransitionProgress);
-      FlightModel.scratchDesiredUp.lerp(FlightModel.scratchCockpitUp, this.viewTransitionProgress).normalize();
+    // 3. Smooth View Transition (~320ms ease between 250-400ms)
+    const transitionDuration = 0.32;
+    const step = dt / transitionDuration;
+    if (this.cameraViewMode === 'COCKPIT') {
+      this.viewTransitionProgress = Math.min(1.0, this.viewTransitionProgress + step);
+    } else {
+      this.viewTransitionProgress = Math.max(0.0, this.viewTransitionProgress - step);
     }
 
     if (!this.isCameraInitialized) {
@@ -362,28 +370,54 @@ export class FlightModel {
       this.currentCameraUp.copy(FlightModel.scratchDesiredUp);
       this.isCameraInitialized = true;
     } else {
-      // High-precision frame-rate independent critical damping follow
-      const posFollowRate = THREE.MathUtils.lerp(14.0, 28.0, this.viewTransitionProgress);
-      const lookFollowRate = THREE.MathUtils.lerp(18.0, 32.0, this.viewTransitionProgress);
-      const posLerp = 1 - Math.exp(-posFollowRate * dt);
-      const lookLerp = 1 - Math.exp(-lookFollowRate * dt);
+      // Chase camera damping follow
+      const posLerp = 1 - Math.exp(-14.0 * dt);
+      const lookLerp = 1 - Math.exp(-18.0 * dt);
       this.cameraTargetPos.lerp(FlightModel.scratchDesiredCamPos, posLerp);
       this.cameraLookTarget.lerp(FlightModel.scratchDesiredLookTarget, lookLerp);
       this.currentCameraUp.lerp(FlightModel.scratchDesiredUp, Math.min(1, dt * 10.0)).normalize();
     }
 
-    camera.position.copy(this.cameraTargetPos);
-    camera.up.copy(this.currentCameraUp);
-    camera.lookAt(this.cameraLookTarget);
+    // Apply Camera Pose
+    if (this.viewTransitionProgress >= 1.0) {
+      // 100% Cockpit POV: lock directly to authoritative physical craft pose
+      camera.position.copy(FlightModel.scratchCockpitCamPos);
+      camera.quaternion.copy(FlightModel.scratchCockpitQuat);
+    } else if (this.viewTransitionProgress <= 0.0) {
+      // 100% Chase Cam: use smoothed chase rig
+      camera.position.copy(this.cameraTargetPos);
+      camera.up.copy(this.currentCameraUp);
+      camera.lookAt(this.cameraLookTarget);
+    } else {
+      // Smooth interpolation during transition
+      const t = THREE.MathUtils.smoothstep(this.viewTransitionProgress, 0, 1);
+      FlightModel.scratchTempMat.lookAt(this.cameraTargetPos, this.cameraLookTarget, this.currentCameraUp);
+      FlightModel.scratchChaseCamQuat.setFromRotationMatrix(FlightModel.scratchTempMat);
 
-    // Dynamic FOV easing (60° cruise to 69° boost in chase; 72° to 78° in cockpit)
-    const chaseTargetFov = 60 + speedRatio * 9;
-    const cockpitTargetFov = 72 + speedRatio * 6;
-    const targetFov = THREE.MathUtils.lerp(chaseTargetFov, cockpitTargetFov, this.viewTransitionProgress);
+      camera.position.lerpVectors(this.cameraTargetPos, FlightModel.scratchCockpitCamPos, t);
+      camera.quaternion.slerpQuaternions(FlightModel.scratchChaseCamQuat, FlightModel.scratchCockpitQuat, t);
+    }
 
-    this.currentFov += (targetFov - this.currentFov) * Math.min(1, dt * 5.0);
-    if (Math.abs(camera.fov - this.currentFov) > 0.05) {
+    // Dynamic FOV: 60° cruise in chase; 68° desktop / 70° mobile landscape in cockpit
+    const chaseTargetFov = 60 + speedRatio * 6;
+    const isAspectWide = camera.aspect >= 1.5;
+    const cockpitTargetFov = (isAspectWide ? 68 : 70) + speedRatio * 2;
+    const tProgress = THREE.MathUtils.smoothstep(this.viewTransitionProgress, 0, 1);
+    this.currentFov = THREE.MathUtils.lerp(chaseTargetFov, cockpitTargetFov, tProgress);
+
+    // Dynamic Near Plane: 0.1 in chase, 0.04 in cockpit for clean dashboard rendering
+    const targetNear = THREE.MathUtils.lerp(0.1, 0.04, tProgress);
+
+    let needsProjectionUpdate = false;
+    if (Math.abs(camera.fov - this.currentFov) > 0.01) {
       camera.fov = this.currentFov;
+      needsProjectionUpdate = true;
+    }
+    if (Math.abs(camera.near - targetNear) > 0.001) {
+      camera.near = targetNear;
+      needsProjectionUpdate = true;
+    }
+    if (needsProjectionUpdate) {
       camera.updateProjectionMatrix();
     }
   }
@@ -430,8 +464,13 @@ export class FlightModel {
       camera.up.copy(this.currentCameraUp);
       camera.lookAt(this.cameraLookTarget);
       camera.fov = 60;
+      camera.near = 0.1;
       camera.updateProjectionMatrix();
     }
+  }
+
+  public getPilotSeatWorldPosition(): THREE.Vector3 {
+    return this.localPilotSeatOffset.clone().applyQuaternion(this.quaternion).add(this.position);
   }
 
   public getSpeed(): number {

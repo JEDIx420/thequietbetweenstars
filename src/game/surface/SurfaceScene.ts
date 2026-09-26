@@ -71,9 +71,12 @@ export class SurfaceScene {
   private smoothedCamLook = new THREE.Vector3();
   private isCamInitialized = false;
   public cameraViewMode: 'CHASE' | 'COCKPIT' = 'CHASE';
-  private viewTransitionProgress = 0.0;
+  public viewTransitionProgress = 0.0;
+  public readonly localPilotSeatOffset = new THREE.Vector3(0, 0.52, -0.32);
   private scratchCockpitCamPos = new THREE.Vector3();
-  private scratchCockpitCamLook = new THREE.Vector3();
+  private scratchCockpitQuat = new THREE.Quaternion();
+  private scratchChaseQuat = new THREE.Quaternion();
+  private scratchTempMat = new THREE.Matrix4();
 
   public setCameraViewMode(mode: 'CHASE' | 'COCKPIT'): void {
     this.cameraViewMode = mode;
@@ -516,32 +519,33 @@ export class SurfaceScene {
       .addScaledVector(this.scratchForward, lookDist)
       .add(this.scratchLookOffset);
 
-    // Cockpit POV view transition
-    const targetProgress = this.cameraViewMode === 'COCKPIT' ? 1.0 : 0.0;
-    this.viewTransitionProgress += (targetProgress - this.viewTransitionProgress) * Math.min(1.0, clampedDt * 7.5);
-
-    if (this.viewTransitionProgress > 0.001) {
-      this.scratchCockpitCamPos
-        .copy(this.shipPosition)
-        .addScaledVector(SurfaceScene.WORLD_UP, 0.49)
-        .addScaledVector(this.scratchForward, 0.42);
-
-      this.scratchCockpitCamLook
-        .copy(this.scratchCockpitCamPos)
-        .addScaledVector(this.scratchForward, 80.0)
-        .addScaledVector(SurfaceScene.WORLD_UP, 0.2);
-
-      this.scratchTargetCamPos.lerp(this.scratchCockpitCamPos, this.viewTransitionProgress);
-      this.scratchTargetCamLook.lerp(this.scratchCockpitCamLook, this.viewTransitionProgress);
+    // Cockpit POV view transition (~320ms ease between 250-400ms)
+    const transitionDuration = 0.32;
+    const step = clampedDt / transitionDuration;
+    if (this.cameraViewMode === 'COCKPIT') {
+      this.viewTransitionProgress = Math.min(1.0, this.viewTransitionProgress + step);
+    } else {
+      this.viewTransitionProgress = Math.max(0.0, this.viewTransitionProgress - step);
     }
+
+    // Synchronize exterior visibility
+    this.surveyCraft.setExteriorVisible(this.viewTransitionProgress <= 0.12);
+
+    // Compute Authoritative Cockpit Eye Pose
+    this.scratchCockpitCamPos
+      .copy(this.localPilotSeatOffset)
+      .applyQuaternion(this.shipPhysicsRoot.quaternion)
+      .add(this.shipPosition);
+
+    this.scratchCockpitQuat.copy(this.shipPhysicsRoot.quaternion);
 
     if (!this.isCamInitialized) {
       this.smoothedCamPos.copy(this.scratchTargetCamPos);
       this.smoothedCamLook.copy(this.scratchTargetCamLook);
       this.isCamInitialized = true;
     } else {
-      const followRate = THREE.MathUtils.lerp(5.0, 18.0, this.viewTransitionProgress);
-      const lookFollowRate = THREE.MathUtils.lerp(6.5, 22.0, this.viewTransitionProgress);
+      const followRate = 5.0;
+      const lookFollowRate = 6.5;
       this.smoothedCamPos.lerp(this.scratchTargetCamPos, clampedDt * followRate);
       this.smoothedCamLook.lerp(this.scratchTargetCamLook, clampedDt * lookFollowRate);
     }
@@ -555,8 +559,40 @@ export class SurfaceScene {
     const recoveryRate = upAlignment < 0.2 ? 9.0 : 4.5;
     camera.up.lerp(this.scratchDesiredUp, clampedDt * recoveryRate).normalize();
 
-    camera.position.copy(this.smoothedCamPos);
-    camera.lookAt(this.smoothedCamLook);
+    // Apply Camera Pose
+    if (this.viewTransitionProgress >= 0.999) {
+      camera.position.copy(this.scratchCockpitCamPos);
+      camera.quaternion.copy(this.scratchCockpitQuat);
+    } else if (this.viewTransitionProgress <= 0.001) {
+      camera.position.copy(this.smoothedCamPos);
+      camera.lookAt(this.smoothedCamLook);
+    } else {
+      const t = THREE.MathUtils.smoothstep(this.viewTransitionProgress, 0, 1);
+      this.scratchTempMat.lookAt(this.smoothedCamPos, this.smoothedCamLook, camera.up);
+      this.scratchChaseQuat.setFromRotationMatrix(this.scratchTempMat);
+
+      camera.position.lerpVectors(this.smoothedCamPos, this.scratchCockpitCamPos, t);
+      camera.quaternion.slerpQuaternions(this.scratchChaseQuat, this.scratchCockpitQuat, t);
+    }
+
+    // Dynamic FOV & Near Plane
+    const isAspectWide = camera.aspect >= 1.5;
+    const cockpitTargetFov = isAspectWide ? 68 : 70;
+    const targetFov = THREE.MathUtils.lerp(60, cockpitTargetFov, this.viewTransitionProgress);
+    const targetNear = THREE.MathUtils.lerp(0.1, 0.04, this.viewTransitionProgress);
+
+    let needsProjectionUpdate = false;
+    if (Math.abs(camera.fov - targetFov) > 0.05) {
+      camera.fov = targetFov;
+      needsProjectionUpdate = true;
+    }
+    if (Math.abs(camera.near - targetNear) > 0.001) {
+      camera.near = targetNear;
+      needsProjectionUpdate = true;
+    }
+    if (needsProjectionUpdate) {
+      camera.updateProjectionMatrix();
+    }
 
     this.proceduralSky.update(camera.position);
     if (this.distantHorizonRing) {

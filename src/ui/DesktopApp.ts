@@ -57,6 +57,7 @@ import { StagedScanHUD } from '../game/ui/StagedScanHUD';
 import { StagedScanController } from '../game/scanning/StagedScanController';
 import { MissionHelpModal } from './MissionHelpModal';
 import { PlayerStateStore } from '../game/progression/PlayerStateStore';
+import { CockpitInteriorRig } from '../game/scenes/CockpitInteriorRig';
 
 const scratchShipForward = new THREE.Vector3();
 
@@ -67,11 +68,12 @@ export class DesktopApp {
   private uiContainer: HTMLElement;
   private canvasContainer: HTMLElement;
 
-  private renderer!: GameRenderer;
-  private spaceScene!: SpaceScene;
+  public renderer!: GameRenderer;
+  public spaceScene!: SpaceScene;
   public shipEmoteDirector!: ShipEmoteDirector;
-  private surfaceScene: SurfaceScene | null = null;
-  private flightModel!: FlightModel;
+  public surfaceScene: SurfaceScene | null = null;
+  public cockpitInterior!: CockpitInteriorRig;
+  public flightModel!: FlightModel;
   private inputManager!: InputManager;
   private debugOverlay!: DebugOverlay;
 
@@ -273,12 +275,23 @@ export class DesktopApp {
       (window as any).__dismissPreloader();
     }
 
-    // 3-Second Live Title Reveal Sequence on page load
-    const titleSequence = new TitleRevealSequence(this.container);
-    titleSequence.play(() => {
+    const isCockpitDirect = typeof window !== 'undefined' && window.location.search.includes('cam=cockpit');
+    if (isCockpitDirect) {
+      const preloader = document.getElementById('initial-preloader');
+      if (preloader) preloader.remove();
       this.isTitleRevealActive = false;
-      this.renderTitleScreen();
-    });
+      this.enterFlightMode();
+      this.flightModel.setCameraViewMode('COCKPIT');
+      this.spaceScene.surveyCraft.setExteriorVisible(false);
+      this.cockpitInterior.setVisible(true);
+    } else {
+      // 3-Second Live Title Reveal Sequence on page load
+      const titleSequence = new TitleRevealSequence(this.container);
+      titleSequence.play(() => {
+        this.isTitleRevealActive = false;
+        this.renderTitleScreen();
+      });
+    }
   }
 
   public getUiState(): UIState {
@@ -292,6 +305,11 @@ export class DesktopApp {
     this.spaceScene = new SpaceScene();
     this.shipEmoteDirector = new ShipEmoteDirector();
     this.spaceScene.scene.add(this.shipEmoteDirector.group);
+
+    // Dedicated First-Person Cockpit View Model mounted to PerspectiveCamera
+    this.cockpitInterior = new CockpitInteriorRig();
+    this.renderer.camera.add(this.cockpitInterior.group);
+    this.spaceScene.scene.add(this.renderer.camera);
 
     this.flightModel = new FlightModel(this.spaceScene.shipGroup, this.spaceScene.physics, this.approachController);
     this.inputManager = new InputManager();
@@ -633,6 +651,20 @@ export class DesktopApp {
     const throttle = input.throttle;
     audio.updateThrottle(throttle);
 
+    // Update Cockpit View Model during surface flight
+    const progress = this.surfaceScene.viewTransitionProgress;
+    this.cockpitInterior.setVisible(progress > 0.01);
+    if (progress > 0.01) {
+      this.cockpitInterior.update(dt, {
+        throttle,
+        pitchInput: input.axes.y,
+        yawInput: input.axes.x,
+        rollInput: input.roll,
+        speed: res.speedMps,
+        maxSpeed: 65,
+      });
+    }
+
     // Telemetry HUD updates with dirty checking
     if (tick.didTelemetryTick) {
       this.updateHudTelemetry(res.speedMps, `${Math.round(throttle * 100)}% (ALT ${res.altitudeAGL}m)`, this.credits);
@@ -864,6 +896,7 @@ export class DesktopApp {
       if (this.surfaceScene) {
         this.surfaceScene.dispose();
         this.surfaceScene = null;
+        this.spaceScene.scene.add(this.renderer.camera);
       }
       this.stateMachine.transitionTo(FlightPhase.ORBIT);
       audio.setSystemGenome(this.spaceScene.currentSystem?.seed || 42000);
@@ -967,14 +1000,21 @@ export class DesktopApp {
     const shipPos = this.flightModel.position;
     const throttle = isDockingActive ? 0 : this.flightModel.getThrottle();
     this.spaceScene.updateSpaceFlight(dt, shipPos, this.renderer.camera.position, throttle, effectiveInput.axes.x, effectiveInput.axes.y, tick.didSimTick);
-    this.spaceScene.surveyCraft.updateCockpit(dt, {
-      throttle,
-      pitchInput: effectiveInput.axes.y,
-      yawInput: effectiveInput.axes.x,
-      rollInput: effectiveInput.roll,
-      speed: this.flightModel.getSpeed(),
-      maxSpeed: 160,
-    });
+
+    // Explicit exterior culling and first-person cockpit view model updates
+    const progress = this.flightModel.viewTransitionProgress;
+    this.spaceScene.surveyCraft.setExteriorVisible(progress <= 0.12);
+    this.cockpitInterior.setVisible(progress > 0.01);
+    if (progress > 0.01) {
+      this.cockpitInterior.update(dt, {
+        throttle,
+        pitchInput: effectiveInput.axes.y,
+        yawInput: effectiveInput.axes.x,
+        rollInput: effectiveInput.roll,
+        speed: this.flightModel.getSpeed(),
+        maxSpeed: 160,
+      });
+    }
     monitor.stopTiming('sim');
 
     // Relativistic camera FOV expansion strictly during warp drive
@@ -1553,6 +1593,8 @@ export class DesktopApp {
       Array.from(this.collectedCreditIds),
       { deferHeavyInitialization: true }
     );
+    this.surfaceScene.scene.add(this.renderer.camera);
+    this.surfaceScene.setCameraViewMode(this.flightModel.getCameraViewMode());
 
     // Launch atmospheric entry plasma sequence & pre-warm surface scene WebGL shaders
     if (this.atmosphericEntrySequence) {
@@ -2926,7 +2968,7 @@ export class DesktopApp {
     }
   }
 
-  private async enterFlightMode(mode: 'keyboard' | 'touch' = 'keyboard'): Promise<void> {
+  public async enterFlightMode(mode: 'keyboard' | 'touch' = 'keyboard'): Promise<void> {
     this.uiState = 'playing';
     try {
       await audio.start();

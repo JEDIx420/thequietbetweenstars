@@ -48,26 +48,27 @@ export class SurveyCraft {
   private clock = 0;
   private currentMode: CraftFlightMode = 'space';
   private wingSpreadFactor = 1.0; // 1.0 = full X deployment in space, 0.25 = tucked in atmospheric/surface flight
-  // Cockpit Interior Rig (Pilot POV)
-  public cockpitInterior: CockpitInteriorRig;
+  // Exterior Mesh Root (strictly exterior SurveyCraft geometry)
+  public readonly exteriorRoot: THREE.Group;
+  public cockpitInterior: CockpitInteriorRig | null = null;
   private exteriorCanopy!: THREE.Mesh;
   private exteriorRib!: THREE.Mesh;
   private cameraViewMode: 'CHASE' | 'COCKPIT' = 'CHASE';
 
   constructor() {
     this.group = new THREE.Group();
+    this.exteriorRoot = new THREE.Group();
 
     this.hullGroup = new THREE.Group();
     this.cockpitGroup = new THREE.Group();
     this.sensorGroup = new THREE.Group();
     this.moduleVisualsGroup = new THREE.Group();
-    this.cockpitInterior = new CockpitInteriorRig();
 
-    this.group.add(this.hullGroup);
-    this.group.add(this.cockpitGroup);
-    this.group.add(this.sensorGroup);
-    this.group.add(this.moduleVisualsGroup);
-    this.group.add(this.cockpitInterior.group);
+    this.exteriorRoot.add(this.hullGroup);
+    this.exteriorRoot.add(this.cockpitGroup);
+    this.exteriorRoot.add(this.sensorGroup);
+    this.exteriorRoot.add(this.moduleVisualsGroup);
+    this.group.add(this.exteriorRoot);
 
     // Modern Sci-Fi Materials
     const primaryMat = new THREE.MeshStandardMaterial({
@@ -255,7 +256,7 @@ export class SurveyCraft {
         this.strobes.push(strobeLight);
       }
 
-      this.group.add(rootPivot);
+      this.exteriorRoot.add(rootPivot);
       return { rootPivot, vaneMesh, sensorArray, strobeLight };
     };
 
@@ -534,16 +535,21 @@ export class SurveyCraft {
     }
   }
 
+  // Exterior Visibility Control (Explicit Culling for First-Person POV)
+  public setExteriorVisible(visible: boolean): void {
+    this.exteriorRoot.visible = visible;
+  }
+
+  public isExteriorVisible(): boolean {
+    return this.exteriorRoot.visible;
+  }
+
   // Camera View Mode (Chase Cam vs. First-Person Cockpit POV)
   public setCameraViewMode(mode: 'CHASE' | 'COCKPIT'): void {
     this.cameraViewMode = mode;
-    const isCockpit = mode === 'COCKPIT';
-    this.cockpitInterior.setVisible(isCockpit);
-    if (this.exteriorCanopy) {
-      this.exteriorCanopy.visible = !isCockpit;
-    }
-    if (this.exteriorRib) {
-      this.exteriorRib.visible = !isCockpit;
+    this.setExteriorVisible(mode !== 'COCKPIT');
+    if (this.cockpitInterior) {
+      this.cockpitInterior.setVisible(mode === 'COCKPIT');
     }
   }
 
@@ -552,7 +558,9 @@ export class SurveyCraft {
   }
 
   public updateCockpit(dt: number, state: CockpitInputState): void {
-    this.cockpitInterior.update(dt, state);
+    if (this.cockpitInterior) {
+      this.cockpitInterior.update(dt, state);
+    }
   }
 
   // Backward compatibility alias for legacy callers

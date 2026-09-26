@@ -23,6 +23,7 @@ export class GameRenderer {
       alpha: false,
       stencil: false,
       depth: true,
+      preserveDrawingBuffer: true,
     });
 
     // Mobile/tablet devices with dense pixel pitch run optimally at 1.0 - 1.15 DPR
@@ -96,6 +97,10 @@ export class GameRenderer {
     } catch {
       // Ignored if unsupported in headless test environments
     }
+  }
+
+  public captureFrame(): string {
+    return this.renderer.domElement.toDataURL('image/png');
   }
 
   public setPixelRatio(dpr: number): void {

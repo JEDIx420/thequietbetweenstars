@@ -464,6 +464,10 @@
         var status = document.getElementById('preloader-status');
         var substatus = document.getElementById('preloader-substatus');
         if (!preloader || !canvas) return;
+        if (window.location.search.indexOf('cam=cockpit') !== -1) {
+          if (preloader.parentNode) preloader.parentNode.removeChild(preloader);
+          return;
+        }
 
         var ctx = canvas.getContext('2d');
         if (!ctx) return;

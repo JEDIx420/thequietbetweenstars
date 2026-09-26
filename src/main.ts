@@ -18,7 +18,17 @@ async function bootstrap() {
   } else {
     // Full 3D Space Flight Experience across Mobile, Tablet, and Desktop
     const { DesktopApp } = await import('./ui/DesktopApp');
-    new DesktopApp(appContainer);
+    const app = new DesktopApp(appContainer);
+    (window as any).__desktopApp = app;
+
+    if (urlParams.get('cam') === 'cockpit') {
+      setTimeout(async () => {
+        await app.enterFlightMode();
+        app.flightModel.setCameraViewMode('COCKPIT');
+        app.spaceScene.surveyCraft.setExteriorVisible(false);
+        app.cockpitInterior.setVisible(true);
+      }, 300);
+    }
   }
 }
 
