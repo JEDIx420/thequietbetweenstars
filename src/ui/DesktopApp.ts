@@ -2014,7 +2014,9 @@ export class DesktopApp {
     this.boundVisibilityHandler = () => {
       if (document.hidden) {
         this.scheduler.addPauseReason('hidden');
+        audio.handleVisibilityChange(false);
       } else {
+        audio.handleVisibilityChange(true);
         if (this.scheduler.hasPauseReason('hidden')) {
           this.scheduler.removePauseReason('hidden');
           this.scheduler.resetTiming();
@@ -2232,22 +2234,26 @@ export class DesktopApp {
 
   private setupAudioUnlockListeners(): void {
     const unlockAudio = async () => {
-      if (this.audioUnlocked) return;
-      this.audioUnlocked = true;
-      try {
-        await audio.start();
-        audio.playTitleOverture();
-        const hint = document.getElementById('audio-unlock-hint');
-        if (hint) hint.style.opacity = '0';
-      } catch (err) {
-        console.warn('[DesktopApp] Audio unlock prevented:', err);
+      if (!this.audioUnlocked) {
+        this.audioUnlocked = true;
+        try {
+          await audio.start();
+          audio.playTitleOverture();
+          const hint = document.getElementById('audio-unlock-hint');
+          if (hint) hint.style.opacity = '0';
+        } catch (err) {
+          console.warn('[DesktopApp] Audio unlock prevented:', err);
+        }
+      } else if (audio.isSuspended()) {
+        // Automatically recover audio if mobile device put AudioContext to sleep
+        audio.resume().catch(() => {});
       }
-      window.removeEventListener('pointerdown', unlockAudio);
-      window.removeEventListener('keydown', unlockAudio);
     };
 
-    window.addEventListener('pointerdown', unlockAudio, { once: true });
-    window.addEventListener('keydown', unlockAudio, { once: true });
+    const unlockEvents: (keyof WindowEventMap)[] = ['pointerdown', 'touchstart', 'touchend', 'click', 'keydown'];
+    unlockEvents.forEach((evt) => {
+      window.addEventListener(evt, unlockAudio, { passive: true });
+    });
   }
 
   private async renderTitleScreen(): Promise<void> {

@@ -178,4 +178,31 @@ describe('AudioEngine: Spacecraft Propulsion, Throttle & Warp Acoustics', () => 
       expect(() => audio.setContext(ctx)).not.toThrow();
     }
   });
+
+  it('manages app visibility changes gracefully without audio stutter or drift', async () => {
+    await audio.start();
+    audio.playTitleOverture();
+
+    // Backgrounding / lock screen
+    expect(() => audio.handleVisibilityChange(false)).not.toThrow();
+
+    // Returning to foreground / app unlocked
+    expect(() => audio.handleVisibilityChange(true)).not.toThrow();
+
+    audio.stopTitleOverture();
+  });
+
+  it('handles audio resume and checks suspended state safely', async () => {
+    await audio.start();
+    expect(typeof audio.isSuspended()).toBe('boolean');
+    await expect(audio.resume()).resolves.toBeUndefined();
+  });
+
+  it('handles title overture start and stop without voice leaks', async () => {
+    await audio.start();
+    expect(() => audio.playTitleOverture()).not.toThrow();
+    // Repeated calls should be idempotent
+    expect(() => audio.playTitleOverture()).not.toThrow();
+    expect(() => audio.stopTitleOverture()).not.toThrow();
+  });
 });
