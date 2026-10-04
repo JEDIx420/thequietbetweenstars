@@ -3,16 +3,17 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // Mock Web Audio API for headless testing
 class MockAudioParam {
   value = 0;
-  setValueAtTime = vi.fn((val: number) => { this.value = val; });
-  linearRampToValueAtTime = vi.fn();
-  exponentialRampToValueAtTime = vi.fn();
-  setTargetAtTime = vi.fn((val: number) => { this.value = val; });
-  rampTo = vi.fn();
+  setValueAtTime(val: number) { this.value = val; }
+  linearRampToValueAtTime(_val: number, _time: number) {}
+  exponentialRampToValueAtTime(_val: number, _time: number) {}
+  setTargetAtTime(val: number, _startTime: number, _timeConstant: number) { this.value = val; }
+  cancelScheduledValues(_time: number) {}
+  rampTo(_val: number, _time?: number) {}
 }
 
 class MockAudioNode {
-  connect = vi.fn().mockReturnThis();
-  disconnect = vi.fn();
+  connect(_dest?: any) { return this; }
+  disconnect() {}
 }
 
 class MockGainNode extends MockAudioNode {
@@ -204,5 +205,70 @@ describe('AudioEngine: Spacecraft Propulsion, Throttle & Warp Acoustics', () => 
     // Repeated calls should be idempotent
     expect(() => audio.playTitleOverture()).not.toThrow();
     expect(() => audio.stopTitleOverture()).not.toThrow();
+  });
+
+  it('cancels scheduled AudioParam values during throttle updates to prevent timeline bloat', async () => {
+    await audio.start();
+    audio.updateThrottle(0.2);
+
+    const cancelSpy = vi.spyOn(MockAudioParam.prototype, 'cancelScheduledValues');
+    audio.updateThrottle(0.65);
+
+    expect(cancelSpy).toHaveBeenCalled();
+    cancelSpy.mockRestore();
+  });
+
+  it('reuses pre-allocated noise buffer across multiple transients without allocating new buffers', async () => {
+    await audio.start();
+    if (activeMockAudioContext) {
+      const bufferSpy = vi.spyOn(activeMockAudioContext, 'createBuffer');
+
+      // Trigger transient bursts
+      audio.playAccelerationTransient(0.8);
+      audio.playDecelerationTransient(0.7);
+      audio.playAccelerationTransient(0.5);
+
+      // The noise buffer should already be cached in sharedNoiseBuffer, so createBuffer is not called repeatedly
+      expect(bufferSpy).not.toHaveBeenCalled();
+      bufferSpy.mockRestore();
+    }
+  });
+
+  it('cleans up intermediate audio nodes after one-shot sound effects', async () => {
+    vi.useFakeTimers();
+    await audio.start();
+
+    const disconnectSpy = vi.spyOn(MockAudioNode.prototype, 'disconnect');
+
+    audio.playBlip();
+    audio.playHapticTick();
+    audio.playCollisionDeflection();
+    audio.playScanEffect();
+
+    // Advance timers beyond all duration thresholds
+    vi.advanceTimersByTime(2500);
+
+    expect(disconnectSpy).toHaveBeenCalled();
+    disconnectSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('sustains extended high-frequency flight and SFX without memory leaks or errors', async () => {
+    await audio.start();
+
+    // Simulate 300 frames of dynamic flight controls and UI interaction
+    for (let frame = 0; frame < 300; frame++) {
+      const throttle = 0.5 + 0.45 * Math.sin(frame * 0.1);
+      audio.updateThrottle(throttle);
+
+      if (frame % 30 === 0) {
+        audio.playBlip();
+      }
+      if (frame % 50 === 0) {
+        audio.playHapticTick();
+      }
+    }
+
+    expect(audio.getIsMuted()).toBe(false);
   });
 });

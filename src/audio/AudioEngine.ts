@@ -28,16 +28,16 @@ export class AudioDirector {
   private padSynth: Tone.PolySynth | null = null;
   private bassSynth: Tone.MonoSynth | null = null;
   private leadSynth: Tone.PolySynth | null = null;
-  private ambientNoise: Tone.Noise | null = null;
 
   // Tone FX chain
   private filter: Tone.Filter | null = null;
-  private reverb: Tone.Freeverb | Tone.Reverb | null = null;
+  private reverb: Tone.FeedbackDelay | Tone.Freeverb | Tone.Reverb | null = null;
   private delay: Tone.FeedbackDelay | null = null;
 
   // Direct Web Audio engine for thrusters & responsive sound FX
   private webAudioCtx: AudioContext | null = null;
   private webAudioMasterGain: GainNode | null = null;
+  private sharedNoiseBuffer: AudioBuffer | null = null;
 
   // Spacecraft Propulsion Nodes (Physical Sub Mass, Propulsion Roar, Dual Ion Spool)
   private thrusterMasterGain: GainNode | null = null;
@@ -146,19 +146,21 @@ export class AudioDirector {
           release: 0.15,
         }).connect(masterLimiter);
 
-        // High-efficiency algorithmic Schroeder reverb (smooth and CPU-friendly on mobile)
-        this.reverb = new Tone.Freeverb({ roomSize: 0.68, dampening: 2800 }).connect(masterCompressor);
-        this.reverb.wet.value = 0.32;
+        // Featherweight, pristine spatial ambience chain:
+        // Replaces 12-filter Freeverb comb loops with an ultra-efficient dual-tap spatial delay & damping filter.
+        // Completely eliminates denormal float traps, comb-filter runaway, and audio thread CPU starvation on older Android phones.
+        this.reverb = new Tone.FeedbackDelay('4n', 0.16).connect(masterCompressor);
+        this.reverb.wet.value = 0.25;
         this.delay = new Tone.FeedbackDelay('8n', 0.20).connect(this.reverb);
         this.filter = new Tone.Filter(2800, 'lowpass').connect(this.delay);
 
         // Lush warm analog poly-pad with lightweight single triangle oscillator and bounded polyphony
-        // Max 8 voices ensures zero voice leaks or audio thread buffer underruns on mobile devices
+        // Max 6 voices with 1.4s release ensures zero voice leaks or audio thread buffer underruns on older mobile devices
         this.padSynth = new Tone.PolySynth(Tone.Synth, {
           oscillator: { type: 'triangle' },
-          envelope: { attack: 0.9, decay: 2.0, sustain: 0.70, release: 1.8 },
+          envelope: { attack: 0.9, decay: 2.0, sustain: 0.70, release: 1.4 },
         }).connect(this.filter);
-        this.padSynth.maxPolyphony = 8;
+        this.padSynth.maxPolyphony = 6;
         this.padSynth.volume.value = -11;
 
         // Warm round analog bass (deep, punchy sub-melodic presence)
@@ -176,12 +178,6 @@ export class AudioDirector {
         }).connect(this.delay);
         this.leadSynth.maxPolyphony = 4;
         this.leadSynth.volume.value = -14;
-
-        this.ambientNoise = new Tone.Noise('pink');
-        const noiseFilter = new Tone.Filter(320, 'lowpass').connect(this.reverb);
-        this.ambientNoise.connect(noiseFilter);
-        this.ambientNoise.volume.value = -36;
-        this.ambientNoise.start();
       }
     } catch (err) {
       console.warn('[AudioDirector] Tone.js initialization deferred or unsupported:', err);
@@ -233,6 +229,62 @@ export class AudioDirector {
     }
   }
 
+  private getOrCreateSharedNoiseBuffer(): AudioBuffer | null {
+    if (this.sharedNoiseBuffer) return this.sharedNoiseBuffer;
+    if (!this.webAudioCtx) return null;
+    try {
+      const sampleRate = this.webAudioCtx.sampleRate || 44100;
+      const bufferSize = Math.floor(sampleRate * 1.0); // 1.0s reusable brownian noise buffer
+      const buffer = this.webAudioCtx.createBuffer(1, bufferSize, sampleRate);
+      const output = buffer.getChannelData(0);
+      let lastOut = 0.0;
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        lastOut = (lastOut + 0.025 * white) / 1.025;
+        output[i] = lastOut * 3.6;
+      }
+      this.sharedNoiseBuffer = buffer;
+    } catch {}
+    return this.sharedNoiseBuffer;
+  }
+
+  private disconnectAfter(
+    source: AudioScheduledSourceNode | null,
+    intermediateNodes: AudioNode[],
+    durationSeconds: number
+  ): void {
+    const cleanup = () => {
+      try { source?.disconnect(); } catch {}
+      for (const node of intermediateNodes) {
+        try { node.disconnect(); } catch {}
+      }
+    };
+    if (source && 'onended' in source) {
+      source.onended = cleanup;
+    }
+    const delayMs = Math.max(50, Math.ceil(durationSeconds * 1000) + 60);
+    setTimeout(cleanup, delayMs);
+  }
+
+  private cancelAndSetTarget(
+    param: AudioParam | null | undefined,
+    target: number,
+    now: number,
+    timeConstant: number
+  ): void {
+    if (!param) return;
+    try {
+      if (typeof param.cancelScheduledValues === 'function') {
+        param.cancelScheduledValues(now);
+      }
+      param.setTargetAtTime(target, now, timeConstant);
+    } catch {
+      try {
+        param.setValueAtTime(target, now);
+      } catch {}
+    }
+  }
+
   private setupThrusters(): void {
     if (!this.webAudioCtx || !this.webAudioMasterGain) return;
     if (this.thrusterMasterGain) return; // Already initialized
@@ -247,15 +299,8 @@ export class AudioDirector {
 
     // 1. Deep Brownian Noise Buffer for velvet cosmic slipstream and hull mass
     // Generates brownian noise (integrated pink) that has -6dB/octave slope, rich, warm, and free of vacuum hiss
-    const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 0.5);
-    const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
-    const output = noiseBuffer.getChannelData(0);
-    let lastOut = 0.0;
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      lastOut = (lastOut + 0.025 * white) / 1.025;
-      output[i] = lastOut * 3.6;
-    }
+    const noiseBuffer = this.getOrCreateSharedNoiseBuffer();
+    if (!noiseBuffer) return;
 
     this.jetAirflowNoise = this.webAudioCtx.createBufferSource();
     this.jetAirflowNoise.buffer = noiseBuffer;
@@ -751,35 +796,32 @@ export class AudioDirector {
     subGain.connect(this.webAudioMasterGain);
     subOsc.start(now);
     subOsc.stop(now + 0.36);
+    this.disconnectAfter(subOsc, [subGain], 0.38);
 
-    // 2. Plasma combustion surge / thruster whoosh (warm lowpass sweep, NO vacuum cleaner hiss)
-    const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 0.35);
-    const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
-    const data = noiseBuffer.getChannelData(0);
-    let lastOut = 0.0;
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      lastOut = (lastOut + 0.03 * white) / 1.03;
-      data[i] = lastOut * 3.5;
+    // 2. Plasma combustion surge / thruster whoosh (reusing precomputed noise buffer, NO GC churn)
+    const noiseBuffer = this.getOrCreateSharedNoiseBuffer();
+    if (noiseBuffer) {
+      const noise = this.webAudioCtx.createBufferSource();
+      noise.buffer = noiseBuffer;
+      const filter = this.webAudioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(140, now);
+      filter.frequency.exponentialRampToValueAtTime(340, now + 0.08);
+      filter.frequency.exponentialRampToValueAtTime(75, now + 0.30);
+      filter.Q.setValueAtTime(1.8, now);
+
+      const gain = this.webAudioCtx.createGain();
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.24 * normIntensity, now + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.webAudioMasterGain);
+      noise.start(now);
+      noise.stop(now + 0.35);
+      this.disconnectAfter(noise, [filter, gain], 0.38);
     }
-    const noise = this.webAudioCtx.createBufferSource();
-    noise.buffer = noiseBuffer;
-    const filter = this.webAudioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(140, now);
-    filter.frequency.exponentialRampToValueAtTime(340, now + 0.08);
-    filter.frequency.exponentialRampToValueAtTime(75, now + 0.30);
-    filter.Q.setValueAtTime(1.8, now);
-
-    const gain = this.webAudioCtx.createGain();
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(0.24 * normIntensity, now + 0.04);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
-
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.webAudioMasterGain);
-    noise.start(now);
   }
 
   /**
@@ -794,32 +836,28 @@ export class AudioDirector {
     const normIntensity = Math.min(1.0, Math.max(0.25, intensity * 2.0));
 
     // 1. Retro-thruster muffled plasma purge (warm lowpass downward sweep 160Hz -> 50Hz, NO vacuum hiss!)
-    const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 0.38);
-    const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
-    const data = noiseBuffer.getChannelData(0);
-    let lastOut = 0.0;
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      lastOut = (lastOut + 0.03 * white) / 1.03;
-      data[i] = lastOut * 3.5;
+    const noiseBuffer = this.getOrCreateSharedNoiseBuffer();
+    if (noiseBuffer) {
+      const noise = this.webAudioCtx.createBufferSource();
+      noise.buffer = noiseBuffer;
+      const filter = this.webAudioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(160, now);
+      filter.frequency.exponentialRampToValueAtTime(50, now + 0.34);
+      filter.Q.setValueAtTime(1.4, now);
+
+      const gain = this.webAudioCtx.createGain();
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.18 * normIntensity, now + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.webAudioMasterGain);
+      noise.start(now);
+      noise.stop(now + 0.36);
+      this.disconnectAfter(noise, [filter, gain], 0.40);
     }
-    const noise = this.webAudioCtx.createBufferSource();
-    noise.buffer = noiseBuffer;
-    const filter = this.webAudioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(160, now);
-    filter.frequency.exponentialRampToValueAtTime(50, now + 0.34);
-    filter.Q.setValueAtTime(1.4, now);
-
-    const gain = this.webAudioCtx.createGain();
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(0.18 * normIntensity, now + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.webAudioMasterGain);
-    noise.start(now);
 
     // 2. Hull inertial damping sub pulse (62Hz -> 22Hz drop)
     const subOsc = this.webAudioCtx.createOscillator();
@@ -836,6 +874,7 @@ export class AudioDirector {
     subGain.connect(this.webAudioMasterGain);
     subOsc.start(now);
     subOsc.stop(now + 0.27);
+    this.disconnectAfter(subOsc, [subGain], 0.30);
   }
 
   /**
@@ -863,6 +902,7 @@ export class AudioDirector {
     whineGain.connect(this.webAudioMasterGain);
     whineOsc.start(now);
     whineOsc.stop(now + 0.90);
+    this.disconnectAfter(whineOsc, [whineGain], 0.95);
 
     // 2. Heavy reactor combustion / ignition thud (at now + 0.75s)
     const tIgnition = now + 0.75;
@@ -880,32 +920,29 @@ export class AudioDirector {
     thudGain.connect(this.webAudioMasterGain);
     thudOsc.start(tIgnition);
     thudOsc.stop(tIgnition + 0.85);
+    this.disconnectAfter(thudOsc, [thudGain], 1.70);
 
-    // 3. Ignition exhaust blast noise
-    const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 1.0);
-    const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
-    const data = noiseBuffer.getChannelData(0);
-    let lastOut = 0.0;
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      lastOut = (lastOut + 0.03 * white) / 1.03;
-      data[i] = lastOut * 3.5;
+    // 3. Ignition exhaust blast noise (reusing shared noise buffer)
+    const noiseBuffer = this.getOrCreateSharedNoiseBuffer();
+    if (noiseBuffer) {
+      const noise = this.webAudioCtx.createBufferSource();
+      noise.buffer = noiseBuffer;
+      const filter = this.webAudioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(320, tIgnition);
+      filter.frequency.exponentialRampToValueAtTime(90, tIgnition + 0.9);
+      const gain = this.webAudioCtx.createGain();
+      gain.gain.setValueAtTime(0.001, tIgnition);
+      gain.gain.linearRampToValueAtTime(0.28, tIgnition + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, tIgnition + 0.95);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.webAudioMasterGain);
+      noise.start(tIgnition);
+      noise.stop(tIgnition + 0.95);
+      this.disconnectAfter(noise, [filter, gain], 1.75);
     }
-    const noise = this.webAudioCtx.createBufferSource();
-    noise.buffer = noiseBuffer;
-    const filter = this.webAudioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(320, tIgnition);
-    filter.frequency.exponentialRampToValueAtTime(90, tIgnition + 0.9);
-    const gain = this.webAudioCtx.createGain();
-    gain.gain.setValueAtTime(0.001, tIgnition);
-    gain.gain.linearRampToValueAtTime(0.28, tIgnition + 0.05);
-    gain.gain.exponentialRampToValueAtTime(0.001, tIgnition + 0.95);
-
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.webAudioMasterGain);
-    noise.start(tIgnition);
   }
 
   public updateThrottle(throttle: number): void {
@@ -939,7 +976,7 @@ export class AudioDirector {
     // Ensure thruster master gain is engaged during active flight
     if (this.thrusterMasterGain && this.currentContext !== 'title' && this.currentContext !== 'cinematic') {
       if (this.thrusterMasterGain.gain.value < 0.2) {
-        this.thrusterMasterGain.gain.setTargetAtTime(1.0, now, 0.15);
+        this.cancelAndSetTarget(this.thrusterMasterGain.gain, 1.0, now, 0.15);
       }
     }
 
@@ -949,42 +986,42 @@ export class AudioDirector {
 
     // 1. Cosmic Slipstream Exhaust: sweeps 75Hz -> 250Hz cutoff (deep, smooth, NO high-pitch vacuum hiss!)
     if (this.jetAirflowFilter && this.jetAirflowGain) {
-      this.jetAirflowFilter.frequency.setTargetAtTime(75 + t * 175, now, 0.08);
-      this.jetAirflowGain.gain.setTargetAtTime(0.05 + t * 0.11, now, 0.08);
+      this.cancelAndSetTarget(this.jetAirflowFilter.frequency, 75 + t * 175, now, 0.08);
+      this.cancelAndSetTarget(this.jetAirflowGain.gain, 0.05 + t * 0.11, now, 0.08);
     }
 
     // 2. Sub-Acoustic Hull Resonance: 55Hz -> 95Hz
     if (this.jetRumbleFilter && this.jetRumbleGain) {
-      this.jetRumbleFilter.frequency.setTargetAtTime(55 + t * 40, now, 0.09);
-      this.jetRumbleGain.gain.setTargetAtTime(0.08 + t * 0.10, now, 0.09);
+      this.cancelAndSetTarget(this.jetRumbleFilter.frequency, 55 + t * 40, now, 0.09);
+      this.cancelAndSetTarget(this.jetRumbleGain.gain, 0.08 + t * 0.10, now, 0.09);
     }
 
     // 3. Resonant Ion-Plasma Drive: 88Hz -> 176Hz (warm harmonic octave swell)
     if (this.jetSpoolOsc && this.jetSpoolGain) {
-      this.jetSpoolOsc.frequency.setTargetAtTime(88 + t * 88, now, 0.08);
-      this.jetSpoolGain.gain.setTargetAtTime(0.075 + t * 0.145, now, 0.08);
+      this.cancelAndSetTarget(this.jetSpoolOsc.frequency, 88 + t * 88, now, 0.08);
+      this.cancelAndSetTarget(this.jetSpoolGain.gain, 0.075 + t * 0.145, now, 0.08);
     }
     if (this.jetSpoolFilter) {
-      this.jetSpoolFilter.frequency.setTargetAtTime(175 + t * 215, now, 0.08);
+      this.cancelAndSetTarget(this.jetSpoolFilter.frequency, 175 + t * 215, now, 0.08);
     }
 
     // 4. Secondary Harmonic Shimmer: 132Hz -> 264Hz
     if (this.jetSpoolOsc2 && this.jetSpoolGain2) {
-      this.jetSpoolOsc2.frequency.setTargetAtTime(132 + t * 132, now, 0.08);
-      this.jetSpoolGain2.gain.setTargetAtTime(0.025 + t * 0.045, now, 0.08);
+      this.cancelAndSetTarget(this.jetSpoolOsc2.frequency, 132 + t * 132, now, 0.08);
+      this.cancelAndSetTarget(this.jetSpoolGain2.gain, 0.025 + t * 0.045, now, 0.08);
     }
     if (this.jetSpoolFilter2) {
-      this.jetSpoolFilter2.frequency.setTargetAtTime(160 + t * 160, now, 0.08);
+      this.cancelAndSetTarget(this.jetSpoolFilter2.frequency, 160 + t * 160, now, 0.08);
     }
 
     // 5. Sub-Bass Graviton Core: sweeps 42Hz -> 76Hz with accelerating 2.2Hz -> 6Hz acoustic pulse
     if (this.jetSubOsc && this.jetSubGain) {
-      this.jetSubOsc.frequency.setTargetAtTime(42 + t * 34, now, 0.07);
-      this.jetSubGain.gain.setTargetAtTime(0.12 + t * 0.14, now, 0.07);
+      this.cancelAndSetTarget(this.jetSubOsc.frequency, 42 + t * 34, now, 0.07);
+      this.cancelAndSetTarget(this.jetSubGain.gain, 0.12 + t * 0.14, now, 0.07);
     }
     if (this.jetSubOsc2 && this.jetSubGain2) {
-      this.jetSubOsc2.frequency.setTargetAtTime(44.2 + t * 37.8, now, 0.07);
-      this.jetSubGain2.gain.setTargetAtTime(0.09 + t * 0.11, now, 0.07);
+      this.cancelAndSetTarget(this.jetSubOsc2.frequency, 44.2 + t * 37.8, now, 0.07);
+      this.cancelAndSetTarget(this.jetSubGain2.gain, 0.09 + t * 0.11, now, 0.07);
     }
   }
 
@@ -1014,6 +1051,7 @@ export class AudioDirector {
 
     osc.start(now);
     osc.stop(now + 2.0);
+    this.disconnectAfter(osc, [filter, gain], 2.05);
   }
 
   public setScanningActive(active: boolean, progress = 0, stage = 0): void {
@@ -1029,8 +1067,10 @@ export class AudioDirector {
     if (!active) {
       if (this.scanDroneGain && this.isScanningActive) {
         this.isScanningActive = false;
-        this.scanDroneGain.gain.cancelScheduledValues(now);
-        this.scanDroneGain.gain.setTargetAtTime(0.0001, now, 0.08);
+        try {
+          this.scanDroneGain.gain.cancelScheduledValues(now);
+          this.scanDroneGain.gain.setTargetAtTime(0.0001, now, 0.08);
+        } catch {}
       }
       return;
     }
@@ -1068,17 +1108,17 @@ export class AudioDirector {
     const baseFreq = 432 + stage * 54;
     const targetFreq = baseFreq + progress * 140;
 
-    this.scanDroneOsc.frequency.setTargetAtTime(targetFreq, now, 0.05);
+    this.cancelAndSetTarget(this.scanDroneOsc.frequency, targetFreq, now, 0.05);
     if (this.scanDroneOsc2) {
-      this.scanDroneOsc2.frequency.setTargetAtTime(targetFreq * 1.5, now, 0.05);
+      this.cancelAndSetTarget(this.scanDroneOsc2.frequency, targetFreq * 1.5, now, 0.05);
     }
     if (this.scanDroneFilter) {
-      this.scanDroneFilter.frequency.setTargetAtTime(targetFreq * 1.2, now, 0.05);
+      this.cancelAndSetTarget(this.scanDroneFilter.frequency, targetFreq * 1.2, now, 0.05);
     }
 
     // Volume ramp: gentle onset (~0.12) rising with progress (~0.22)
     const targetGain = 0.12 + Math.min(1, Math.max(0, progress)) * 0.1;
-    this.scanDroneGain.gain.setTargetAtTime(targetGain, now, 0.06);
+    this.cancelAndSetTarget(this.scanDroneGain.gain, targetGain, now, 0.06);
   }
 
   public playCollisionDeflection(isDanger = false): void {
@@ -1098,6 +1138,7 @@ export class AudioDirector {
     gain.connect(this.webAudioMasterGain);
     osc.start(now);
     osc.stop(now + 0.38);
+    this.disconnectAfter(osc, [gain], 0.40);
   }
 
   public playBlip(): void {
@@ -1117,6 +1158,7 @@ export class AudioDirector {
     gain.connect(this.webAudioMasterGain);
     osc.start(now);
     osc.stop(now + 0.09);
+    this.disconnectAfter(osc, [gain], 0.11);
   }
 
   public playHapticTick(frequency = 120, duration = 0.02, volume = 0.08): void {
@@ -1137,6 +1179,7 @@ export class AudioDirector {
       gain.connect(this.webAudioMasterGain);
       osc.start(now);
       osc.stop(now + duration + 0.005);
+      this.disconnectAfter(osc, [gain], duration + 0.02);
     } catch {}
   }
 
@@ -1161,6 +1204,7 @@ export class AudioDirector {
       gain.connect(this.webAudioMasterGain);
       osc.start(t);
       osc.stop(t + 0.45);
+      this.disconnectAfter(osc, [gain], i * 0.08 + 0.50);
     });
   }
 
@@ -1199,6 +1243,7 @@ export class AudioDirector {
     gain.connect(this.webAudioMasterGain);
     osc.start(now);
     osc.stop(now + 0.35);
+    this.disconnectAfter(osc, [filter, gain], 0.38);
 
     // 2. Capacitor charging sweep
     const chargeOsc = this.webAudioCtx.createOscillator();
@@ -1215,6 +1260,7 @@ export class AudioDirector {
     chargeGain.connect(this.webAudioMasterGain);
     chargeOsc.start(now);
     chargeOsc.stop(now + 0.25);
+    this.disconnectAfter(chargeOsc, [chargeGain], 0.28);
 
     // 3. Deep gravitic sub charge pulse
     const subOsc = this.webAudioCtx.createOscillator();
@@ -1228,6 +1274,7 @@ export class AudioDirector {
     subGain.connect(this.webAudioMasterGain);
     subOsc.start(now);
     subOsc.stop(now + 0.32);
+    this.disconnectAfter(subOsc, [subGain], 0.35);
 
     // 4. Final pre-jump ignition flare on count 1
     if (count === 1) {
@@ -1245,6 +1292,7 @@ export class AudioDirector {
       flareGain.connect(this.webAudioMasterGain);
       flareOsc.start(now + 0.1);
       flareOsc.stop(now + 0.60);
+      this.disconnectAfter(flareOsc, [flareGain], 0.65);
     }
   }
 
@@ -1273,31 +1321,31 @@ export class AudioDirector {
     subGain.connect(this.webAudioMasterGain);
     subOsc.start(now);
     subOsc.stop(now + 1.0);
+    this.disconnectAfter(subOsc, [subGain], 1.05);
 
-    // 2. High-energy spatial displacement explosion
-    const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 1.0);
-    const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
-    const output = noiseBuffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      output[i] = Math.random() * 2 - 1;
+    // 2. High-energy spatial displacement explosion (reusing shared noise buffer)
+    const noiseBuffer = this.getOrCreateSharedNoiseBuffer();
+    if (noiseBuffer) {
+      const noiseNode = this.webAudioCtx.createBufferSource();
+      noiseNode.buffer = noiseBuffer;
+
+      const noiseFilter = this.webAudioCtx.createBiquadFilter();
+      noiseFilter.type = 'lowpass';
+      noiseFilter.frequency.setValueAtTime(2400, now);
+      noiseFilter.frequency.exponentialRampToValueAtTime(110, now + 0.85);
+
+      const noiseGain = this.webAudioCtx.createGain();
+      noiseGain.gain.setValueAtTime(0.01, now);
+      noiseGain.gain.linearRampToValueAtTime(0.42, now + 0.05);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.90);
+
+      noiseNode.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(this.webAudioMasterGain);
+      noiseNode.start(now);
+      noiseNode.stop(now + 0.95);
+      this.disconnectAfter(noiseNode, [noiseFilter, noiseGain], 1.0);
     }
-    const noiseNode = this.webAudioCtx.createBufferSource();
-    noiseNode.buffer = noiseBuffer;
-
-    const noiseFilter = this.webAudioCtx.createBiquadFilter();
-    noiseFilter.type = 'lowpass';
-    noiseFilter.frequency.setValueAtTime(2400, now);
-    noiseFilter.frequency.exponentialRampToValueAtTime(110, now + 0.85);
-
-    const noiseGain = this.webAudioCtx.createGain();
-    noiseGain.gain.setValueAtTime(0.01, now);
-    noiseGain.gain.linearRampToValueAtTime(0.42, now + 0.05);
-    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.90);
-
-    noiseNode.connect(noiseFilter);
-    noiseFilter.connect(noiseGain);
-    noiseGain.connect(this.webAudioMasterGain);
-    noiseNode.start(now);
 
     // 3. Hypersonic Warp Whip / Crack (dimensional snap)
     const whipOsc = this.webAudioCtx.createOscillator();
@@ -1321,6 +1369,7 @@ export class AudioDirector {
     whipGain.connect(this.webAudioMasterGain);
     whipOsc.start(now);
     whipOsc.stop(now + 0.40);
+    this.disconnectAfter(whipOsc, [whipFilter, whipGain], 0.45);
   }
 
   /**
@@ -1424,6 +1473,9 @@ export class AudioDirector {
       const drone = this.warpDroneOsc;
       const drone2 = this.warpDroneOsc2;
       const tachyon = this.warpTachyonOsc;
+      const slipGain = this.warpSlipstreamGain;
+      const droneGain = this.warpDroneGain;
+      const tachyonGain = this.warpTachyonGain;
       setTimeout(() => {
         try {
           node?.stop();
@@ -1434,6 +1486,9 @@ export class AudioDirector {
           drone2?.disconnect();
           tachyon?.stop();
           tachyon?.disconnect();
+          slipGain?.disconnect();
+          droneGain?.disconnect();
+          tachyonGain?.disconnect();
         } catch {}
       }, 350);
     }
@@ -1472,29 +1527,29 @@ export class AudioDirector {
     gain.connect(this.webAudioMasterGain);
     osc.start(now);
     osc.stop(now + 0.90);
+    this.disconnectAfter(osc, [gain], 0.95);
 
-    // 2. Energetic displacement arrival shockwave
-    const bufferSize = Math.floor(this.webAudioCtx.sampleRate * 0.7);
-    const noiseBuffer = this.webAudioCtx.createBuffer(1, bufferSize, this.webAudioCtx.sampleRate);
-    const data = noiseBuffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
+    // 2. Energetic displacement arrival shockwave (reusing shared noise buffer)
+    const noiseBuffer = this.getOrCreateSharedNoiseBuffer();
+    if (noiseBuffer) {
+      const noise = this.webAudioCtx.createBufferSource();
+      noise.buffer = noiseBuffer;
+      const filter = this.webAudioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1800, now);
+      filter.frequency.exponentialRampToValueAtTime(80, now + 0.65);
+      const noiseGain = this.webAudioCtx.createGain();
+      noiseGain.gain.setValueAtTime(0.01, now);
+      noiseGain.gain.linearRampToValueAtTime(0.38, now + 0.04);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.70);
+
+      noise.connect(filter);
+      filter.connect(noiseGain);
+      noiseGain.connect(this.webAudioMasterGain);
+      noise.start(now);
+      noise.stop(now + 0.75);
+      this.disconnectAfter(noise, [filter, noiseGain], 0.80);
     }
-    const noise = this.webAudioCtx.createBufferSource();
-    noise.buffer = noiseBuffer;
-    const filter = this.webAudioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(1800, now);
-    filter.frequency.exponentialRampToValueAtTime(80, now + 0.65);
-    const noiseGain = this.webAudioCtx.createGain();
-    noiseGain.gain.setValueAtTime(0.01, now);
-    noiseGain.gain.linearRampToValueAtTime(0.38, now + 0.04);
-    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.70);
-
-    noise.connect(filter);
-    filter.connect(noiseGain);
-    noiseGain.connect(this.webAudioMasterGain);
-    noise.start(now);
 
     // 3. Arrival harmonic chime
     this.playConnectChime();

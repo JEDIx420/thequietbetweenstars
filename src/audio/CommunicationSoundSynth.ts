@@ -87,6 +87,8 @@ export class CommunicationSoundSynth {
   ): void {
     const ctx = this.audioCtx!;
     const hash = this.hashString(seedString + index);
+    const now = ctx.currentTime;
+    const offset = Math.max(0, startTime - now);
 
     switch (profile) {
       case 'ship_ai': {
@@ -113,6 +115,8 @@ export class CommunicationSoundSynth {
         mod.start(startTime);
         carrier.stop(startTime + 0.08);
         mod.stop(startTime + 0.08);
+
+        this.disconnectAfter(carrier, [mod, modGain, gain], offset + 0.10);
         break;
       }
 
@@ -141,6 +145,8 @@ export class CommunicationSoundSynth {
 
         osc.start(startTime);
         osc.stop(startTime + 0.1);
+
+        this.disconnectAfter(osc, [filter, gain], offset + 0.12);
         break;
       }
 
@@ -171,6 +177,8 @@ export class CommunicationSoundSynth {
         osc2.start(startTime);
         osc1.stop(startTime + 0.15);
         osc2.stop(startTime + 0.15);
+
+        this.disconnectAfter(osc1, [osc2, gain], offset + 0.18);
         break;
       }
 
@@ -202,6 +210,8 @@ export class CommunicationSoundSynth {
         sub.start(startTime);
         osc.stop(startTime + 0.24);
         sub.stop(startTime + 0.24);
+
+        this.disconnectAfter(osc, [sub, filter, gain], offset + 0.28);
         break;
       }
 
@@ -223,6 +233,8 @@ export class CommunicationSoundSynth {
 
         osc.start(startTime);
         osc.stop(startTime + 0.2);
+
+        this.disconnectAfter(osc, [gain], offset + 0.24);
         break;
       }
     }
@@ -242,6 +254,7 @@ export class CommunicationSoundSynth {
     for (let i = 0; i < count; i++) {
       const freq = CommunicationSoundSynth.LEITMOTIF_FREQUENCIES[i];
       const startTime = now + i * 0.22;
+      const offset = Math.max(0, startTime - now);
 
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -257,7 +270,27 @@ export class CommunicationSoundSynth {
 
       osc.start(startTime);
       osc.stop(startTime + 0.65);
+
+      this.disconnectAfter(osc, [gain], offset + 0.70);
     }
+  }
+
+  private disconnectAfter(
+    source: AudioScheduledSourceNode | null,
+    intermediateNodes: AudioNode[],
+    durationSeconds: number
+  ): void {
+    const cleanup = () => {
+      try { source?.disconnect(); } catch {}
+      for (const node of intermediateNodes) {
+        try { node.disconnect(); } catch {}
+      }
+    };
+    if (source && 'onended' in source) {
+      source.onended = cleanup;
+    }
+    const delayMs = Math.max(50, Math.ceil(durationSeconds * 1000) + 50);
+    setTimeout(cleanup, delayMs);
   }
 
   private hashString(str: string): number {
