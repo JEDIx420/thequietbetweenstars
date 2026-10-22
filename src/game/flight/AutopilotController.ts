@@ -21,6 +21,12 @@ export class AutopilotController {
     this.currentTarget = target;
   }
 
+  public onRebase(offset: THREE.Vector3): void {
+    if (this.currentTarget && 'position' in this.currentTarget) {
+      this.currentTarget.position.add(offset);
+    }
+  }
+
   public toggle(): boolean {
     if (this.isActive) {
       this.disengage();
@@ -81,9 +87,21 @@ export class AutopilotController {
     const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), targetWorldDir);
     this.flightModel.quaternion.slerp(targetQuat, Math.min(1, clampedDt * this.alignSpeed));
 
-    // When aligned and in planet transit, apply gentle cruising thrust
-    if (isAligned && this.currentTarget.type === 'planet' && dist > (this.currentTarget.descriptor.radius + 180)) {
-      this.flightModel.velocity.addScaledVector(currentForward, 35 * clampedDt);
+    // When aligned and in planet transit: apply cruising thrust, or progressive deceleration upon arrival
+    if (this.currentTarget.type === 'planet') {
+      const captureThreshold = this.currentTarget.descriptor.radius + 220;
+      const approachZone = this.currentTarget.descriptor.radius + 450;
+
+      if (dist <= captureThreshold) {
+        // Safe arrival: decelerate to orbital entry velocity and disengage autopilot
+        this.flightModel.velocity.multiplyScalar(Math.pow(0.75, clampedDt * 60));
+        this.disengage();
+      } else if (dist <= approachZone) {
+        // Progressive approach braking to prevent overshoot/tunneling
+        this.flightModel.velocity.multiplyScalar(Math.pow(0.92, clampedDt * 60));
+      } else if (isAligned) {
+        this.flightModel.velocity.addScaledVector(currentForward, 35 * clampedDt);
+      }
     }
 
     return { isAligned, distance: dist };

@@ -744,8 +744,8 @@ export class HolographicNavModal {
       }
     }
 
-    // 2. Fetch destination systems using ultra-lightweight summaries
-    const systemEntries = this.sectorManager.getSystemSummariesInRadius(this.playerWorldPos.sector, 4);
+    // 2. Fetch destination systems using ultra-lightweight summaries across expanded 12-sector radius
+    const systemEntries = this.sectorManager.getSystemSummariesInRadius(this.playerWorldPos.sector, 12);
     const stemPoints: THREE.Vector3[] = [];
 
     // Filter to destination systems

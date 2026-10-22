@@ -183,6 +183,113 @@ export class DialoguePresenter {
     parent.appendChild(this.container);
   }
 
+  private getAvatarSvg(speaker: string): string {
+    const s = speaker.toLowerCase();
+    if (s.includes('weaver') || s.includes('insect') || s.includes('chitin')) {
+      // Insectoid Weaver
+      return `
+        <svg viewBox="0 0 48 48" width="44" height="44" style="filter: drop-shadow(0 0 6px #38bdf8);">
+          <circle cx="24" cy="24" r="22" fill="#0b1329" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="3 2" />
+          <!-- Antennae -->
+          <path d="M18 16 Q12 8 8 10 M30 16 Q36 8 40 10" stroke="#38bdf8" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+          <circle cx="8" cy="10" r="1.5" fill="#38bdf8"/>
+          <circle cx="40" cy="10" r="1.5" fill="#38bdf8"/>
+          <!-- Carapace Head -->
+          <polygon points="24,14 32,22 28,32 20,32 16,22" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5" />
+          <!-- Compound Eyes -->
+          <ellipse cx="20" cy="22" rx="2.5" ry="4" fill="#38bdf8" />
+          <ellipse cx="28" cy="22" rx="2.5" ry="4" fill="#38bdf8" />
+          <!-- Mandibles -->
+          <path d="M22 30 Q24 35 21 37 M26 30 Q24 35 27 37" stroke="#38bdf8" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        </svg>
+      `;
+    } else if (s.includes('cephalopod') || s.includes('custodian') || s.includes('water') || s.includes('abyss')) {
+      // Cephalopod Ascendant
+      return `
+        <svg viewBox="0 0 48 48" width="44" height="44" style="filter: drop-shadow(0 0 6px #06b6d4);">
+          <circle cx="24" cy="24" r="22" fill="#081826" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="4 2" />
+          <!-- Mantle Dome -->
+          <path d="M14 26 C14 14 34 14 34 26 C34 29 14 29 14 26 Z" fill="#0f2b3f" stroke="#06b6d4" stroke-width="1.5" />
+          <circle cx="24" cy="22" r="3.5" fill="#22d3ee" />
+          <!-- Trailing Tendrils -->
+          <path d="M16 29 Q14 38 18 42 M20 29 Q22 37 20 43 M24 29 Q25 39 24 44 M28 29 Q26 37 28 43 M32 29 Q34 38 30 42" stroke="#06b6d4" stroke-width="1.5" fill="none" stroke-linecap="round" />
+        </svg>
+      `;
+    } else if (s.includes('avian') || s.includes('archon') || s.includes('air') || s.includes('plume')) {
+      // Avian Archon
+      return `
+        <svg viewBox="0 0 48 48" width="44" height="44" style="filter: drop-shadow(0 0 6px #a855f7);">
+          <circle cx="24" cy="24" r="22" fill="#140f28" stroke="#a855f7" stroke-width="1.5" stroke-dasharray="2 2" />
+          <!-- Head Crest -->
+          <path d="M24 10 L28 17 L24 15 L20 17 Z" fill="#c084fc" />
+          <!-- Sleek Mask & Beak -->
+          <polygon points="24,15 31,23 24,36 17,23" fill="#241442" stroke="#a855f7" stroke-width="1.5" />
+          <!-- Angled Raptor Visor -->
+          <polygon points="20,23 28,23 24,27" fill="#c084fc" />
+        </svg>
+      `;
+    } else if (s.includes('fungal') || s.includes('colossus') || s.includes('spore')) {
+      // Fungal Colossus
+      return `
+        <svg viewBox="0 0 48 48" width="44" height="44" style="filter: drop-shadow(0 0 6px #10b981);">
+          <circle cx="24" cy="24" r="22" fill="#091c15" stroke="#10b981" stroke-width="1.5" />
+          <!-- Cap Tiers -->
+          <path d="M10 24 Q24 10 38 24 Z" fill="#0f3b28" stroke="#10b981" stroke-width="1.5" />
+          <path d="M14 20 Q24 12 34 20 Z" fill="#10b981" opacity="0.4" />
+          <rect x="21" y="24" width="6" height="15" rx="2" fill="#064e3b" stroke="#10b981" stroke-width="1.5" />
+          <circle cx="17" cy="18" r="1.5" fill="#34d399"/>
+          <circle cx="24" cy="15" r="1.5" fill="#34d399"/>
+          <circle cx="31" cy="18" r="1.5" fill="#34d399"/>
+        </svg>
+      `;
+    } else if (s.includes('lithic') || s.includes('titan') || s.includes('elder')) {
+      // Lithic Titan
+      return `
+        <svg viewBox="0 0 48 48" width="44" height="44" style="filter: drop-shadow(0 0 6px #fbbf24);">
+          <circle cx="24" cy="24" r="22" fill="#1a1408" stroke="#fbbf24" stroke-width="1.5" />
+          <!-- Faceted Crystal Monolith -->
+          <polygon points="24,10 33,20 28,38 20,38 15,20" fill="#2d220a" stroke="#fbbf24" stroke-width="1.5" />
+          <polygon points="24,14 30,22 24,34 18,22" fill="#fbbf24" opacity="0.3" stroke="#fef08a" stroke-width="1" />
+          <circle cx="24" cy="24" r="3" fill="#fef08a" />
+        </svg>
+      `;
+    } else {
+      // Default: Starship Captain / Pilot Comms
+      return `
+        <svg viewBox="0 0 48 48" width="44" height="44" style="filter: drop-shadow(0 0 6px #38bdf8);">
+          <circle cx="24" cy="24" r="22" fill="#0a1526" stroke="#38bdf8" stroke-width="1.5" />
+          <!-- Flight Helmet -->
+          <path d="M14 24 C14 14 34 14 34 24 C34 32 30 36 24 36 C18 36 14 32 14 24 Z" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5" />
+          <!-- HUD Visor Glass -->
+          <path d="M17 22 C17 18 31 18 31 22 C31 28 17 28 17 22 Z" fill="#0284c7" stroke="#38bdf8" stroke-width="1" />
+          <!-- Radio Antenna -->
+          <line x1="33" y1="24" x2="38" y2="18" stroke="#38bdf8" stroke-width="1.5" stroke-linecap="round" />
+          <circle cx="38" cy="18" r="1.5" fill="#38bdf8" />
+        </svg>
+      `;
+    }
+  }
+
+  private renderAvatarHeader(speaker: string): void {
+    const svgHtml = this.getAvatarSvg(speaker);
+    this.speakerEl.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
+        <div style="flex-shrink: 0; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
+          ${svgHtml}
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.16em; color: #38bdf8;">
+            ${speaker.toUpperCase()}
+          </div>
+          <div style="font-size: 9px; color: #94a3b8; font-family: ui-monospace, monospace; display: flex; align-items: center; gap: 4px;">
+            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #34d399; animation: pulse 1s infinite;"></span>
+            <span>COMMS CHANNEL 1420.405 MHz</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   public setMirrorCallback(cb: (line: NarrativeLine) => void): void {
     this.onMirrorCallback = cb;
   }
@@ -210,7 +317,7 @@ export class DialoguePresenter {
     if (typeof document !== 'undefined') {
       document.body.classList.add('dialogue-active');
     }
-    this.speakerEl.textContent = speaker;
+    this.renderAvatarHeader(speaker);
     this.textEl.textContent = text;
     this.choicesContainer.innerHTML = '';
 
@@ -300,7 +407,7 @@ export class DialoguePresenter {
       this.onMirrorCallback(line);
     }
 
-    this.speakerEl.textContent = line.speaker;
+    this.renderAvatarHeader(line.speaker);
     this.textEl.textContent = line.text;
 
     // Fade in

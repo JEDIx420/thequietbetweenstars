@@ -364,15 +364,21 @@ export class SurveyCraft {
     const upgradeMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
       emissive: 0x0284c7,
-      emissiveIntensity: 0.6,
+      emissiveIntensity: 0.75,
       roughness: 0.25,
-      metalness: 0.75,
+      metalness: 0.85,
+    });
+
+    const armorMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.4,
+      metalness: 0.8,
+      flatShading: true,
     });
 
     for (const id of moduleIds) {
       if (id === 'mod_propulsion_ion_vector') {
-        // 4 glowing ion vector rings at each of the 4 engine nozzles
-        const ringGeo = new THREE.TorusGeometry(0.32, 0.04, 6, 16);
+        // Heavy quad afterburner exhaust bells with vectoring vanes & concentric ion rings
         const group = new THREE.Group();
         const positions = [
           [-0.65, 0.42, 2.65],
@@ -380,90 +386,165 @@ export class SurveyCraft {
           [-0.65, -0.32, 2.65],
           [0.65, -0.32, 2.65],
         ];
+
+        const bellGeo = new THREE.CylinderGeometry(0.36, 0.28, 0.45, 12);
+        bellGeo.rotateX(Math.PI / 2);
+        const ringGeo = new THREE.TorusGeometry(0.38, 0.045, 8, 20);
+
         for (const [px, py, pz] of positions) {
+          const bell = new THREE.Mesh(bellGeo, armorMat);
+          bell.position.set(px, py, pz);
+          group.add(bell);
+
           const ring = new THREE.Mesh(ringGeo, upgradeMat);
-          ring.position.set(px, py, pz);
+          ring.position.set(px, py, pz + 0.22);
           group.add(ring);
+
+          // Vectoring cowl vanes
+          for (let v = 0; v < 4; v++) {
+            const vAngle = (v / 4) * Math.PI * 2;
+            const vane = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.12, 0.25), armorMat);
+            vane.position.set(px + Math.cos(vAngle) * 0.38, py + Math.sin(vAngle) * 0.38, pz + 0.1);
+            vane.rotation.z = vAngle;
+            group.add(vane);
+          }
         }
         this.moduleVisualsGroup.add(group);
         this.installedModuleVisuals.set(id, group);
+
       } else if (id === 'mod_surface_grav_stabilizer') {
-        // Gravitic field coils integrated at the wing roots
-        const coilGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.5, 8);
-        coilGeo.rotateX(Math.PI / 2);
+        // Reinforced composite chine armor plates sweeping along fuselage flanks
         const group = new THREE.Group();
-        const leftCoil = new THREE.Mesh(coilGeo, upgradeMat);
-        leftCoil.position.set(-1.1, -0.1, 0.8);
-        const rightCoil = new THREE.Mesh(coilGeo, upgradeMat);
-        rightCoil.position.set(1.1, -0.1, 0.8);
-        group.add(leftCoil);
-        group.add(rightCoil);
+        for (const side of [-1, 1]) {
+          const chineGeo = new THREE.BoxGeometry(0.45, 0.14, 2.4);
+          const chine = new THREE.Mesh(chineGeo, armorMat);
+          chine.position.set(side * 1.15, -0.05, 0.2);
+          chine.rotation.y = side * 0.12;
+          chine.rotation.z = side * 0.15;
+          group.add(chine);
+
+          // Glowing gravitic conduit ribbon
+          const conduitGeo = new THREE.BoxGeometry(0.08, 0.05, 2.2);
+          const conduit = new THREE.Mesh(conduitGeo, upgradeMat);
+          conduit.position.set(side * 1.25, -0.02, 0.2);
+          conduit.rotation.y = side * 0.12;
+          conduit.rotation.z = side * 0.15;
+          group.add(conduit);
+        }
         this.moduleVisualsGroup.add(group);
         this.installedModuleVisuals.set(id, group);
-      } else if (id === 'mod_scanner_deep_ecology') {
-        // Crown sensor array mounted behind canopy
-        const crownGeo = new THREE.CylinderGeometry(0.3, 0.42, 0.25, 6);
-        const crown = new THREE.Mesh(crownGeo, upgradeMat);
-        crown.position.set(0, 0.62, 0.8);
-        this.moduleVisualsGroup.add(crown);
-        this.installedModuleVisuals.set(id, crown);
-      } else if (id === 'mod_warp_harmonic_field' || id === 'mod_field_warp_stabilizer') {
-        // Dorsal resonance spine & harmonic capacitor plates
-        const group = new THREE.Group();
-        const spineGeo = new THREE.BoxGeometry(0.12, 0.35, 2.2);
-        const spine = new THREE.Mesh(spineGeo, upgradeMat);
-        spine.position.set(0, 0.6, 1.4);
-        group.add(spine);
 
-        const finGeo = new THREE.BoxGeometry(0.8, 0.08, 0.4);
-        const fin = new THREE.Mesh(finGeo, upgradeMat);
-        fin.position.set(0, 0.72, 1.2);
+      } else if (id === 'mod_scanner_deep_ecology') {
+        // Elevated rotating sensor dish mast with phased array antenna blades
+        const group = new THREE.Group();
+        const mastGeo = new THREE.CylinderGeometry(0.08, 0.14, 0.65, 8);
+        const mast = new THREE.Mesh(mastGeo, armorMat);
+        mast.position.set(0, 0.72, 0.8);
+        group.add(mast);
+
+        const dishGeo = new THREE.ConeGeometry(0.35, 0.18, 12);
+        dishGeo.rotateX(Math.PI / 3);
+        const dish = new THREE.Mesh(dishGeo, upgradeMat);
+        dish.position.set(0, 1.05, 0.8);
+        group.add(dish);
+
+        // Lateral antenna blades
+        for (const side of [-1, 1]) {
+          const bladeGeo = new THREE.BoxGeometry(0.42, 0.02, 0.08);
+          const blade = new THREE.Mesh(bladeGeo, upgradeMat);
+          blade.position.set(side * 0.35, 1.05, 0.8);
+          group.add(blade);
+        }
+        this.moduleVisualsGroup.add(group);
+        this.installedModuleVisuals.set(id, group);
+
+      } else if (id === 'mod_warp_harmonic_field' || id === 'mod_field_warp_stabilizer') {
+        // Dorsal crystalline resonance fin & layered waveguide foils
+        const group = new THREE.Group();
+        const finGeo = new THREE.BoxGeometry(0.14, 0.65, 2.6);
+        const fin = new THREE.Mesh(finGeo, armorMat);
+        fin.position.set(0, 0.78, 1.2);
         group.add(fin);
 
+        const edgeGeo = new THREE.BoxGeometry(0.06, 0.72, 2.7);
+        const edge = new THREE.Mesh(edgeGeo, upgradeMat);
+        edge.position.set(0, 0.82, 1.2);
+        group.add(edge);
+
+        // Twin lateral foil emitters
+        for (const side of [-1, 1]) {
+          const foilGeo = new THREE.BoxGeometry(0.95, 0.06, 0.55);
+          const foil = new THREE.Mesh(foilGeo, upgradeMat);
+          foil.position.set(side * 0.55, 0.95, 1.0);
+          foil.rotation.z = side * 0.25;
+          group.add(foil);
+        }
         this.moduleVisualsGroup.add(group);
         this.installedModuleVisuals.set(id, group);
+
       } else if (id === 'mod_sublight_overdrive') {
-        // High-output auxiliary thruster runners on engine flanks
+        // Heavy supersonic intake scoops on engine flanks with auxiliary burn nozzles
         const group = new THREE.Group();
-        const runnerGeo = new THREE.CylinderGeometry(0.14, 0.18, 1.4, 8);
-        runnerGeo.rotateX(Math.PI / 2);
+        for (const side of [-1, 1]) {
+          const scoopGeo = new THREE.CylinderGeometry(0.22, 0.28, 1.8, 10);
+          scoopGeo.rotateX(Math.PI / 2);
+          const scoop = new THREE.Mesh(scoopGeo, armorMat);
+          scoop.position.set(side * 1.12, 0.24, 2.1);
+          group.add(scoop);
 
-        const leftRunner = new THREE.Mesh(runnerGeo, upgradeMat);
-        leftRunner.position.set(-1.05, 0.15, 2.2);
-        const rightRunner = new THREE.Mesh(runnerGeo, upgradeMat);
-        rightRunner.position.set(1.05, 0.15, 2.2);
-
-        group.add(leftRunner);
-        group.add(rightRunner);
+          const injectorGeo = new THREE.TorusGeometry(0.25, 0.035, 6, 16);
+          const injector = new THREE.Mesh(injectorGeo, upgradeMat);
+          injector.position.set(side * 1.12, 0.24, 3.05);
+          group.add(injector);
+        }
         this.moduleVisualsGroup.add(group);
         this.installedModuleVisuals.set(id, group);
+
       } else if (id === 'mod_survey_mote_magnet') {
-        // Ventral gravitic tractor siphon array under nose
+        // Ventral gravitic magnetic aperture with triple concentric focus coils
         const group = new THREE.Group();
-        const siphonGeo = new THREE.CylinderGeometry(0.24, 0.08, 0.3, 8);
-        const siphon = new THREE.Mesh(siphonGeo, upgradeMat);
-        siphon.position.set(0, -0.32, -2.8);
-        group.add(siphon);
+        const housingGeo = new THREE.CylinderGeometry(0.32, 0.18, 0.4, 10);
+        const housing = new THREE.Mesh(housingGeo, armorMat);
+        housing.position.set(0, -0.34, -2.7);
+        group.add(housing);
 
-        const ringGeo = new THREE.TorusGeometry(0.35, 0.03, 6, 16);
-        ringGeo.rotateX(Math.PI / 2);
-        const ring = new THREE.Mesh(ringGeo, upgradeMat);
-        ring.position.set(0, -0.34, -2.8);
-        group.add(ring);
-
+        for (let c = 0; c < 3; c++) {
+          const ringRadius = 0.22 + c * 0.12;
+          const coilGeo = new THREE.TorusGeometry(ringRadius, 0.03, 6, 18);
+          coilGeo.rotateX(Math.PI / 2);
+          const coil = new THREE.Mesh(coilGeo, upgradeMat);
+          coil.position.set(0, -0.36 - c * 0.04, -2.7);
+          group.add(coil);
+        }
         this.moduleVisualsGroup.add(group);
         this.installedModuleVisuals.set(id, group);
+
       } else if (id === 'mod_cargo_expanded_hold') {
-        // Dual external reinforced cargo pods along lower fuselage flanks
+        // Heavy streamlined conformal sponson drop-tanks with fuel level telemetry
         const group = new THREE.Group();
-        const podGeo = new THREE.CylinderGeometry(0.2, 0.2, 1.8, 8);
-        podGeo.rotateX(Math.PI / 2);
-        const leftPod = new THREE.Mesh(podGeo, upgradeMat);
-        leftPod.position.set(-0.85, -0.22, 0.2);
-        const rightPod = new THREE.Mesh(podGeo, upgradeMat);
-        rightPod.position.set(0.85, -0.22, 0.2);
-        group.add(leftPod);
-        group.add(rightPod);
+        for (const side of [-1, 1]) {
+          const podGroup = new THREE.Group();
+          const tankGeo = new THREE.CylinderGeometry(0.28, 0.28, 2.4, 12);
+          tankGeo.rotateX(Math.PI / 2);
+          const tank = new THREE.Mesh(tankGeo, armorMat);
+          tank.position.set(side * 0.92, -0.26, 0.2);
+          podGroup.add(tank);
+
+          // Forward nose cone
+          const noseGeo = new THREE.ConeGeometry(0.28, 0.6, 12);
+          noseGeo.rotateX(-Math.PI / 2);
+          const nose = new THREE.Mesh(noseGeo, armorMat);
+          nose.position.set(side * 0.92, -0.26, -1.2);
+          podGroup.add(nose);
+
+          // Telemetry illuminated stripe
+          const stripeGeo = new THREE.BoxGeometry(0.04, 0.04, 2.0);
+          const stripe = new THREE.Mesh(stripeGeo, upgradeMat);
+          stripe.position.set(side * 1.18, -0.26, 0.2);
+          podGroup.add(stripe);
+
+          group.add(podGroup);
+        }
         this.moduleVisualsGroup.add(group);
         this.installedModuleVisuals.set(id, group);
       }

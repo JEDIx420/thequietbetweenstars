@@ -1065,58 +1065,258 @@ export class FaunaPopulationManager {
       metalness: 0.85,
     });
 
-    // Articulated alien giant body
-    // Lower robe / pedestal
-    const robeGeo = new THREE.ConeGeometry(h * 0.26, h * 0.65, 8);
-    const robe = new THREE.Mesh(robeGeo, giantMat);
-    robe.position.y = h * 0.35;
-    group.add(robe);
-
-    // Articulated upper torso
-    const upperGeo = new THREE.BoxGeometry(h * 0.34, h * 0.38, h * 0.24);
-    const upper = new THREE.Mesh(upperGeo, giantMat);
-    upper.position.y = h * 0.72;
-    group.add(upper);
-
-    // Crystalline shoulder spires
-    for (const side of [-1, 1]) {
-      const spire = new THREE.Mesh(new THREE.ConeGeometry(h * 0.08, h * 0.35, 5), crystalMat);
-      spire.position.set(side * h * 0.22, h * 0.88, 0);
-      spire.rotation.z = -side * 0.35;
-      group.add(spire);
+    // Hash NPC seed to deterministically assign morphology
+    let seedVal = 0;
+    for (let i = 0; i < npc.npcId.length; i++) {
+      seedVal = (seedVal * 31 + npc.npcId.charCodeAt(i)) >>> 0;
     }
+    const morphologyIndex = seedVal % 5; // 0: lithic, 1: insectoid, 2: cephalopod, 3: avian, 4: fungal
 
-    // Stately alien head node (for smooth look-at tracking)
+    // Head pivot for dynamic look-at tracking
     const headPivot = new THREE.Group();
     headPivot.position.y = h * 0.94;
 
-    const headGeo = new THREE.CylinderGeometry(h * 0.09, h * 0.16, h * 0.25, 6);
-    const head = new THREE.Mesh(headGeo, giantMat);
-    headPivot.add(head);
+    const animatedParts: THREE.Object3D[] = [];
+    let speciesLabel = 'Lithic Terrestrial Titan';
+    let speciesDesc = `Monolithic lithic titan of ${this.region.name}.`;
 
-    // Luminous Acoustic Crest / Halo
-    const crestGeo = new THREE.TorusGeometry(h * 0.2, h * 0.03, 6, 24);
-    const crest = new THREE.Mesh(crestGeo, crystalMat);
-    crest.position.set(0, h * 0.15, 0);
-    crest.rotation.x = Math.PI / 4;
-    headPivot.add(crest);
+    if (morphologyIndex === 1) {
+      // 1. INSECTOID WEAVER
+      speciesLabel = 'Chitinous Resonant Weaver';
+      speciesDesc = `Articulated insectoid architect of ${this.region.name}.`;
 
-    group.add(headPivot);
+      // Abdomen / Carapace segments
+      const abdomenGeo = new THREE.SphereGeometry(h * 0.22, 8, 8);
+      abdomenGeo.scale(0.8, 1.4, 0.7);
+      const abdomen = new THREE.Mesh(abdomenGeo, giantMat);
+      abdomen.position.set(0, h * 0.45, -h * 0.12);
+      abdomen.rotation.x = 0.35;
+      group.add(abdomen);
 
-    // Standing limbs
-    const legGeo = new THREE.CylinderGeometry(h * 0.08, h * 0.1, h * 0.45, 5);
-    const leftLeg = new THREE.Mesh(legGeo, giantMat);
-    leftLeg.position.set(-h * 0.14, h * 0.22, 0);
-    const rightLeg = new THREE.Mesh(legGeo, giantMat);
-    rightLeg.position.set(h * 0.14, h * 0.22, 0);
-    group.add(leftLeg);
-    group.add(rightLeg);
+      // Thorax
+      const thoraxGeo = new THREE.BoxGeometry(h * 0.28, h * 0.32, h * 0.26);
+      const thorax = new THREE.Mesh(thoraxGeo, giantMat);
+      thorax.position.set(0, h * 0.72, 0);
+      group.add(thorax);
+
+      // 4 Multi-jointed sprawling insect legs
+      for (const side of [-1, 1]) {
+        for (let l = 0; l < 2; l++) {
+          const legJoint = new THREE.Group();
+          legJoint.position.set(side * h * 0.14, h * 0.45, (l - 0.5) * h * 0.22);
+
+          const upperLegGeo = new THREE.CylinderGeometry(h * 0.04, h * 0.05, h * 0.4, 5);
+          const upperLeg = new THREE.Mesh(upperLegGeo, giantMat);
+          upperLeg.position.set(side * h * 0.14, h * 0.1, 0);
+          upperLeg.rotation.z = -side * 0.65;
+          legJoint.add(upperLeg);
+
+          const lowerLegGeo = new THREE.CylinderGeometry(h * 0.03, h * 0.04, h * 0.45, 5);
+          const lowerLeg = new THREE.Mesh(lowerLegGeo, crystalMat);
+          lowerLeg.position.set(side * h * 0.26, -h * 0.18, 0);
+          lowerLeg.rotation.z = side * 0.35;
+          legJoint.add(lowerLeg);
+
+          group.add(legJoint);
+        }
+      }
+
+      // Grasping Forelimbs
+      for (const side of [-1, 1]) {
+        const claw = new THREE.Mesh(new THREE.ConeGeometry(h * 0.06, h * 0.35, 4), crystalMat);
+        claw.position.set(side * h * 0.18, h * 0.68, h * 0.18);
+        claw.rotation.x = Math.PI / 3;
+        claw.rotation.z = -side * 0.25;
+        group.add(claw);
+      }
+
+      // Insect Head with Compound Eyes & Antennae
+      const headGeo = new THREE.ConeGeometry(h * 0.14, h * 0.26, 6);
+      headGeo.rotateX(Math.PI);
+      const head = new THREE.Mesh(headGeo, giantMat);
+      headPivot.add(head);
+
+      for (const side of [-1, 1]) {
+        // Compound eye cluster
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(h * 0.05, 8, 8), crystalMat);
+        eye.position.set(side * h * 0.08, h * 0.02, h * 0.1);
+        headPivot.add(eye);
+
+        // Antenna with glowing tip
+        const antGeo = new THREE.CylinderGeometry(h * 0.012, h * 0.016, h * 0.32, 4);
+        const ant = new THREE.Mesh(antGeo, crystalMat);
+        ant.position.set(side * h * 0.09, h * 0.2, h * 0.05);
+        ant.rotation.z = -side * 0.4;
+        headPivot.add(ant);
+        animatedParts.push(ant);
+      }
+      group.add(headPivot);
+
+    } else if (morphologyIndex === 2) {
+      // 2. CEPHALOPOD ASCENDANT
+      speciesLabel = 'Ascendant Cephalopod Custodian';
+      speciesDesc = `Levitating cephalopod psychic custodian of ${this.region.name}.`;
+
+      // Floating bio-luminescent mantle
+      const mantleGeo = new THREE.ConeGeometry(h * 0.34, h * 0.72, 8);
+      const mantle = new THREE.Mesh(mantleGeo, giantMat);
+      mantle.position.set(0, h * 0.72, 0);
+      mantle.rotation.x = Math.PI;
+      group.add(mantle);
+
+      // Glowing neural core ring
+      const coreGeo = new THREE.TorusGeometry(h * 0.28, h * 0.04, 8, 24);
+      const core = new THREE.Mesh(coreGeo, crystalMat);
+      core.position.set(0, h * 0.68, 0);
+      core.rotation.x = Math.PI / 2;
+      group.add(core);
+
+      // Trailing undulating sensory tentacles (6 tendrils)
+      for (let t = 0; t < 6; t++) {
+        const tAngle = (t / 6) * Math.PI * 2;
+        const tx = Math.cos(tAngle) * h * 0.22;
+        const tz = Math.sin(tAngle) * h * 0.22;
+
+        const tentGeo = new THREE.CylinderGeometry(h * 0.02, h * 0.05, h * 0.65, 5);
+        const tent = new THREE.Mesh(tentGeo, crystalMat);
+        tent.position.set(tx, h * 0.32, tz);
+        group.add(tent);
+        animatedParts.push(tent);
+      }
+
+      // Head node
+      const eyePuck = new THREE.Mesh(new THREE.TorusGeometry(h * 0.16, h * 0.03, 6, 16), crystalMat);
+      headPivot.add(eyePuck);
+      group.add(headPivot);
+
+    } else if (morphologyIndex === 3) {
+      // 3. AVIAN ARCHON
+      speciesLabel = 'Avian Horizon Archon';
+      speciesDesc = `Plumed celestial sentinel of ${this.region.name}.`;
+
+      // Slender tall torso
+      const torsoGeo = new THREE.ConeGeometry(h * 0.22, h * 0.58, 6);
+      const torso = new THREE.Mesh(torsoGeo, giantMat);
+      torso.position.set(0, h * 0.58, 0);
+      group.add(torso);
+
+      // Radiant chest prism
+      const prismGeo = new THREE.OctahedronGeometry(h * 0.09);
+      const prism = new THREE.Mesh(prismGeo, crystalMat);
+      prism.position.set(0, h * 0.68, h * 0.12);
+      group.add(prism);
+
+      // Swept wing vanes
+      for (const side of [-1, 1]) {
+        const wingGeo = new THREE.BoxGeometry(h * 0.55, h * 0.05, h * 0.25);
+        const wing = new THREE.Mesh(wingGeo, crystalMat);
+        wing.position.set(side * h * 0.35, h * 0.62, -h * 0.08);
+        wing.rotation.y = -side * 0.35;
+        wing.rotation.z = -side * 0.45;
+        group.add(wing);
+        animatedParts.push(wing);
+      }
+
+      // Digitigrade legs
+      for (const side of [-1, 1]) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.05, h * 0.07, h * 0.48, 5), giantMat);
+        leg.position.set(side * h * 0.12, h * 0.24, 0);
+        group.add(leg);
+      }
+
+      // Crested raptor head
+      const beakGeo = new THREE.ConeGeometry(h * 0.08, h * 0.28, 5);
+      beakGeo.rotateX(Math.PI / 2);
+      const beak = new THREE.Mesh(beakGeo, giantMat);
+      headPivot.add(beak);
+
+      const crestGeo = new THREE.BoxGeometry(h * 0.04, h * 0.26, h * 0.32);
+      const crest = new THREE.Mesh(crestGeo, crystalMat);
+      crest.position.set(0, h * 0.12, -h * 0.08);
+      crest.rotation.x = -0.3;
+      headPivot.add(crest);
+      group.add(headPivot);
+
+    } else if (morphologyIndex === 4) {
+      // 4. FUNGAL MYCELIAR
+      speciesLabel = 'Bioluminescent Fungal Colossus';
+      speciesDesc = `Resonant spore-venting colossus of ${this.region.name}.`;
+
+      // Thick stipe trunk
+      const stipeGeo = new THREE.CylinderGeometry(h * 0.2, h * 0.32, h * 0.72, 8);
+      const stipe = new THREE.Mesh(stipeGeo, giantMat);
+      stipe.position.set(0, h * 0.36, 0);
+      group.add(stipe);
+
+      // Tiered mushroom cap discs
+      for (let c = 0; c < 3; c++) {
+        const capR = h * (0.42 - c * 0.08);
+        const capGeo = new THREE.CylinderGeometry(capR * 0.3, capR, h * 0.1, 16);
+        const cap = new THREE.Mesh(capGeo, c === 0 ? crystalMat : giantMat);
+        cap.position.set(0, h * (0.68 + c * 0.12), 0);
+        group.add(cap);
+        animatedParts.push(cap);
+      }
+
+      // Luminous spore venting chimneys
+      for (let s = 0; s < 4; s++) {
+        const sAngle = (s / 4) * Math.PI * 2;
+        const sx = Math.cos(sAngle) * h * 0.24;
+        const sz = Math.sin(sAngle) * h * 0.24;
+        const chim = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.04, h * 0.05, h * 0.25, 6), crystalMat);
+        chim.position.set(sx, h * 0.85, sz);
+        group.add(chim);
+      }
+
+      const sporeCrown = new THREE.Mesh(new THREE.SphereGeometry(h * 0.14, 8, 8), crystalMat);
+      headPivot.add(sporeCrown);
+      group.add(headPivot);
+
+    } else {
+      // 0. LITHIC TITAN (Original Classic Monolith, refined)
+      const robeGeo = new THREE.ConeGeometry(h * 0.26, h * 0.65, 8);
+      const robe = new THREE.Mesh(robeGeo, giantMat);
+      robe.position.y = h * 0.35;
+      group.add(robe);
+
+      const upperGeo = new THREE.BoxGeometry(h * 0.34, h * 0.38, h * 0.24);
+      const upper = new THREE.Mesh(upperGeo, giantMat);
+      upper.position.y = h * 0.72;
+      group.add(upper);
+
+      for (const side of [-1, 1]) {
+        const spire = new THREE.Mesh(new THREE.ConeGeometry(h * 0.08, h * 0.35, 5), crystalMat);
+        spire.position.set(side * h * 0.22, h * 0.88, 0);
+        spire.rotation.z = -side * 0.35;
+        group.add(spire);
+        animatedParts.push(spire);
+      }
+
+      const headGeo = new THREE.CylinderGeometry(h * 0.09, h * 0.16, h * 0.25, 6);
+      const head = new THREE.Mesh(headGeo, giantMat);
+      headPivot.add(head);
+
+      const crestGeo = new THREE.TorusGeometry(h * 0.2, h * 0.03, 6, 24);
+      const crest = new THREE.Mesh(crestGeo, crystalMat);
+      crest.position.set(0, h * 0.15, 0);
+      crest.rotation.x = Math.PI / 4;
+      headPivot.add(crest);
+      group.add(headPivot);
+
+      const legGeo = new THREE.CylinderGeometry(h * 0.08, h * 0.1, h * 0.45, 5);
+      const leftLeg = new THREE.Mesh(legGeo, giantMat);
+      leftLeg.position.set(-h * 0.14, h * 0.22, 0);
+      const rightLeg = new THREE.Mesh(legGeo, giantMat);
+      rightLeg.position.set(h * 0.14, h * 0.22, 0);
+      group.add(leftLeg);
+      group.add(rightLeg);
+    }
 
     group.position.copy(spawnPos);
 
     const scanInfo: CreatureScanInfo = {
       name: npc.name,
-      species: 'Lithic Terrestrial Titan',
+      species: speciesLabel,
       category: 'SENTIENT',
       behaviour: 'Standing in monumental contemplation of bedrock tremors.',
       diet: 'Deep mantle mineral resonance',
@@ -1138,7 +1338,7 @@ export class FaunaPopulationManager {
       behaviour: 'sentient_gaze',
       rarity: 1.0,
       heightMeters: h,
-      description: `Monolithic lithic titan of ${this.region.name}.`,
+      description: speciesDesc,
     };
 
     let giantClock = 0;
@@ -1160,10 +1360,30 @@ export class FaunaPopulationManager {
       update: (dt, getHeightAt, shipPos) => {
         giantClock += dt;
 
-        // Idle breathing sway
-        const breathingSway = Math.sin(giantClock * 1.5) * 0.25;
-        upper.position.y = h * 0.72 + breathingSway * 0.3;
-        headPivot.position.y = h * 0.94 + breathingSway * 0.4;
+        // Subtle biological animation according to morphology
+        if (morphologyIndex === 2) {
+          // Cephalopod: undulating levitation
+          group.position.y = spawnPos.y + Math.sin(giantClock * 1.8) * 1.4;
+          for (let i = 0; i < animatedParts.length; i++) {
+            animatedParts[i].rotation.z = Math.sin(giantClock * 2.2 + i) * 0.25;
+          }
+        } else if (morphologyIndex === 1) {
+          // Insectoid: antennae twitching
+          for (let i = 0; i < animatedParts.length; i++) {
+            animatedParts[i].rotation.x = Math.sin(giantClock * 4.0 + i * 2) * 0.15;
+          }
+        } else if (morphologyIndex === 3) {
+          // Avian: wing flare
+          for (let i = 0; i < animatedParts.length; i++) {
+            animatedParts[i].rotation.z += Math.sin(giantClock * 2.0) * 0.005;
+          }
+        } else if (morphologyIndex === 4) {
+          // Fungal: cap breathing scale
+          const breathe = 1.0 + Math.sin(giantClock * 1.2) * 0.04;
+          for (const cap of animatedParts) {
+            cap.scale.set(breathe, 1.0, breathe);
+          }
+        }
 
         // Look-at tracking: head and upper body smoothly turn toward ship
         const distToShip = group.position.distanceTo(shipPos);
@@ -1173,7 +1393,7 @@ export class FaunaPopulationManager {
           group.rotation.y = THREE.MathUtils.lerp(group.rotation.y, targetAngle, dt * 2.5);
 
           // Tilt head slightly toward ship elevation
-          const yDiff = shipPos.y - headPivot.position.y;
+          const yDiff = shipPos.y - (group.position.y + headPivot.position.y);
           const pitchTarget = THREE.MathUtils.clamp(Math.atan2(yDiff, distToShip), -0.35, 0.45);
           headPivot.rotation.x = THREE.MathUtils.lerp(headPivot.rotation.x, pitchTarget, dt * 3.0);
         }

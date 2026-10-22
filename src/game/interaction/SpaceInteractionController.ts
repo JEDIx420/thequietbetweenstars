@@ -12,7 +12,6 @@ import { StagedScanController } from '../scanning/StagedScanController';
 import { audio } from '../../audio/AudioEngine';
 import { commAudio } from '../../audio/CommunicationSoundSynth';
 import { sceneAudio } from '../../audio/AudioSceneDirector';
-import { localAI } from '../../ai/LocalIntelligenceService';
 
 export interface SpaceInteractionCallbacks {
   showNotice: (msg: string) => void;
@@ -188,39 +187,61 @@ export class SpaceInteractionController {
           });
 
           const defaultSpeaker = vessel.captainName;
-          const defaultLines = [
-            vessel.greeting || `Greetings, traveler. This is ${vessel.name}.`,
-            `Our routes cross peaceful currents in the ${vessel.dialogueTopic || 'outer sectors'}. Safe journey through the stars.`
-          ];
+          const greetingText = vessel.greeting || `Greetings, traveler. This is ${vessel.name} [${vessel.species} Registry]. State your intent.`;
 
-          // Use Local AI if ready and enabled
-          if (localAI.isAiEnabled() && localAI.getStatus() === 'READY') {
-            localAI
-              .generateReply(
-                defaultSpeaker,
-                vessel.dialogueTopic || 'cosmic trade and deep space exploration',
-                this.storyDirector.getState(),
-                'Pilot',
-                defaultLines[0]
-              )
-              .then((aiReply) => {
-                this.dialoguePresenter.enqueue([
-                  {
-                    speaker: defaultSpeaker,
-                    text: aiReply,
-                    audioTone: 'chime',
-                  },
-                ]);
-              });
-          } else {
-            this.dialoguePresenter.enqueue(
-              defaultLines.map((line) => ({
-                speaker: defaultSpeaker,
-                text: line,
-                audioTone: 'chime',
-              }))
-            );
-          }
+          this.dialoguePresenter.showInteractiveConversation(
+            defaultSpeaker,
+            greetingText,
+            [
+              { topic: 'trade', text: 'REQUEST TRADE / SUPPLIES' },
+              { topic: 'intel', text: 'SECTOR INTEL & ANOMALY CHARTS' },
+              { topic: 'escort', text: 'REQUEST FORMATION ESCORT' },
+              { topic: 'scan', text: 'DIAGNOSTIC VESSEL SCAN' },
+              { topic: 'close', text: 'SIGN OFF // CLEAR SKIES' },
+            ]
+          );
+
+          this.dialoguePresenter.setChoiceCallback((topic: string) => {
+            if (topic === 'trade') {
+              this.dialoguePresenter.enqueue([
+                {
+                  speaker: defaultSpeaker,
+                  text: 'Our cargo manifest is open. Transferring emergency shield re-chargers and auxiliary propellant.',
+                  audioTone: 'chime',
+                },
+              ]);
+              callbacks.showNotice('✦ CARGO RECEIVED: +80 CREDITS & REPAIR NANITES');
+            } else if (topic === 'intel') {
+              this.dialoguePresenter.enqueue([
+                {
+                  speaker: defaultSpeaker,
+                  text: 'Navigational logs shared. Planetary settlements detected in this system; check your landing site coordinates.',
+                  audioTone: 'mystery',
+                },
+              ]);
+              callbacks.showNotice('✦ NAVIGATION INTEL INTEGRATED INTO RADAR');
+            } else if (topic === 'escort') {
+              this.dialoguePresenter.enqueue([
+                {
+                  speaker: defaultSpeaker,
+                  text: 'Copy that, Surveyor. Matching impulse vectors to form up on your wing. Safe voyage.',
+                  audioTone: 'chime',
+                },
+              ]);
+              callbacks.showNotice(`✦ FORMATION LOCK: ${vessel.name.toUpperCase()} FLYING WINGMAN`);
+            } else if (topic === 'scan') {
+              this.dialoguePresenter.enqueue([
+                {
+                  speaker: 'Survey Telemetry',
+                  text: `SCAN RESULT: Hull Integrity 95% · Sublight Drive Nominal · Cargo: Refined Fuel Cells & Scientific Telemetry.`,
+                  audioTone: 'chime',
+                },
+              ]);
+            } else {
+              this.dialoguePresenter.hide();
+              callbacks.showNotice('COMMS CHANNEL DISENGAGED');
+            }
+          });
 
           callbacks.showNotice(`COMMS CHANNEL LINKED // ${vessel.name.toUpperCase()}`);
         } else {

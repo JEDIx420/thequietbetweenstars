@@ -528,47 +528,53 @@ export class TouchControls {
             <!-- Surface Altitude Controls Row (Visible exclusively in surface flight) -->
             <div id="touch-altitude-row" style="display: none; gap: 5px;">
               <button id="touch-btn-alt-up" class="touch-compact-btn" style="
-                width: 60px;
-                padding: 6px 0;
-                background: rgba(15, 23, 42, 0.85);
-                border: 1px solid rgba(56, 189, 248, 0.45);
+                min-width: 62px;
+                min-height: 40px;
+                padding: 8px 0;
+                background: rgba(15, 23, 42, 0.88);
+                border: 1.5px solid rgba(56, 189, 248, 0.55);
                 border-radius: 8px;
                 color: #38bdf8;
-                font-size: 10px;
+                font-size: 11px;
                 font-weight: 700;
                 cursor: pointer;
                 touch-action: manipulation;
+                -webkit-tap-highlight-color: transparent;
               ">ALT ▲</button>
 
               <button id="touch-btn-alt-down" class="touch-compact-btn" style="
-                width: 60px;
-                padding: 6px 0;
-                background: rgba(15, 23, 42, 0.85);
-                border: 1px solid rgba(56, 189, 248, 0.45);
+                min-width: 62px;
+                min-height: 40px;
+                padding: 8px 0;
+                background: rgba(15, 23, 42, 0.88);
+                border: 1.5px solid rgba(56, 189, 248, 0.55);
                 border-radius: 8px;
                 color: #38bdf8;
-                font-size: 10px;
+                font-size: 11px;
                 font-weight: 700;
                 cursor: pointer;
                 touch-action: manipulation;
+                -webkit-tap-highlight-color: transparent;
               ">ALT ▼</button>
             </div>
 
             <!-- Orbit / Land + Comms Row -->
             <div style="display: flex; gap: 5px;">
               <button id="touch-btn-orbit" class="touch-compact-btn" style="
-                width: 60px;
-                padding: 7px 0;
-                background: rgba(30, 41, 59, 0.75);
-                border: 1px solid rgba(56, 189, 248, 0.4);
+                min-width: 62px;
+                min-height: 40px;
+                padding: 8px 0;
+                background: rgba(30, 41, 59, 0.85);
+                border: 1.5px solid rgba(56, 189, 248, 0.5);
                 border-radius: 8px;
                 color: #38bdf8;
-                font-size: 10.5px;
-                font-weight: 600;
+                font-size: 11px;
+                font-weight: 700;
                 letter-spacing: 0.04em;
                 cursor: pointer;
                 touch-action: manipulation;
-                transition: all 0.15s ease;
+                -webkit-tap-highlight-color: transparent;
+                transition: all 0.12s ease;
               ">LAND</button>
 
               <button id="touch-btn-emote-toggle" class="touch-compact-btn" style="
@@ -1013,26 +1019,44 @@ export class TouchControls {
       HapticFeedback.medium();
     });
 
-    // Orbit / Land button
-    bindFastTap(this.orbitBtnEl, () => {
+    // Orbit / Land button (Immediate touchstart / pointerdown response)
+    const triggerOrbit = (e?: Event) => {
+      if (e?.cancelable) e.preventDefault();
       if (this.currentContext === 'surface') {
         this.touchInput.triggerAction('cancel'); // Return to orbit
+        this.touchInput.setActionState('cancel', true);
+        setTimeout(() => this.touchInput.setActionState('cancel', false), 150);
       } else {
         this.touchInput.triggerAction('confirm'); // Land / engage orbit
+        this.touchInput.setActionState('confirm', true);
+        setTimeout(() => this.touchInput.setActionState('confirm', false), 150);
       }
       HapticFeedback.medium();
-    });
+    };
 
-    // Altitude controls (surface hover)
-    bindFastTap(this.altUpBtnEl, () => {
-      this.touchInput.triggerAction('altitude_up');
-      HapticFeedback.light();
-    });
+    this.orbitBtnEl?.addEventListener('pointerdown', triggerOrbit);
+    this.orbitBtnEl?.addEventListener('click', triggerOrbit);
 
-    bindFastTap(this.altDownBtnEl, () => {
-      this.touchInput.triggerAction('altitude_down');
-      HapticFeedback.light();
-    });
+    // Altitude controls (surface hover: continuous press-and-hold + tap support)
+    const bindHoldAction = (el: HTMLElement | null, action: 'altitude_up' | 'altitude_down') => {
+      if (!el) return;
+      el.addEventListener('pointerdown', (e) => {
+        if (e.cancelable) e.preventDefault();
+        this.touchInput.setActionState(action, true);
+        this.touchInput.triggerAction(action);
+        HapticFeedback.light();
+      });
+      const endHold = (e?: Event) => {
+        if (e?.cancelable) e.preventDefault();
+        this.touchInput.setActionState(action, false);
+      };
+      el.addEventListener('pointerup', endHold);
+      el.addEventListener('pointercancel', endHold);
+      el.addEventListener('pointerleave', endHold);
+    };
+
+    bindHoldAction(this.altUpBtnEl, 'altitude_up');
+    bindHoldAction(this.altDownBtnEl, 'altitude_down');
 
     // Modules / Store
     bindFastTap(this.upgradeBtnEl, () => {

@@ -56,6 +56,8 @@ import { StationInterfaceModal } from './StationInterfaceModal';
 import { StagedScanHUD } from '../game/ui/StagedScanHUD';
 import { StagedScanController } from '../game/scanning/StagedScanController';
 import { MissionHelpModal } from './MissionHelpModal';
+import { PilotOnboardingHUD } from './PilotOnboardingHUD';
+import { AlienCityModal } from './AlienCityModal';
 import { PlayerStateStore } from '../game/progression/PlayerStateStore';
 import { CockpitInteriorRig } from '../game/scenes/CockpitInteriorRig';
 
@@ -103,6 +105,8 @@ export class DesktopApp {
   public supplyModal!: SupplyModal;
   public settingsModal!: SettingsModal;
   public missionHelpModal!: MissionHelpModal;
+  public pilotOnboardingHUD!: PilotOnboardingHUD;
+  public alienCityModal!: AlienCityModal;
 
   // Narrative & Tutorial Systems
   public dialoguePresenter!: DialoguePresenter;
@@ -322,6 +326,7 @@ export class DesktopApp {
         this.spaceScene.onRebase(offset);
         this.shipEmoteDirector.onRebase(offset);
         this.approachController.onRebase(offset);
+        this.autopilotController?.onRebase(offset);
         this.navRadar?.onRebase(offset);
         this.activeSpaceStations.forEach((s) => s.onRebase(offset));
         this.activeNPCVessels.forEach((v) => v.onRebase(offset));
@@ -423,6 +428,14 @@ export class DesktopApp {
     this.missionHelpModal = new MissionHelpModal(this.container);
     this.missionHelpModal.setOnOpenJournal(() => {
       this.journalModal.open();
+    });
+
+    this.pilotOnboardingHUD = new PilotOnboardingHUD(this.container);
+    this.alienCityModal = new AlienCityModal(this.container);
+    this.alienCityModal.setPlayerState(this.playerState);
+    this.alienCityModal.setOnLaunch(() => {
+      this.surfaceScene?.adjustAltitude(35.0);
+      this.showHudNotice('DEPARTING STARPORT // VERTICAL THRUST ENGAGED');
     });
 
     this.supplyModal = new SupplyModal(this.container, {
@@ -597,12 +610,14 @@ export class DesktopApp {
     const input = this.inputManager.getNormalizedInput();
     const phase = this.stateMachine.getPhase();
 
-    // Check steering & throttle for tutorial progress
+    // Check steering & throttle for flight onboarding progress
     if (Math.abs(input.axes.x) > 0.25 || Math.abs(input.axes.y) > 0.25) {
       this.tutorialDirector.onPlayerSteer();
+      this.pilotOnboardingHUD?.markStep('steer');
     }
     if (input.throttle > 0.1) {
       this.tutorialDirector.onPlayerThrottle();
+      this.pilotOnboardingHUD?.markStep('throttle');
     }
     this.tutorialDirector.update();
     this.shipEmoteDirector.update(dt);
@@ -702,16 +717,18 @@ export class DesktopApp {
       this.updateDebugTelemetryOverlay(this.surfaceScene.debugTelemetry);
     }
 
-    // Handle companion altitude adjustments
-    if (this.inputManager.consumeAction('altitude_up')) {
-      this.surfaceScene.adjustAltitude(12.0);
+    // Handle companion altitude adjustments (responsive continuous hold & tap)
+    const altStep = Math.max(0.4, 26.0 * (dt || 0.016));
+    if (this.inputManager.isActionPressed('altitude_up') || this.inputManager.consumeAction('altitude_up')) {
+      this.surfaceScene.adjustAltitude(altStep);
     }
-    if (this.inputManager.consumeAction('altitude_down')) {
-      this.surfaceScene.adjustAltitude(-12.0);
+    if (this.inputManager.isActionPressed('altitude_down') || this.inputManager.consumeAction('altitude_down')) {
+      this.surfaceScene.adjustAltitude(-altStep);
     }
 
     // Handle T / Target Ahead lock-on on surface
     if (this.inputManager.consumeAction('target_lock')) {
+      this.pilotOnboardingHUD?.markStep('target');
       const surfaceCandidates = this.collectSurfaceLockCandidates();
       const locked = this.targetLockSystem.lockTargetInForwardCone(
         this.surfaceScene.shipPosition,
@@ -735,7 +752,9 @@ export class DesktopApp {
       }
     }
 
-    if (lockedTarget) {
+    if (res.isOverLandingPad && res.nearestCity) {
+      this.updateContextPrompt(`✦ ${res.nearestCity.name.toUpperCase()} STARPORT // PRESS [SPACE / E] TO ENTER CONCOURSE`);
+    } else if (lockedTarget) {
       const distStr = `${lockedTarget.distance ?? 0}m`;
       if (lockedTarget.isSentient) {
         this.updateContextPrompt(`LOCKED: ${lockedTarget.name.toUpperCase()} [${distStr}] // SPACE: COMMUNICATE · T: NEXT TARGET`);
@@ -758,9 +777,11 @@ export class DesktopApp {
       this.updateContextPrompt(`SURFACE EXPLORATION${atmoInfo} // T: TARGET AHEAD · Q/E: ALTITUDE · ESC: ORBIT`);
     }
 
-    // Contextual action: Collect sample or initiate conversation or scan
+    // Contextual action: Dock at city, collect sample, initiate conversation or scan
     if (this.inputManager.consumeAction('scan') || this.inputManager.consumeAction('talk') || this.inputManager.consumeAction('interact')) {
-      if (lockedTarget) {
+      if (res.isOverLandingPad && res.nearestCity && !this.alienCityModal.getIsOpen()) {
+        this.alienCityModal.open(res.nearestCity);
+      } else if (lockedTarget) {
         if (lockedTarget.isSentient && lockedTarget.data?.npcData) {
           this.startGiantConversation(lockedTarget.data.npcData);
         } else if (lockedTarget.type === 'resource') {
@@ -794,7 +815,11 @@ export class DesktopApp {
     }
 
     if (this.inputManager.consumeAction('confirm') || this.inputManager.consumeAction('cancel') || this.inputManager.consumeAction('autopilot')) {
-      this.returnToOrbitFromSurface();
+      if (res.isOverLandingPad && res.nearestCity && !this.alienCityModal.getIsOpen()) {
+        this.alienCityModal.open(res.nearestCity);
+      } else {
+        this.returnToOrbitFromSurface();
+      }
     }
 
     // Update Target Lock Reticle on Surface
@@ -1052,6 +1077,7 @@ export class DesktopApp {
 
     // Handle T / Target Ahead lock-on
     if (this.inputManager.consumeAction('target_lock')) {
+      this.pilotOnboardingHUD?.markStep('target');
       const spaceCandidates = this.collectSpaceLockCandidates();
       const locked = this.targetLockSystem.lockTargetInForwardCone(
         shipPos,
@@ -1381,7 +1407,7 @@ export class DesktopApp {
       this.saveCurrentJourney();
     }
 
-    // Celestial collision feedback
+    // Celestial collision feedback & Planetary anti-tunneling safety capture
     if (this.flightModel.lastCollision.hasCollided) {
       const now = performance.now();
       if (now - this.lastDeflectionSoundTime > 400) {
@@ -1389,6 +1415,29 @@ export class DesktopApp {
         audio.playCollisionDeflection(this.flightModel.lastCollision.isDanger);
         const bodyName = this.flightModel.lastCollision.collidedBody?.name || 'CELESTIAL BODY';
         this.showHudNotice(`EXCLUSION SHELL ENGAGED — DEFLECTION ALONG ${bodyName}`);
+
+        // Anti-tunneling planetary safety capture:
+        if (
+          this.flightModel.lastCollision.collidedBody?.type === 'planet' &&
+          phase !== FlightPhase.ORBIT &&
+          phase !== FlightPhase.ENTRY &&
+          phase !== FlightPhase.SURFACE_FLIGHT
+        ) {
+          const colBody = this.flightModel.lastCollision.collidedBody;
+          const foundPlanet = this.spaceScene.activePlanetList.find(
+            (p) => p.descriptor.name === colBody.name || p.descriptor.id === colBody.id
+          );
+          if (foundPlanet) {
+            this.showHudNotice(`ORBITAL ENTRY SYNCHRONIZED WITH ${foundPlanet.descriptor.name.toUpperCase()}`);
+            this.engageOrbit({
+              planet: foundPlanet.descriptor,
+              position: foundPlanet.position,
+              distance: this.flightModel.position.distanceTo(foundPlanet.position),
+              approachRatio: 1.0,
+              canInspect: true,
+            });
+          }
+        }
       }
     }
 
@@ -1550,6 +1599,7 @@ export class DesktopApp {
     this.targetLockReticle.update(null, this.renderer.camera, window.innerWidth, window.innerHeight);
     this.stateMachine.transitionTo(FlightPhase.ORBIT);
     this.tutorialDirector.onPlayerOrbit();
+    this.pilotOnboardingHUD?.markStep('cruise');
     this.orbitController.enterOrbit(target.planet, target.position, this.flightModel.position);
 
     // Generate deterministic landing sites for inspection UI
@@ -2850,6 +2900,7 @@ export class DesktopApp {
     if (engaged) {
       this.showHudNotice(`WARP DRIVE CHARGING // HEADING SET TO ${targetSys.name.toUpperCase()}`);
       this.tutorialDirector.onPlayerEngageCruise(targetSys.name);
+      this.pilotOnboardingHUD?.markStep('cruise');
     }
   }
 
@@ -3332,24 +3383,6 @@ export class DesktopApp {
               touch-action: manipulation;
             ">${audio.getIsMuted() ? '🔇' : '🔊'}</button>
 
-            <!-- Minimal Mission Guidance / Tips button near volume -->
-            <button id="btn-mission-help" style="
-              background: rgba(15, 23, 42, 0.75);
-              border: 1px solid rgba(56, 189, 248, 0.35);
-              border-radius: 8px;
-              color: #38bdf8;
-              padding: 5px 10px;
-              font-size: 10.5px;
-              cursor: pointer;
-              touch-action: manipulation;
-              display: flex;
-              align-items: center;
-              gap: 4px;
-            " title="Mission Guidance & Context Tips">
-              <span style="font-size: 11px;">✦</span>
-              <span>${isTouch ? 'TIPS' : 'TIPS'}</span>
-            </button>
-
             <!-- Minimal Non-Intrusive Fullscreen Toggle -->
             <button id="btn-toggle-fullscreen" style="
               background: rgba(15, 23, 42, 0.75);
@@ -3529,13 +3562,6 @@ export class DesktopApp {
       const isMuted = audio.toggleMute();
       const btn = this.uiContainer.querySelector('#btn-audio-mute') as HTMLButtonElement;
       if (btn) btn.textContent = isMuted ? '🔇' : '🔊';
-    });
-
-    bindTapAction('#btn-mission-help', () => {
-      this.missionHelpModal?.toggle(
-        this.storyDirector.getState(),
-        this.currentControlMode === 'touch' || isTouchDevice()
-      );
     });
 
     // Minimal Fullscreen Toggle
@@ -3780,15 +3806,20 @@ export class DesktopApp {
             " title="Toggle Fullscreen">⛶</button>
 
             <button id="btn-return-orbit" style="
-              background: rgba(15, 23, 42, 0.8);
-              border: 1px solid rgba(56, 189, 248, 0.4);
+              background: rgba(15, 23, 42, 0.88);
+              border: 1.5px solid rgba(56, 189, 248, 0.55);
               border-radius: 8px;
               color: #38bdf8;
-              padding: 6px 14px;
+              padding: 8px 16px;
               font-size: 11px;
-              font-weight: 600;
+              font-weight: 700;
+              letter-spacing: 0.04em;
               cursor: pointer;
-            ">RETURN TO ORBIT [E]</button>
+              touch-action: manipulation;
+              -webkit-tap-highlight-color: transparent;
+              min-height: 42px;
+              box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+            ">${isTouch ? 'RETURN TO SPACE 🚀' : 'RETURN TO ORBIT [E]'}</button>
           </div>
         </div>
 
@@ -3831,9 +3862,14 @@ export class DesktopApp {
       </div>
     `;
 
-    this.uiContainer.querySelector('#btn-return-orbit')?.addEventListener('click', () => {
+    const triggerReturnOrbit = (e?: Event) => {
+      if (e?.cancelable) e.preventDefault();
+      audio.playConnectChime();
       this.returnToOrbitFromSurface();
-    });
+    };
+    const retBtn = this.uiContainer.querySelector('#btn-return-orbit');
+    retBtn?.addEventListener('pointerdown', triggerReturnOrbit);
+    retBtn?.addEventListener('click', triggerReturnOrbit);
 
     this.uiContainer.querySelector('#btn-surface-mute')?.addEventListener('click', () => {
       const isMuted = audio.toggleMute();
@@ -4219,6 +4255,8 @@ export class DesktopApp {
     if (this.inSpaceWarpCountdownEl) this.inSpaceWarpCountdownEl.remove();
     if (this.touchControls) this.touchControls.dispose();
     if (this.missionHelpModal) this.missionHelpModal.dispose();
+    if (this.pilotOnboardingHUD) this.pilotOnboardingHUD.dispose();
+    if (this.alienCityModal) this.alienCityModal.dispose();
     if (this.atmosphericEntrySequence) this.atmosphericEntrySequence.dispose();
     if (this.debugTelemetryEl) this.debugTelemetryEl.remove();
     if (this.surfaceScene) {

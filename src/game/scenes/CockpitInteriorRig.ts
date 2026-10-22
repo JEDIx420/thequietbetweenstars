@@ -42,6 +42,17 @@ export class CockpitInteriorRig {
   private artificialHorizonLine!: THREE.Mesh;
   private hudReticle!: THREE.Mesh;
 
+  // Comms Dial & Dynamic Audio Waveform
+  public isCommsActive = false;
+  private commsWaveLine!: THREE.Line;
+  private commsWaveGeometry!: THREE.BufferGeometry;
+  private commsWavePositions!: Float32Array;
+  private commsIndicatorLed!: THREE.Mesh;
+  private annunciatorLeds: Array<{ mesh: THREE.Mesh; onColor: number; offColor: number; phaseOffset: number }> = [];
+  private rpmSegments: THREE.Mesh[] = [];
+  private prevSpeed = 0;
+  private vibrationAmount = 0;
+
   // Left Arm & Throttle Lever (Bottom-Left Corner)
   private throttlePivot: THREE.Group;
   private leftArmGroup: THREE.Group;
@@ -274,6 +285,104 @@ export class CockpitInteriorRig {
     const rightPip = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.008), glowGreenMat);
     rightPip.position.set(0, 0.042, 0.002);
     rightMfdScreen.add(rightPip);
+
+    // ==========================================
+    // CENTER CONSOLE: COMMS DIAL & WAVEFORM SCREEN
+    // ==========================================
+    const commsDialGeo = new THREE.CylinderGeometry(0.068, 0.072, 0.016, 24);
+    commsDialGeo.rotateX(Math.PI / 2);
+    const commsDialFrame = new THREE.Mesh(commsDialGeo, dashBodyMat);
+    commsDialFrame.position.set(0, -0.27, -0.68);
+    commsDialFrame.rotation.x = 0.42;
+    this.dashGroup.add(commsDialFrame);
+
+    const commsFaceGeo = new THREE.CircleGeometry(0.062, 24);
+    const commsFaceMat = new THREE.MeshBasicMaterial({ color: 0x020f1c });
+    const commsFace = new THREE.Mesh(commsFaceGeo, commsFaceMat);
+    commsFace.position.set(0, 0, 0.009);
+    commsDialFrame.add(commsFace);
+
+    // Outer frequency dial ring
+    const commsBezelGeo = new THREE.RingGeometry(0.055, 0.061, 24);
+    const commsBezelMat = new THREE.MeshBasicMaterial({ color: 0x0284c7 });
+    const commsBezel = new THREE.Mesh(commsBezelGeo, commsBezelMat);
+    commsBezel.position.set(0, 0, 0.010);
+    commsDialFrame.add(commsBezel);
+
+    // Dynamic Live Audio / Signal Waveform Line (32 vertices)
+    const waveCount = 32;
+    this.commsWavePositions = new Float32Array(waveCount * 3);
+    for (let i = 0; i < waveCount; i++) {
+      this.commsWavePositions[i * 3] = -0.048 + (i / (waveCount - 1)) * 0.096;
+      this.commsWavePositions[i * 3 + 1] = 0;
+      this.commsWavePositions[i * 3 + 2] = 0.012;
+    }
+    this.commsWaveGeometry = new THREE.BufferGeometry();
+    this.commsWaveGeometry.setAttribute('position', new THREE.BufferAttribute(this.commsWavePositions, 3));
+    const waveMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 });
+    this.commsWaveLine = new THREE.Line(this.commsWaveGeometry, waveMat);
+    commsDialFrame.add(this.commsWaveLine);
+
+    // Comms Incoming / Active Pulsing LED
+    const commsLedGeo = new THREE.SphereGeometry(0.006, 8, 8);
+    const commsLedMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+    this.commsIndicatorLed = new THREE.Mesh(commsLedGeo, commsLedMat);
+    this.commsIndicatorLed.position.set(0, 0.038, 0.012);
+    commsDialFrame.add(this.commsIndicatorLed);
+
+    // ==========================================
+    // ANNUNCIATOR WARNING & TELEMETRY LED MATRIX
+    // ==========================================
+    const ledSpecs = [
+      { x: -0.11, label: 'SHIELD', on: 0x10b981, off: 0x064e3b, rate: 0 },
+      { x: -0.07, label: 'ENGINES', on: 0x38bdf8, off: 0x0c4a6e, rate: 1.2 },
+      { x: 0.07, label: 'NAV_LOCK', on: 0xf59e0b, off: 0x78350f, rate: 2.0 },
+      { x: 0.11, label: 'WARP_RDY', on: 0xc084fc, off: 0x581c87, rate: 0.8 },
+    ];
+
+    for (let i = 0; i < ledSpecs.length; i++) {
+      const spec = ledSpecs[i];
+      const ledMat = new THREE.MeshBasicMaterial({ color: spec.on });
+      const ledMesh = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.010, 0.006), ledMat);
+      ledMesh.position.set(spec.x, -0.22, -0.66);
+      ledMesh.rotation.x = 0.42;
+      this.dashGroup.add(ledMesh);
+      this.annunciatorLeds.push({
+        mesh: ledMesh,
+        onColor: spec.on,
+        offColor: spec.off,
+        phaseOffset: i * 1.5,
+      });
+    }
+
+    // RPM & Acceleration LED Ladder (8 vertical segments next to center dial)
+    for (let r = 0; r < 8; r++) {
+      const segColor = r < 4 ? 0x38bdf8 : r < 7 ? 0xfbbf24 : 0xef4444;
+      const rpmMat = new THREE.MeshBasicMaterial({ color: segColor, transparent: true, opacity: 0.25 });
+      const rpmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.005, 0.004), rpmMat);
+      rpmMesh.position.set(-0.088, -0.32 + r * 0.009, -0.67);
+      rpmMesh.rotation.x = 0.42;
+      this.dashGroup.add(rpmMesh);
+      this.rpmSegments.push(rpmMesh);
+    }
+
+    // Tactile Backlit Push-Buttons & Rotary Knobs along lower coaming
+    for (let b = 0; b < 6; b++) {
+      const btnColors = [0xef4444, 0x38bdf8, 0x34d399, 0xf59e0b, 0x38bdf8, 0x06b6d4];
+      const btnMat = new THREE.MeshStandardMaterial({
+        color: btnColors[b],
+        emissive: btnColors[b],
+        emissiveIntensity: 0.6,
+        roughness: 0.3,
+        metalness: 0.7,
+      });
+      const btnGeo = new THREE.CylinderGeometry(0.008, 0.010, 0.012, 8);
+      btnGeo.rotateX(Math.PI / 2);
+      const btnMesh = new THREE.Mesh(btnGeo, btnMat);
+      btnMesh.position.set(-0.20 + b * 0.08, -0.36, -0.65);
+      btnMesh.rotation.x = 0.42;
+      this.dashGroup.add(btnMesh);
+    }
 
     // ==========================================
     // CENTER FLIGHT BORE SIGHT RETICLE
@@ -546,5 +655,56 @@ export class CockpitInteriorRig {
       this.hudReticle.position.x = -state.yawInput * 0.008;
       this.hudReticle.position.y = -0.06 - state.pitchInput * 0.006;
     }
+
+    // 5. Dynamic Comms Waveform Display Animation
+    if (this.commsWavePositions) {
+      const waveFreq = this.isCommsActive ? 18.0 : 6.0;
+      const waveAmp = this.isCommsActive ? 0.016 : (0.003 + Math.sin(this.breathClock * 2.0) * 0.002);
+      const waveCount = this.commsWavePositions.length / 3;
+      for (let i = 0; i < waveCount; i++) {
+        const sine = Math.sin(this.breathClock * waveFreq + i * 0.65);
+        this.commsWavePositions[i * 3 + 1] = sine * waveAmp;
+      }
+      this.commsWaveGeometry.attributes.position.needsUpdate = true;
+    }
+
+    // Comms Status Indicator Flashing
+    if (this.commsIndicatorLed) {
+      const commsFlash = this.isCommsActive
+        ? Math.sin(this.breathClock * 14.0) > 0
+        : Math.sin(this.breathClock * 2.0) > 0.8;
+      (this.commsIndicatorLed.material as THREE.MeshBasicMaterial).color.setHex(commsFlash ? 0x38bdf8 : 0x0369a1);
+    }
+
+    // 6. Annunciator Status LEDs Flashing & Telemetry
+    for (let i = 0; i < this.annunciatorLeds.length; i++) {
+      const led = this.annunciatorLeds[i];
+      const blink = Math.sin(this.breathClock * 3.5 + led.phaseOffset) > 0.2;
+      (led.mesh.material as THREE.MeshBasicMaterial).color.setHex(blink ? led.onColor : led.offColor);
+    }
+
+    // 7. RPM & Propulsion Engine Acceleration Ladder
+    const maxSpd = Math.max(1, state.maxSpeed || 160);
+    const speedRatio = THREE.MathUtils.clamp(state.speed / maxSpd, 0.0, 1.0);
+    const activeRpm = Math.round(Math.max(this.currentThrottle, speedRatio) * this.rpmSegments.length);
+    for (let r = 0; r < this.rpmSegments.length; r++) {
+      const mat = this.rpmSegments[r].material as THREE.MeshBasicMaterial;
+      mat.opacity = r < activeRpm ? 0.95 : 0.20;
+    }
+
+    // 8. Palpable Acceleration, Braking & High-Speed Cockpit G-Force Vibration
+    const speedDeltaRate = Math.abs(state.speed - this.prevSpeed) / Math.max(0.001, dt);
+    this.prevSpeed = state.speed;
+
+    const accelVibe = Math.min(0.0035, speedDeltaRate * 0.00012);
+    const cruiseVibe = speedRatio > 0.65 ? (speedRatio - 0.65) * 0.0025 : 0;
+    const targetVibe = accelVibe + cruiseVibe;
+    this.vibrationAmount = THREE.MathUtils.lerp(this.vibrationAmount, targetVibe, dt * 10.0);
+
+    const vibeX = (Math.random() - 0.5) * this.vibrationAmount;
+    const vibeY = (Math.random() - 0.5) * this.vibrationAmount;
+    const vibeZ = (Math.random() - 0.5) * this.vibrationAmount;
+
+    this.dashGroup.position.set(vibeX, -0.34 + vibeY, -0.70 + vibeZ);
   }
 }

@@ -326,8 +326,8 @@ export class StarChartModal {
     this.zoom = 36;
     this.resizeCanvas();
 
-    // Query 7-sector radius around player
-    this.systems = this.sectorManager.getSystemsInRadius(this.playerWorldPos.sector, 7);
+    // Query expanded 18-sector radius around player for vast travelable universe
+    this.systems = this.sectorManager.getSystemsInRadius(this.playerWorldPos.sector, 18);
 
     // Default select current sector system or closest
     if (!this.selectedSystem && this.systems.length > 0) {

@@ -21,6 +21,7 @@ export class PlanetVisualGenerator {
   private static readonly MAX_TEXTURE_CACHE = 16;
   private static textureCache: Map<number, THREE.CanvasTexture> = new Map();
   private static cloudCache: Map<number, THREE.CanvasTexture> = new Map();
+  private static ringCache: Map<number, THREE.CanvasTexture> = new Map();
 
   public static clearTextureCaches(): void {
     for (const tex of this.textureCache.values()) {
@@ -29,8 +30,12 @@ export class PlanetVisualGenerator {
     for (const tex of this.cloudCache.values()) {
       tex.dispose();
     }
+    for (const tex of this.ringCache.values()) {
+      tex.dispose();
+    }
     this.textureCache.clear();
     this.cloudCache.clear();
+    this.ringCache.clear();
   }
 
   public static createPlanetMesh(planet: PlanetDescriptor): {
@@ -107,13 +112,15 @@ export class PlanetVisualGenerator {
       const inner = planet.radius * 1.35;
       const outer = planet.radius * 2.3;
       const ringGeo = new THREE.RingGeometry(inner, outer, 96);
+      const ringTexture = this.getOrCreateRingTexture(profile.palette.ringColor || profile.palette.surfaceHighland, planet.seed);
       const ringMat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(profile.palette.ringColor || profile.palette.surfaceHighland),
-        roughness: 0.8,
-        metalness: 0.2,
+        map: ringTexture || null,
+        roughness: 0.65,
+        metalness: 0.25,
         side: THREE.DoubleSide,
         transparent: true,
-        opacity: 0.72,
+        opacity: 0.82,
       });
       ringMesh = new THREE.Mesh(ringGeo, ringMat);
       ringMesh.rotation.x = Math.PI / 2.3;
@@ -122,6 +129,40 @@ export class PlanetVisualGenerator {
     }
 
     return { group, planetMesh, atmosphereMesh, ringMesh, cloudMesh };
+  }
+
+  private static getOrCreateRingTexture(_ringColor: string, seed: number): THREE.CanvasTexture | null {
+    if (typeof document === 'undefined' || !document.createElement) {
+      return null;
+    }
+    const existing = this.ringCache.get(seed);
+    if (existing) return existing;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    const grad = ctx.createLinearGradient(0, 0, 256, 0);
+    // Translucent dust bands with Cassini division
+    grad.addColorStop(0.0, 'rgba(0,0,0,0)');
+    grad.addColorStop(0.08, 'rgba(255,255,255,0.7)');
+    grad.addColorStop(0.42, 'rgba(255,255,255,0.9)');
+    grad.addColorStop(0.46, 'rgba(0,0,0,0.05)'); // Cassini Division gap
+    grad.addColorStop(0.52, 'rgba(0,0,0,0.05)');
+    grad.addColorStop(0.56, 'rgba(255,255,255,0.85)');
+    grad.addColorStop(0.85, 'rgba(255,255,255,0.4)');
+    grad.addColorStop(1.0, 'rgba(0,0,0,0)');
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 1);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    this.ringCache.set(seed, tex);
+    return tex;
   }
 
   private static getOrCreateSurfaceTexture(planet: PlanetDescriptor): THREE.CanvasTexture {

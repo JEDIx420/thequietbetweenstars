@@ -111,11 +111,13 @@ export class ApproachController {
       const dot = velocity.dot(ApproachController.scratchToPlanet);
       if (dot > 0) {
         // Cancel inward velocity component and deflect tangentially
-        velocity.addScaledVector(ApproachController.scratchToPlanet, -dot * 1.2);
+        velocity.addScaledVector(ApproachController.scratchToPlanet, -dot * 1.4);
       }
-    } else if (dist < minSafeDist * 1.8) {
+      // Anti-tunneling clamp: ensure ship remains safely on the approach boundary
+      shipPos.copy(this.activeTarget.position).addScaledVector(ApproachController.scratchToPlanet, -minSafeDist);
+    } else if (dist < minSafeDist * 2.2) {
       // Gentle progressive approach deceleration
-      velocity.multiplyScalar(0.96);
+      velocity.multiplyScalar(0.93);
     }
   }
 }

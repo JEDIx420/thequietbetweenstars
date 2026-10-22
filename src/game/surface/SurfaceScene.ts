@@ -15,6 +15,7 @@ import { SentientSpeciesGenerator, type SentientSpeciesProfile, type NPCIdentity
 import { FaunaPopulationManager } from '../ecology/FaunaPopulationManager';
 import { ResourceNodeManager, type SampleNode } from './ResourceNodeManager';
 import { SurveyCreditPickupManager } from './SurveyCreditPickupManager';
+import { AlienCitySettlementManager, type AlienCityInfo } from './AlienCitySettlement';
 import { HeightfieldCache } from './HeightfieldCache';
 import { SpatialHash } from '../performance/SpatialHash';
 import { FrameBudgetQueue } from '../performance/FrameBudgetQueue';
@@ -149,6 +150,7 @@ export class SurfaceScene {
   public notableNPCs: NPCIdentity[] = [];
   public faunaPopulationManager: FaunaPopulationManager;
   public resourceManager: ResourceNodeManager;
+  public citySettlementManager: AlienCitySettlementManager;
 
   // Coherent noise engine
   private noise: SimplexNoise2D;
@@ -284,6 +286,15 @@ export class SurfaceScene {
     );
     this.scene.add(this.creditPickupManager.pickupGroup);
 
+    // Procedural Alien City Settlements & Landing Pads
+    this.citySettlementManager = new AlienCitySettlementManager(
+      planet,
+      options?.deferHeavyInitialization
+        ? (x, z) => this.computeRawTerrainHeight(x, z)
+        : (x, z) => this.getTerrainHeight(x, z)
+    );
+    this.scene.add(this.citySettlementManager.group);
+
     // 7. Survey Craft Hierarchy Separation
     // shipPhysicsRoot holds the true world translation and horizontal yaw
     // shipVisualRoot holds pitch, roll banking, and thruster vibration without distorting movement
@@ -320,12 +331,17 @@ export class SurfaceScene {
   public static readonly WORLD_UP = new THREE.Vector3(0, 1, 0);
 
   public adjustAltitude(delta: number): void {
+    const ground = this.getTerrainHeight(this.shipPosition.x, this.shipPosition.z);
     this.desiredAltitudeAGL = THREE.MathUtils.clamp(
       this.desiredAltitudeAGL + delta,
       this.minAltitudeAGL,
       this.maxAltitudeAGL
     );
-    this.pilotDesiredWorldAltitude += delta;
+    this.pilotDesiredWorldAltitude = THREE.MathUtils.clamp(
+      this.pilotDesiredWorldAltitude + delta,
+      ground + this.minAltitudeAGL,
+      ground + this.maxAltitudeAGL
+    );
   }
 
   public update(
@@ -340,6 +356,9 @@ export class SurfaceScene {
     speedMps: number;
     collectedCredits: Array<{ id: string; amount: number; tier: string }>;
     nearestCreditPickups: Array<{ position: THREE.Vector3; amount: number }>;
+    nearestCity?: AlienCityInfo | null;
+    isOverLandingPad?: boolean;
+    padDistance?: number;
   } {
     const clampedDt = Math.min(dt, 0.05);
 
@@ -663,6 +682,8 @@ export class SurfaceScene {
     // Process queued terrain chunks progressively within frame budget (2.5ms max)
     FrameBudgetQueue.getInstance().process(2.5);
 
+    const cityStatus = this.citySettlementManager.update(clampedDt, this.shipPosition);
+
     return {
       activeScanTarget: this.cachedScanTarget,
       nearbyResource: this.cachedNearbyResource,
@@ -670,6 +691,9 @@ export class SurfaceScene {
       speedMps,
       collectedCredits: this.cachedCollectedCredits,
       nearestCreditPickups: this.cachedNearestPickups,
+      nearestCity: cityStatus.nearestCity,
+      isOverLandingPad: cityStatus.isOverLandingPad,
+      padDistance: cityStatus.padDistance,
     };
   }
 
@@ -1352,6 +1376,7 @@ export class SurfaceScene {
     this.faunaPopulationManager.dispose();
     this.resourceManager.dispose();
     this.creditPickupManager.dispose();
+    this.citySettlementManager.dispose();
 
     for (const [, mesh] of this.activeChunks) {
       mesh.geometry.dispose();
