@@ -11,6 +11,7 @@ export class PilotOnboardingHUD {
   private container: HTMLElement;
   private cardEl: HTMLElement;
   private isVisible = false;
+  private onSkipCallback: (() => void) | null = null;
   private steps: OnboardingStep[] = [
     { id: 'steer', label: 'Steer Spacecraft', keyHint: 'Mouse / Stick', completed: false },
     { id: 'throttle', label: 'Adjust Throttle', keyHint: 'W/S / Thrust Slider', completed: false },
@@ -25,12 +26,13 @@ export class PilotOnboardingHUD {
     this.container.id = 'pilot-onboarding-container';
     this.container.style.cssText = `
       position: fixed;
-      top: 68px;
+      top: max(68px, calc(env(safe-area-inset-top, 0px) + 68px));
       right: 20px;
       z-index: 1200;
       pointer-events: none;
       font-family: ui-monospace, SFMono-Regular, monospace;
       max-width: 310px;
+      width: calc(100vw - 40px);
       transition: opacity 0.35s ease, transform 0.35s ease;
       opacity: 0;
       transform: translateY(-8px);
@@ -38,15 +40,18 @@ export class PilotOnboardingHUD {
 
     this.cardEl = document.createElement('div');
     this.cardEl.style.cssText = `
-      background: rgba(10, 16, 28, 0.88);
-      border: 1px solid rgba(56, 189, 248, 0.4);
+      background: rgba(10, 16, 28, 0.92);
+      border: 1px solid rgba(56, 189, 248, 0.45);
       border-left: 3px solid #38bdf8;
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 12px 14px;
-      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.65), 0 0 16px rgba(56, 189, 248, 0.15);
-      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.75), 0 0 16px rgba(56, 189, 248, 0.15);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       pointer-events: auto;
       color: #f1f5f9;
+      user-select: none;
+      touch-action: manipulation;
     `;
 
     this.container.appendChild(this.cardEl);
@@ -61,6 +66,10 @@ export class PilotOnboardingHUD {
         this.show();
       }
     }
+  }
+
+  public setOnSkipCallback(cb: () => void): void {
+    this.onSkipCallback = cb;
   }
 
   public getVisible(): boolean {
@@ -155,18 +164,45 @@ export class PilotOnboardingHUD {
           FLIGHT ORIENTATION
         </div>
         <button id="btn-close-onboarding" style="
-          background: transparent;
-          border: none;
-          color: #94a3b8;
-          font-size: 14px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(148, 163, 184, 0.3);
+          border-radius: 6px;
+          color: #cbd5e1;
+          font-size: 13px;
           cursor: pointer;
-          padding: 0 4px;
-          line-height: 1;
+          min-width: 36px;
+          min-height: 36px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
         " title="Dismiss Checklist">✕</button>
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 2px;">
         ${stepsHtml}
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+        <button id="btn-skip-onboarding-action" style="
+          background: rgba(239, 68, 68, 0.15);
+          border: 1px solid rgba(239, 68, 68, 0.45);
+          border-radius: 5px;
+          color: #fca5a5;
+          font-family: ui-monospace, monospace;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          padding: 6px 12px;
+          min-height: 36px;
+          cursor: pointer;
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
+        ">
+          ✕ SKIP TUTORIAL
+        </button>
       </div>
 
       ${
@@ -180,12 +216,32 @@ export class PilotOnboardingHUD {
       }
     `;
 
-    this.cardEl.querySelector('#btn-close-onboarding')?.addEventListener('click', () => {
+    const bindFastAction = (el: Element | null, action: () => void) => {
+      if (!el) return;
+      let lastTrigger = 0;
+      const trigger = (e?: any) => {
+        const now = performance.now();
+        if (now - lastTrigger < 350) return;
+        lastTrigger = now;
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+        action();
+      };
+      el.addEventListener('pointerdown', trigger);
+      el.addEventListener('touchstart', trigger, { passive: false });
+      el.addEventListener('click', trigger);
+    };
+
+    const handleDismiss = () => {
       this.hide();
       if (typeof window !== 'undefined' && window.localStorage) {
         localStorage.setItem(this.storageKey, 'true');
       }
-    });
+      this.onSkipCallback?.();
+    };
+
+    bindFastAction(this.cardEl.querySelector('#btn-close-onboarding'), handleDismiss);
+    bindFastAction(this.cardEl.querySelector('#btn-skip-onboarding-action'), handleDismiss);
   }
 
   public dispose(): void {

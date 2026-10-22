@@ -15,26 +15,27 @@ export class ShipComputerGuidanceHUD {
     this.container = document.createElement('div');
     this.container.id = 'ship-computer-guidance-hud';
     this.container.style.cssText = `
-      position: absolute;
+      position: fixed;
       top: max(54px, calc(env(safe-area-inset-top, 0px) + 48px));
       left: 50%;
       transform: translateX(-50%) translateY(-10px);
-      width: min(520px, calc(100vw - 28px));
-      background: radial-gradient(circle at 50% 0%, rgba(14, 28, 54, 0.95) 0%, rgba(4, 9, 20, 0.98) 100%);
-      border: 1px solid rgba(56, 189, 248, 0.55);
+      width: min(540px, calc(100vw - 24px));
+      background: radial-gradient(circle at 50% 0%, rgba(14, 28, 54, 0.96) 0%, rgba(4, 9, 20, 0.98) 100%);
+      border: 1px solid rgba(56, 189, 248, 0.65);
       border-radius: 14px;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8), 0 0 24px rgba(56, 189, 248, 0.25);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85), 0 0 28px rgba(56, 189, 248, 0.25);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       padding: 14px 18px;
       box-sizing: border-box;
       color: #f8fafc;
       font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-      z-index: 950;
+      z-index: 2200;
       opacity: 0;
       pointer-events: auto;
       transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
       user-select: none;
+      touch-action: manipulation;
     `;
     this.parent.appendChild(this.container);
   }
@@ -186,18 +187,28 @@ export class ShipComputerGuidanceHUD {
           ${isAdvancing ? `<span style="font-size: 8px; color: #4ade80; font-weight: 700; letter-spacing: 0.08em; background: rgba(74, 222, 128, 0.15); border: 1px solid rgba(74, 222, 128, 0.4); padding: 1px 6px; border-radius: 4px;">✓ SYNCED</span>` : ''}
         </div>
         <button id="btn-skip-tutorial" style="
-          background: none;
-          border: none;
-          color: #94a3b8;
-          font-size: 9px;
-          font-weight: 600;
+          background: rgba(239, 68, 68, 0.2);
+          border: 1.5px solid rgba(239, 68, 68, 0.6);
+          color: #fca5a5;
+          font-family: ui-monospace, SFMono-Regular, monospace;
+          font-size: 11px;
+          font-weight: 700;
           letter-spacing: 0.08em;
           cursor: pointer;
-          padding: 2px 6px;
-          border-radius: 4px;
-          transition: color 0.15s ease;
+          min-height: 40px;
+          min-width: 105px;
+          padding: 6px 14px;
+          border-radius: 6px;
+          transition: all 0.15s ease;
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+          box-shadow: 0 0 12px rgba(239, 68, 68, 0.25);
         ">
-          [SKIP TUTORIAL]
+          ✕ SKIP TUTORIAL
         </button>
       </div>
 
@@ -225,25 +236,36 @@ export class ShipComputerGuidanceHUD {
             border: 1px solid rgba(56, 189, 248, 0.8);
             border-radius: 6px;
             color: #ffffff;
-            font-size: 10.5px;
+            font-size: 11.5px;
             font-weight: 700;
-            padding: 5px 14px;
+            min-height: 40px;
+            padding: 6px 18px;
             cursor: pointer;
             box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
             touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
           ">
             ${isHomescreenStep ? 'PROCEED TO EXPLORATION ➔' : 'CONTINUE ➔'}
           </button>
         ` : `
           <button id="btn-tutorial-skip-step" style="
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid rgba(148, 163, 184, 0.3);
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(148, 163, 184, 0.4);
             border-radius: 6px;
-            color: #94a3b8;
-            font-size: 9.5px;
-            padding: 4px 10px;
+            color: #cbd5e1;
+            font-size: 11px;
+            font-weight: 600;
+            min-height: 40px;
+            padding: 6px 14px;
             cursor: pointer;
             touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
           ">
             SKIP STEP ➔
           </button>
@@ -251,25 +273,38 @@ export class ShipComputerGuidanceHUD {
       </div>
     `;
 
-    // Hook button listeners
+    // Hook touch & pointer responsive button listeners with fast activation
+    const bindFastAction = (el: Element | null, action: () => void) => {
+      if (!el) return;
+      let lastTrigger = 0;
+      const trigger = (e?: any) => {
+        const now = performance.now();
+        if (now - lastTrigger < 350) return;
+        lastTrigger = now;
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+        action();
+      };
+      el.addEventListener('pointerdown', trigger);
+      el.addEventListener('touchstart', trigger, { passive: false });
+      el.addEventListener('click', trigger);
+    };
+
     const btnSkip = this.container.querySelector('#btn-skip-tutorial');
-    btnSkip?.addEventListener('click', (e) => {
-      e.stopPropagation();
+    bindFastAction(btnSkip, () => {
       audio.playBlip();
       this.hide();
       this.onSkipTutorialCallback?.();
     });
 
     const btnContinue = this.container.querySelector('#btn-tutorial-continue');
-    btnContinue?.addEventListener('click', (e) => {
-      e.stopPropagation();
+    bindFastAction(btnContinue, () => {
       audio.playBlip();
       this.onNextStepCallback?.();
     });
 
     const btnSkipStep = this.container.querySelector('#btn-tutorial-skip-step');
-    btnSkipStep?.addEventListener('click', (e) => {
-      e.stopPropagation();
+    bindFastAction(btnSkipStep, () => {
       audio.playBlip();
       this.onNextStepCallback?.();
     });

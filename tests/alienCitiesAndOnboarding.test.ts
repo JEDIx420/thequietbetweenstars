@@ -12,7 +12,7 @@ import { StarSystemGenerator } from '../src/game/systems/StarSystemGenerator';
 // Headless DOM mock for Node runner
 class MockHTMLElement {
   public id = '';
-  public innerHTML = '';
+  private _innerHTML = '';
   public textContent = '';
   public style: Record<string, any> = {};
   public children: MockHTMLElement[] = [];
@@ -24,6 +24,22 @@ class MockHTMLElement {
     contains: (c: string) => this.classList.classes.has(c),
   };
   private listeners: Record<string, Function[]> = {};
+
+  public get innerHTML(): string {
+    return this._innerHTML;
+  }
+
+  public set innerHTML(val: string) {
+    this._innerHTML = val;
+    this.children = [];
+    const matches = val.matchAll(/id="([^"]+)"/g);
+    for (const match of matches) {
+      const child = new MockHTMLElement();
+      child.id = match[1];
+      child.parentElement = this;
+      this.children.push(child);
+    }
+  }
 
   addEventListener(event: string, cb: Function) {
     if (!this.listeners[event]) this.listeners[event] = [];
@@ -49,7 +65,13 @@ class MockHTMLElement {
   }
 
   querySelector(selector: string): any {
-    return this.children.find(c => c.id === selector.replace('#', '')) || new MockHTMLElement();
+    const id = selector.replace('#', '');
+    if (this.id === id) return this;
+    for (const c of this.children) {
+      const found = c.querySelector(selector);
+      if (found) return found;
+    }
+    return null;
   }
 
   querySelectorAll(_selector: string): any[] {
@@ -155,6 +177,22 @@ describe('Alien Cities, Onboarding HUD, and Ship Interaction Suite', () => {
       const hud = new PilotOnboardingHUD(parent);
       hud.dismiss();
       expect(hud.getVisible()).toBe(false);
+      expect(storageMock.getItem('pilot_onboarding_completed_v1')).toBe('true');
+    });
+
+    it('triggers onSkipCallback when close or skip tutorial is invoked', () => {
+      const hud = new PilotOnboardingHUD(parent);
+      let skipCalled = false;
+      hud.setOnSkipCallback(() => {
+        skipCalled = true;
+      });
+
+      // Simulating fast tap on close button
+      const closeBtn = parent.querySelector('#btn-close-onboarding');
+      closeBtn?.click();
+
+      expect(hud.getVisible()).toBe(false);
+      expect(skipCalled).toBe(true);
       expect(storageMock.getItem('pilot_onboarding_completed_v1')).toBe('true');
     });
   });

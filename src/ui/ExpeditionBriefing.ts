@@ -235,16 +235,22 @@ export class ExpeditionBriefing {
           </div>
 
           <button id="btn-skip-briefing" style="
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid rgba(148, 163, 184, 0.3);
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(148, 163, 184, 0.45);
             border-radius: 6px;
-            color: #94a3b8;
+            color: #cbd5e1;
             font-size: 11px;
+            font-weight: 600;
             letter-spacing: 0.08em;
-            padding: 6px 14px;
+            min-height: 40px;
+            padding: 8px 16px;
             cursor: pointer;
             transition: all 0.15s ease;
             touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
           ">${isTouch ? '✕ SKIP' : 'SKIP [ESC]'}</button>
         </div>
 
@@ -370,21 +376,37 @@ export class ExpeditionBriefing {
       </div>
     `;
 
-    this.container.querySelector('#btn-skip-briefing')?.addEventListener('click', () => {
+    const bindFastAction = (el: Element | null, action: () => void) => {
+      if (!el) return;
+      let lastTrigger = 0;
+      const trigger = (e?: any) => {
+        const now = performance.now();
+        if (now - lastTrigger < 350) return;
+        lastTrigger = now;
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+        action();
+      };
+      el.addEventListener('pointerdown', trigger);
+      el.addEventListener('touchstart', trigger, { passive: false });
+      el.addEventListener('click', trigger);
+    };
+
+    bindFastAction(this.container.querySelector('#btn-skip-briefing'), () => {
       audio.playBlip();
       this.finish();
     });
 
-    this.container.querySelector('#btn-briefing-quickstart')?.addEventListener('click', () => {
+    bindFastAction(this.container.querySelector('#btn-briefing-quickstart'), () => {
       audio.playConnectChime();
       this.finish();
     });
 
-    this.container.querySelector('#btn-briefing-prev')?.addEventListener('click', () => {
+    bindFastAction(this.container.querySelector('#btn-briefing-prev'), () => {
       this.prev();
     });
 
-    this.container.querySelector('#btn-briefing-next')?.addEventListener('click', () => {
+    bindFastAction(this.container.querySelector('#btn-briefing-next'), () => {
       this.next();
     });
 

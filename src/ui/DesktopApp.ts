@@ -345,6 +345,15 @@ export class DesktopApp {
       () => {
         this.tutorialDirector.skip();
         this.guidanceHud.hide();
+        this.pilotOnboardingHUD?.dismiss();
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            localStorage.setItem('tutorial_skipped_v1', 'true');
+            localStorage.setItem('pilot_onboarding_completed_v1', 'true');
+          }
+        } catch {}
+        this.saveCurrentJourney();
+        this.showHudNotice('TUTORIAL SKIPPED // FULL EXPLORATION ENGAGED');
       },
       () => {
         this.tutorialDirector.skipStep();
@@ -431,6 +440,18 @@ export class DesktopApp {
     });
 
     this.pilotOnboardingHUD = new PilotOnboardingHUD(this.container);
+    this.pilotOnboardingHUD.setOnSkipCallback(() => {
+      this.tutorialDirector.skip();
+      this.guidanceHud.hide();
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          localStorage.setItem('tutorial_skipped_v1', 'true');
+          localStorage.setItem('pilot_onboarding_completed_v1', 'true');
+        }
+      } catch {}
+      this.saveCurrentJourney();
+      this.showHudNotice('TUTORIAL SKIPPED // FULL EXPLORATION ENGAGED');
+    });
     this.alienCityModal = new AlienCityModal(this.container);
     this.alienCityModal.setPlayerState(this.playerState);
     this.alienCityModal.setOnLaunch(() => {
@@ -3046,10 +3067,18 @@ export class DesktopApp {
     this.renderFlightHUD(activeMode);
 
     this.tutorialDirector.setInputMode(activeMode);
-    if (!this.tutorialDirector.isComplete()) {
+    const isTutorialSkipped =
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      (localStorage.getItem('tutorial_skipped_v1') === 'true' || localStorage.getItem('pilot_onboarding_completed_v1') === 'true');
+
+    if (!this.tutorialDirector.isComplete() && !isTutorialSkipped) {
       this.tutorialDirector.start();
       const currentStep = this.tutorialDirector.getState().step;
       this.guidanceHud.showStep(this.tutorialDirector.getStepInfo(currentStep));
+      if (isTouch) {
+        this.pilotOnboardingHUD?.hide();
+      }
     } else {
       this.guidanceHud.hide();
     }

@@ -183,7 +183,10 @@ export class NewJourneyCinematic {
       font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       user-select: none;
       transition: opacity 0.6s ease;
+      touch-action: manipulation;
     `;
+
+    const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) || window.innerWidth <= 1024);
 
     this.overlayEl.innerHTML = `
       <!-- Top Cinema Letterbox Bar -->
@@ -207,18 +210,26 @@ export class NewJourneyCinematic {
         ">THE QUIET BETWEEN STARS // FLIGHT PROLOGUE</div>
         
         <button id="btn-skip-cinematic" style="
-          background: rgba(15, 23, 42, 0.85);
-          border: 1px solid rgba(56, 189, 248, 0.5);
+          background: rgba(15, 23, 42, 0.9);
+          border: 1.5px solid rgba(56, 189, 248, 0.65);
           border-radius: 9999px;
           color: #f8fafc;
-          font-size: 11px;
-          font-weight: 600;
-          letter-spacing: 0.18em;
-          padding: 7px 22px;
+          font-family: ui-monospace, SFMono-Regular, monospace;
+          font-size: 11.5px;
+          font-weight: 700;
+          letter-spacing: 0.12em;
+          min-height: 44px;
+          min-width: 120px;
+          padding: 8px 24px;
           cursor: pointer;
           transition: all 0.2s ease;
-          box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
-        ">SKIP [SPACE / ESC]</button>
+          box-shadow: 0 0 20px rgba(56, 189, 248, 0.35);
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        ">${isTouch ? '✕ SKIP PROLOGUE' : 'SKIP [SPACE / ESC]'}</button>
       </div>
 
       <!-- Center Narrative Subtitles with Anamorphic Line -->
@@ -285,13 +296,20 @@ export class NewJourneyCinematic {
     this.captionTitleEl = this.overlayEl.querySelector('#cinematic-title');
     this.captionBodyEl = this.overlayEl.querySelector('#cinematic-body');
 
-    const onSkip = (e: Event) => {
-      e.preventDefault();
-      e.stopPropagation();
+    let lastSkipTime = 0;
+    const onSkip = (e?: any) => {
+      const now = performance.now();
+      if (now - lastSkipTime < 350) return;
+      lastSkipTime = now;
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
       this.director.stop();
     };
 
-    this.overlayEl.querySelector('#btn-skip-cinematic')?.addEventListener('click', onSkip);
+    const skipBtn = this.overlayEl.querySelector('#btn-skip-cinematic');
+    skipBtn?.addEventListener('pointerdown', onSkip);
+    skipBtn?.addEventListener('touchstart', onSkip, { passive: false });
+    skipBtn?.addEventListener('click', onSkip);
 
     const keyListener = (e: KeyboardEvent) => {
       if (e.key === ' ' || e.key === 'Escape' || e.key === 'Enter') {
