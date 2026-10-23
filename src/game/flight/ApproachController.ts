@@ -103,21 +103,24 @@ export class ApproachController {
 
     ApproachController.scratchToPlanet.subVectors(this.activeTarget.position, shipPos);
     const dist = ApproachController.scratchToPlanet.length();
-    const minSafeDist = this.activeTarget.planet.radius + ApproachController.MIN_SAFE_DIST_MARGIN;
+    const planetRadius = this.activeTarget.planet.radius;
+    const minSafeDist = planetRadius + ApproachController.MIN_SAFE_DIST_MARGIN;
 
+    // Smooth speed governing: ensure approach flight is controllable and never frozen to a standstill
+    const maxApproachSpeed = Math.max(45, Math.min(220, (dist - planetRadius) * 0.45));
+    const currentSpeed = velocity.length();
+    if (currentSpeed > maxApproachSpeed) {
+      velocity.setLength(maxApproachSpeed);
+    }
+
+    // Tangential deflection on inner boundary to prevent interior tunneling
     if (dist < minSafeDist) {
-      // Inward velocity projection
       ApproachController.scratchToPlanet.normalize();
       const dot = velocity.dot(ApproachController.scratchToPlanet);
       if (dot > 0) {
-        // Cancel inward velocity component and deflect tangentially
-        velocity.addScaledVector(ApproachController.scratchToPlanet, -dot * 1.4);
+        // Cancel inward component smoothly
+        velocity.addScaledVector(ApproachController.scratchToPlanet, -dot);
       }
-      // Anti-tunneling clamp: ensure ship remains safely on the approach boundary
-      shipPos.copy(this.activeTarget.position).addScaledVector(ApproachController.scratchToPlanet, -minSafeDist);
-    } else if (dist < minSafeDist * 2.2) {
-      // Gentle progressive approach deceleration
-      velocity.multiplyScalar(0.93);
     }
   }
 }

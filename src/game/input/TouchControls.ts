@@ -1019,15 +1019,21 @@ export class TouchControls {
       HapticFeedback.medium();
     });
 
-    // Orbit / Land button (Immediate touchstart / pointerdown response)
+    // Orbit / Land button (Immediate touchstart / pointerdown response with deduplication)
+    let lastOrbitTrigger = 0;
     const triggerOrbit = (e?: Event) => {
+      const now = performance.now();
+      if (now - lastOrbitTrigger < 350) return;
+      lastOrbitTrigger = now;
       if (e?.cancelable) e.preventDefault();
       if (this.currentContext === 'surface') {
         this.touchInput.triggerAction('cancel'); // Return to orbit
         this.touchInput.setActionState('cancel', true);
         setTimeout(() => this.touchInput.setActionState('cancel', false), 150);
       } else {
-        this.touchInput.triggerAction('confirm'); // Land / engage orbit
+        // In space: trigger both confirm and scan so orbital insertion is caught immediately
+        this.touchInput.triggerAction('confirm');
+        this.touchInput.triggerAction('scan');
         this.touchInput.setActionState('confirm', true);
         setTimeout(() => this.touchInput.setActionState('confirm', false), 150);
       }
@@ -1035,6 +1041,7 @@ export class TouchControls {
     };
 
     this.orbitBtnEl?.addEventListener('pointerdown', triggerOrbit);
+    this.orbitBtnEl?.addEventListener('touchstart', triggerOrbit, { passive: false });
     this.orbitBtnEl?.addEventListener('click', triggerOrbit);
 
     // Altitude controls (surface hover: continuous press-and-hold + tap support)

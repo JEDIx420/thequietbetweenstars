@@ -21,21 +21,21 @@ export class PilotOnboardingHUD {
 
   private readonly storageKey = 'pilot_onboarding_completed_v1';
 
-  constructor(parent: HTMLElement) {
+  constructor(parent: HTMLElement, autoShow = true) {
     this.container = document.createElement('div');
     this.container.id = 'pilot-onboarding-container';
     this.container.style.cssText = `
       position: fixed;
-      top: max(68px, calc(env(safe-area-inset-top, 0px) + 68px));
+      bottom: max(24px, calc(env(safe-area-inset-bottom, 0px) + 20px));
       right: 20px;
       z-index: 1200;
       pointer-events: none;
       font-family: ui-monospace, SFMono-Regular, monospace;
-      max-width: 310px;
+      max-width: 290px;
       width: calc(100vw - 40px);
       transition: opacity 0.35s ease, transform 0.35s ease;
       opacity: 0;
-      transform: translateY(-8px);
+      transform: translateY(8px);
     `;
 
     this.cardEl = document.createElement('div');
@@ -44,7 +44,7 @@ export class PilotOnboardingHUD {
       border: 1px solid rgba(56, 189, 248, 0.45);
       border-left: 3px solid #38bdf8;
       border-radius: 10px;
-      padding: 12px 14px;
+      padding: 10px 14px;
       box-shadow: 0 8px 30px rgba(0, 0, 0, 0.75), 0 0 16px rgba(56, 189, 248, 0.15);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
@@ -59,12 +59,16 @@ export class PilotOnboardingHUD {
 
     this.render();
 
-    // Only show if not previously completed
-    if (typeof window !== 'undefined' && window.localStorage) {
+    // Only auto-show if requested and not previously completed
+    if (autoShow && typeof window !== 'undefined' && window.localStorage) {
       const isDone = localStorage.getItem(this.storageKey);
       if (!isDone) {
         this.show();
+      } else {
+        this.hide();
       }
+    } else {
+      this.hide();
     }
   }
 
@@ -221,7 +225,7 @@ export class PilotOnboardingHUD {
       let lastTrigger = 0;
       const trigger = (e?: any) => {
         const now = performance.now();
-        if (now - lastTrigger < 350) return;
+        if (lastTrigger > 0 && now - lastTrigger < 350) return;
         lastTrigger = now;
         e?.preventDefault?.();
         e?.stopPropagation?.();

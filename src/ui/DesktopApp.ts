@@ -439,7 +439,7 @@ export class DesktopApp {
       this.journalModal.open();
     });
 
-    this.pilotOnboardingHUD = new PilotOnboardingHUD(this.container);
+    this.pilotOnboardingHUD = new PilotOnboardingHUD(this.container, false);
     this.pilotOnboardingHUD.setOnSkipCallback(() => {
       this.tutorialDirector.skip();
       this.guidanceHud.hide();
@@ -1298,11 +1298,15 @@ export class DesktopApp {
       }
       this.updateApproachHUD(targetPlanet);
 
-      // Contextual SPACE action: Inspect Planet when in orbital reach
-      if (targetPlanet.canInspect && (this.inputManager.consumeAction('scan') || this.inputManager.consumeAction('confirm'))) {
+      // Contextual action: Inspect Planet when in orbital reach (keyboard SPACE/ENTER or touch ORBIT/LAND button)
+      const isOrbitAction = this.inputManager.consumeAction('scan') ||
+        this.inputManager.consumeAction('confirm') ||
+        this.inputManager.consumeAction('interact');
+
+      if ((targetPlanet.canInspect || targetPlanet.distance <= targetPlanet.planet.radius + 650) && isOrbitAction) {
         this.engageOrbit(targetPlanet);
       } else if (
-        targetPlanet.distance <= targetPlanet.planet.radius * 1.25 &&
+        targetPlanet.distance <= targetPlanet.planet.radius * 1.35 &&
         phase !== FlightPhase.ENTRY &&
         phase !== FlightPhase.SURFACE_FLIGHT
       ) {
@@ -1430,34 +1434,53 @@ export class DesktopApp {
 
     // Celestial collision feedback & Planetary anti-tunneling safety capture
     if (this.flightModel.lastCollision.hasCollided) {
+      // 1. Immediate anti-tunneling planetary safety capture (always executes regardless of audio cooldown)
+      if (
+        this.flightModel.lastCollision.collidedBody?.type === 'planet' &&
+        phase !== FlightPhase.ORBIT &&
+        phase !== FlightPhase.ENTRY &&
+        phase !== FlightPhase.SURFACE_FLIGHT
+      ) {
+        const colBody = this.flightModel.lastCollision.collidedBody;
+        const foundPlanet = this.spaceScene.activePlanetList.find(
+          (p) => p.descriptor.name === colBody.name || p.descriptor.id === colBody.id
+        );
+        if (foundPlanet) {
+          this.showHudNotice(`ORBITAL ENTRY SYNCHRONIZED WITH ${foundPlanet.descriptor.name.toUpperCase()}`);
+          this.engageOrbit({
+            planet: foundPlanet.descriptor,
+            position: foundPlanet.position,
+            distance: this.flightModel.position.distanceTo(foundPlanet.position),
+            approachRatio: 1.0,
+            canInspect: true,
+          });
+        }
+      }
+
+      // 2. Throttled audio deflection effect & HUD notice
       const now = performance.now();
       if (now - this.lastDeflectionSoundTime > 400) {
         this.lastDeflectionSoundTime = now;
         audio.playCollisionDeflection(this.flightModel.lastCollision.isDanger);
         const bodyName = this.flightModel.lastCollision.collidedBody?.name || 'CELESTIAL BODY';
         this.showHudNotice(`EXCLUSION SHELL ENGAGED — DEFLECTION ALONG ${bodyName}`);
+      }
+    }
 
-        // Anti-tunneling planetary safety capture:
-        if (
-          this.flightModel.lastCollision.collidedBody?.type === 'planet' &&
-          phase !== FlightPhase.ORBIT &&
-          phase !== FlightPhase.ENTRY &&
-          phase !== FlightPhase.SURFACE_FLIGHT
-        ) {
-          const colBody = this.flightModel.lastCollision.collidedBody;
-          const foundPlanet = this.spaceScene.activePlanetList.find(
-            (p) => p.descriptor.name === colBody.name || p.descriptor.id === colBody.id
-          );
-          if (foundPlanet) {
-            this.showHudNotice(`ORBITAL ENTRY SYNCHRONIZED WITH ${foundPlanet.descriptor.name.toUpperCase()}`);
-            this.engageOrbit({
-              planet: foundPlanet.descriptor,
-              position: foundPlanet.position,
-              distance: this.flightModel.position.distanceTo(foundPlanet.position),
-              approachRatio: 1.0,
-              canInspect: true,
-            });
-          }
+    // Fail-safe atmospheric capture: verify if ship has crossed into upper atmosphere of any active planet
+    if (phase !== FlightPhase.ORBIT && phase !== FlightPhase.ENTRY && phase !== FlightPhase.SURFACE_FLIGHT) {
+      for (const p of this.spaceScene.activePlanetList) {
+        const pDist = shipPos.distanceTo(p.position);
+        if (pDist <= (p.descriptor.radius || 120) * 1.30) {
+          this.showHudNotice(`ATMOSPHERIC PENETRATION // ORBITAL INSERTION SYNCHRONIZED WITH ${p.descriptor.name.toUpperCase()}`);
+          this.engageOrbit({
+            planet: p.descriptor,
+            position: p.position,
+            distance: pDist,
+            approachRatio: 1.0,
+            canInspect: true,
+          });
+          break;
         }
       }
     }
@@ -3072,7 +3095,7 @@ export class DesktopApp {
       window.localStorage &&
       (localStorage.getItem('tutorial_skipped_v1') === 'true' || localStorage.getItem('pilot_onboarding_completed_v1') === 'true');
 
-    if (!this.tutorialDirector.isComplete() && !isTutorialSkipped) {
+    if (!this.tutorialDirector.isComplete() && !isTutorialSkipped && !this.storyDirector.isFreeExploration()) {
       this.tutorialDirector.start();
       const currentStep = this.tutorialDirector.getState().step;
       this.guidanceHud.showStep(this.tutorialDirector.getStepInfo(currentStep));
@@ -3189,6 +3212,19 @@ export class DesktopApp {
           }
           #top-right-utilities button:active {
             transform: scale(0.92) !important;
+          }
+        }
+        @media (max-width: 640px) {
+          .hud-title-brand {
+            display: none !important;
+          }
+          #top-right-utilities {
+            gap: 4px !important;
+          }
+          #top-right-utilities button {
+            padding: 4px 7px !important;
+            font-size: 8.5px !important;
+            min-height: 28px !important;
           }
         }
       </style>
@@ -3388,7 +3424,7 @@ export class DesktopApp {
               font-size: 10.5px;
               cursor: pointer;
               touch-action: manipulation;
-            ">${isTouch ? 'HELP' : 'HELP [H]'}</button>
+            ">${isTouch ? '?' : 'HELP [H]'}</button>
 
             <button id="btn-open-settings" style="
               background: rgba(15, 23, 42, 0.75);
@@ -3399,7 +3435,7 @@ export class DesktopApp {
               font-size: 10.5px;
               cursor: pointer;
               touch-action: manipulation;
-            ">${isTouch ? 'SETTINGS' : 'SETTINGS [O]'}</button>
+            ">${isTouch ? '⚙' : 'SETTINGS [O]'}</button>
 
             <button id="btn-audio-mute" style="
               background: rgba(15, 23, 42, 0.75);
@@ -3613,48 +3649,82 @@ export class DesktopApp {
     const planet = this.orbitController.planet;
     if (!planet) return;
 
+    const isTouch = isTouchDevice();
+
     const sitesListHtml = this.activeOrbitSites
       .map((site, idx) => `
         <div class="site-card" data-idx="${idx}" style="
-          padding: 10px 14px;
-          margin-bottom: 8px;
-          background: ${idx === this.selectedSiteIndex ? 'rgba(56, 189, 248, 0.25)' : 'rgba(15, 23, 42, 0.6)'};
-          border: 1px solid ${idx === this.selectedSiteIndex ? 'rgba(56, 189, 248, 0.8)' : 'rgba(148, 163, 184, 0.2)'};
+          padding: 9px 12px;
+          margin-bottom: 6px;
+          background: ${idx === this.selectedSiteIndex ? 'rgba(56, 189, 248, 0.28)' : 'rgba(15, 23, 42, 0.7)'};
+          border: 1.5px solid ${idx === this.selectedSiteIndex ? '#38bdf8' : 'rgba(148, 163, 184, 0.25)'};
           border-radius: 8px;
           cursor: pointer;
-          transition: all 0.15s;
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
+          transition: all 0.15s ease;
         ">
-          <div style="display: flex; justify-content: space-between; font-weight: 600; color: #f8fafc; font-size: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: #f8fafc; font-size: 12px;">
             <span>${site.name}</span>
-            <span style="color: #38bdf8;">${site.safetyRating}</span>
+            <span style="color: #38bdf8; font-size: 11px;">${site.safetyRating}</span>
           </div>
-          <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">${site.interestingSignals[0] || site.biome}</div>
+          <div style="font-size: 10.5px; color: #94a3b8; margin-top: 3px;">${site.interestingSignals[0] || site.biome}</div>
         </div>
       `)
       .join('');
 
     this.uiContainer.innerHTML = `
-      <div style="
-        position: absolute;
-        inset: 0;
-        display: flex;
-        justify-content: space-between;
-        padding: 24px;
-        box-sizing: border-box;
-        pointer-events: none;
-        font-family: ui-sans-serif, system-ui, sans-serif;
-      ">
-        <!-- Left Panel: Planet Facts -->
-        <div style="
+      <style>
+        #orbit-survey-root {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          justify-content: space-between;
+          padding: 24px;
+          box-sizing: border-box;
+          pointer-events: none;
+          font-family: ui-sans-serif, system-ui, sans-serif;
+          z-index: 1000;
+        }
+        @media (max-width: 850px), (max-height: 560px) {
+          #orbit-survey-root {
+            padding: 8px !important;
+            flex-direction: column !important;
+            justify-content: flex-end !important;
+            align-items: center !important;
+            gap: 6px !important;
+          }
+          #orbit-panel-left {
+            display: none !important;
+          }
+          #orbit-panel-right {
+            width: 100% !important;
+            max-width: min(440px, 94vw) !important;
+            max-height: calc(100vh - 16px) !important;
+            padding: 12px 14px !important;
+            border-radius: 12px !important;
+          }
+          #orbit-mobile-header {
+            display: flex !important;
+          }
+          #sites-container {
+            max-height: 140px !important;
+          }
+        }
+      </style>
+
+      <div id="orbit-survey-root">
+        <!-- Left Panel: Planet Facts (Desktop & Tablet) -->
+        <div id="orbit-panel-left" style="
           width: 320px;
-          background: rgba(10, 15, 26, 0.85);
-          backdrop-filter: blur(8px);
-          border: 1px solid rgba(56, 189, 248, 0.3);
+          background: rgba(10, 15, 26, 0.88);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(56, 189, 248, 0.35);
           border-radius: 14px;
           padding: 20px;
           pointer-events: auto;
           color: #e2e8f0;
-          box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+          box-shadow: 0 8px 32px rgba(0,0,0,0.6);
         ">
           <div style="font-size: 10px; letter-spacing: 0.25em; color: #38bdf8; text-transform: uppercase;">ORBITAL SURVEY</div>
           <h2 style="font-size: 22px; font-weight: 400; margin: 4px 0 12px 0; color: #f8fafc;">${planet.name}</h2>
@@ -3670,57 +3740,103 @@ export class DesktopApp {
           </div>
         </div>
 
-        <!-- Right Panel: Landing Site Selection -->
-        <div style="
+        <!-- Right Panel: Landing Site Selection (Responsive) -->
+        <div id="orbit-panel-right" style="
           width: 320px;
-          background: rgba(10, 15, 26, 0.85);
-          backdrop-filter: blur(8px);
-          border: 1px solid rgba(56, 189, 248, 0.3);
+          background: rgba(10, 15, 26, 0.92);
+          backdrop-filter: blur(12px);
+          border: 1px solid rgba(56, 189, 248, 0.4);
           border-radius: 14px;
-          padding: 20px;
+          padding: 18px;
           pointer-events: auto;
           color: #e2e8f0;
           display: flex;
           flex-direction: column;
-          box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+          box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+          touch-action: manipulation;
         ">
-          <div style="font-size: 10px; letter-spacing: 0.25em; color: #38bdf8; text-transform: uppercase;">LANDING RECONNAISSANCE</div>
-          <h3 style="font-size: 16px; font-weight: 500; margin: 4px 0 14px 0;">Designate Touchdown Site</h3>
+          <!-- Mobile Header Summary -->
+          <div id="orbit-mobile-header" style="display: none; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px;">
+            <div>
+              <div style="font-size: 9px; letter-spacing: 0.15em; color: #38bdf8; text-transform: uppercase;">ORBIT // ${planet.type.toUpperCase()}</div>
+              <div style="font-size: 15px; font-weight: 700; color: #f8fafc;">${planet.name}</div>
+            </div>
+            <div style="font-size: 10px; color: #4ade80; background: rgba(74, 222, 128, 0.15); padding: 2px 8px; border-radius: 9999px; font-family: ui-monospace, monospace;">
+              ${planet.biosignature.toUpperCase()}
+            </div>
+          </div>
 
-          <div id="sites-container" style="flex: 1; overflow-y: auto;">
+          <div style="font-size: 10px; letter-spacing: 0.25em; color: #38bdf8; text-transform: uppercase;">LANDING RECONNAISSANCE</div>
+          <h3 style="font-size: 15px; font-weight: 600; margin: 4px 0 10px 0;">Designate Touchdown Site</h3>
+
+          <div id="sites-container" style="flex: 1; overflow-y: auto; max-height: 220px; -webkit-overflow-scrolling: touch;">
             ${sitesListHtml}
           </div>
 
-          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 14px;">
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px;">
             <button id="btn-land" style="
-              padding: 12px;
-              background: linear-gradient(135deg, rgba(14, 165, 233, 0.4), rgba(56, 189, 248, 0.2));
-              border: 1px solid rgba(56, 189, 248, 0.8);
+              min-height: 48px;
+              padding: 10px 16px;
+              background: linear-gradient(135deg, rgba(14, 165, 233, 0.8), rgba(56, 189, 248, 0.6));
+              border: 1.5px solid #38bdf8;
               border-radius: 8px;
-              color: #f8fafc;
+              color: #ffffff;
               font-weight: 700;
-              font-size: 13px;
-              letter-spacing: 0.1em;
+              font-size: 12.5px;
+              letter-spacing: 0.08em;
               cursor: pointer;
-            ">INITIATE DESCENT (ENTER)</button>
+              touch-action: manipulation;
+              -webkit-tap-highlight-color: transparent;
+              box-shadow: 0 0 18px rgba(56, 189, 248, 0.45);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 6px;
+            ">
+              <span>🚀 INITIATE DESCENT</span>
+              <span style="font-size: 10.5px; opacity: 0.85; font-weight: 500;">(${isTouch ? 'TAP TO LAND' : 'ENTER'})</span>
+            </button>
 
             <button id="btn-leave-orbit" style="
-              padding: 10px;
-              background: rgba(30, 41, 59, 0.6);
-              border: 1px solid rgba(148, 163, 184, 0.3);
+              min-height: 40px;
+              padding: 8px 12px;
+              background: rgba(30, 41, 59, 0.7);
+              border: 1px solid rgba(148, 163, 184, 0.35);
               border-radius: 8px;
               color: #cbd5e1;
-              font-size: 12px;
+              font-size: 11.5px;
               cursor: pointer;
-            ">LEAVE ORBIT (ESC)</button>
+              touch-action: manipulation;
+              -webkit-tap-highlight-color: transparent;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            ">RETURN TO SPACE (${isTouch ? 'LEAVE' : 'ESC'})</button>
           </div>
         </div>
       </div>
     `;
 
+    // Fast action binder with zero touch delay and deduplication
+    const bindFastAction = (el: Element | null, action: () => void) => {
+      if (!el) return;
+      let lastTrigger = 0;
+      const trigger = (e?: any) => {
+        const now = performance.now();
+        if (now - lastTrigger < 350) return;
+        lastTrigger = now;
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+        action();
+      };
+      el.addEventListener('pointerdown', trigger);
+      el.addEventListener('touchstart', trigger, { passive: false });
+      el.addEventListener('click', trigger);
+    };
+
     // Site card selection handlers
     this.uiContainer.querySelectorAll('.site-card').forEach((el) => {
-      el.addEventListener('click', () => {
+      bindFastAction(el, () => {
         const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
         this.selectedSiteIndex = idx;
         audio.playBlip();
@@ -3728,11 +3844,13 @@ export class DesktopApp {
       });
     });
 
-    this.uiContainer.querySelector('#btn-land')?.addEventListener('click', () => {
+    bindFastAction(this.uiContainer.querySelector('#btn-land'), () => {
+      audio.playConnectChime();
       this.initiateSurfaceEntry();
     });
 
-    this.uiContainer.querySelector('#btn-leave-orbit')?.addEventListener('click', () => {
+    bindFastAction(this.uiContainer.querySelector('#btn-leave-orbit'), () => {
+      audio.playBlip();
       this.leaveOrbitToSpace();
     });
     this.cacheHudElements();
@@ -3770,8 +3888,14 @@ export class DesktopApp {
             font-size: 9px !important;
           }
           #btn-return-orbit {
-            padding: 4px 10px !important;
-            font-size: 9.5px !important;
+            padding: 8px 14px !important;
+            font-size: 11px !important;
+            min-height: 44px !important;
+            min-width: 140px !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            touch-action: manipulation !important;
           }
           #btn-surface-mute, #btn-surface-fullscreen {
             padding: 4px 8px !important;
@@ -3891,13 +4015,18 @@ export class DesktopApp {
       </div>
     `;
 
+    let lastReturnTrigger = 0;
     const triggerReturnOrbit = (e?: Event) => {
+      const now = performance.now();
+      if (lastReturnTrigger > 0 && now - lastReturnTrigger < 350) return;
+      lastReturnTrigger = now;
       if (e?.cancelable) e.preventDefault();
       audio.playConnectChime();
       this.returnToOrbitFromSurface();
     };
     const retBtn = this.uiContainer.querySelector('#btn-return-orbit');
     retBtn?.addEventListener('pointerdown', triggerReturnOrbit);
+    retBtn?.addEventListener('touchstart', triggerReturnOrbit, { passive: false });
     retBtn?.addEventListener('click', triggerReturnOrbit);
 
     this.uiContainer.querySelector('#btn-surface-mute')?.addEventListener('click', () => {
