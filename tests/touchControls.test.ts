@@ -295,5 +295,70 @@ describe('Touch Controls & Mobile Flight Deck', () => {
     expect(overlay.innerHTML).toContain('margin-top: auto !important;');
     controls.dispose();
   });
+
+  it('handles native touch throttle drag and release without relying on pointer events', () => {
+    const controls = new TouchControls(container, touchInput);
+    const track = container.querySelector('#touch-throttle-track') as any;
+
+    // Simulate touchstart at clientY = 20 (near top of 100px track -> 80% throttle)
+    track.trigger('touchstart', { targetTouches: [{ clientY: 20 }] });
+    expect(touchInput.getInputState().throttle).toBeGreaterThan(0.5);
+
+    // Simulate touchmove to clientY = 0 (top of track -> 100% throttle)
+    track.trigger('touchmove', { targetTouches: [{ clientY: 0 }] });
+    expect(touchInput.getInputState().throttle).toBeCloseTo(1.0);
+
+    // Simulate touchmove to clientY = 100 (bottom of track -> 0% idle)
+    track.trigger('touchmove', { targetTouches: [{ clientY: 100 }] });
+    expect(touchInput.getInputState().throttle).toBeCloseTo(0.0);
+
+    // Simulate brake button with touchstart
+    const brakeBtn = container.querySelector('#touch-btn-brake') as any;
+    controls.setThrottle(0.75);
+    expect(touchInput.getInputState().throttle).toBeCloseTo(0.75);
+    brakeBtn.trigger('touchstart');
+    expect(touchInput.getInputState().throttle).toBeCloseTo(0.0);
+
+    controls.dispose();
+  });
+
+  it('handles native touch joystick steering drag and release', () => {
+    const controls = new TouchControls(container, touchInput);
+    const zone = container.querySelector('#touch-joystick-zone') as any;
+
+    // Simulate touchstart deflected forward (clientY = 10, center is 50 -> dy = -40 -> pitch up)
+    zone.trigger('touchstart', { targetTouches: [{ clientX: 50, clientY: 10 }] });
+    const axesDeflected = touchInput.getInputState().axes;
+    expect(axesDeflected.y).toBeGreaterThan(0.5);
+
+    // Release via touchend
+    zone.trigger('touchend');
+    const axesReleased = touchInput.getInputState().axes;
+    expect(axesReleased.x).toBe(0);
+    expect(axesReleased.y).toBe(0);
+
+    controls.dispose();
+  });
+
+  it('handles surface altitude controls with touchstart and touchend', () => {
+    const controls = new TouchControls(container, touchInput);
+    controls.setContext('surface');
+    const altUpBtn = container.querySelector('#touch-btn-alt-up') as any;
+    const altDownBtn = container.querySelector('#touch-btn-alt-down') as any;
+
+    expect(touchInput.isActionPressed('altitude_up')).toBe(false);
+    altUpBtn.trigger('touchstart');
+    expect(touchInput.isActionPressed('altitude_up')).toBe(true);
+    altUpBtn.trigger('touchend');
+    expect(touchInput.isActionPressed('altitude_up')).toBe(false);
+
+    expect(touchInput.isActionPressed('altitude_down')).toBe(false);
+    altDownBtn.trigger('touchstart');
+    expect(touchInput.isActionPressed('altitude_down')).toBe(true);
+    altDownBtn.trigger('touchend');
+    expect(touchInput.isActionPressed('altitude_down')).toBe(false);
+
+    controls.dispose();
+  });
 });
 

@@ -36,6 +36,7 @@ export class PilotOnboardingHUD {
       transition: opacity 0.35s ease, transform 0.35s ease;
       opacity: 0;
       transform: translateY(8px);
+      display: none;
     `;
 
     this.cardEl = document.createElement('div');
@@ -48,7 +49,7 @@ export class PilotOnboardingHUD {
       box-shadow: 0 8px 30px rgba(0, 0, 0, 0.75), 0 0 16px rgba(56, 189, 248, 0.15);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
-      pointer-events: auto;
+      pointer-events: none;
       color: #f1f5f9;
       user-select: none;
       touch-action: manipulation;
@@ -82,14 +83,18 @@ export class PilotOnboardingHUD {
 
   public show(): void {
     this.isVisible = true;
+    this.container.style.display = 'block';
+    this.cardEl.style.pointerEvents = 'auto';
     this.container.style.opacity = '1';
     this.container.style.transform = 'translateY(0)';
   }
 
   public hide(): void {
     this.isVisible = false;
+    this.cardEl.style.pointerEvents = 'none';
     this.container.style.opacity = '0';
     this.container.style.transform = 'translateY(-8px)';
+    this.container.style.display = 'none';
   }
 
   public completeStep(stepId: 'steer' | 'throttle' | 'target' | 'cruise'): void {

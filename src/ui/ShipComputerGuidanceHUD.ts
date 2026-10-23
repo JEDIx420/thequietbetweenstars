@@ -32,7 +32,8 @@ export class ShipComputerGuidanceHUD {
       font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
       z-index: 2200;
       opacity: 0;
-      pointer-events: auto;
+      display: none;
+      pointer-events: none;
       transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
       user-select: none;
       touch-action: manipulation;
@@ -69,6 +70,8 @@ export class ShipComputerGuidanceHUD {
 
     if (!this.isVisible) {
       this.isVisible = true;
+      this.container.style.display = 'block';
+      this.container.style.pointerEvents = 'auto';
       audio.playBlip();
       requestAnimationFrame(() => {
         this.container.style.opacity = '1';
@@ -80,11 +83,12 @@ export class ShipComputerGuidanceHUD {
   }
 
   public hide(): void {
-    if (!this.isVisible) return;
     this.clearHighlights();
     this.isVisible = false;
     this.container.style.opacity = '0';
     this.container.style.transform = 'translateX(-50%) translateY(-10px)';
+    this.container.style.pointerEvents = 'none';
+    this.container.style.display = 'none';
   }
 
   private applyHighlight(selector?: string): void {
@@ -279,7 +283,7 @@ export class ShipComputerGuidanceHUD {
       let lastTrigger = 0;
       const trigger = (e?: any) => {
         const now = performance.now();
-        if (now - lastTrigger < 350) return;
+        if (lastTrigger > 0 && now - lastTrigger < 350) return;
         lastTrigger = now;
         e?.preventDefault?.();
         e?.stopPropagation?.();

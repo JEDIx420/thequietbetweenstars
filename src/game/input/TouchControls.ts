@@ -737,22 +737,7 @@ export class TouchControls {
   private setupJoystickEvents(): void {
     const zone = this.container.querySelector('#touch-joystick-zone') as HTMLElement;
 
-    // Prevent iOS Safari gesture recognition & fullscreen cancellation on touch
-    const preventTouch = (e: TouchEvent) => {
-      if (e.cancelable) e.preventDefault();
-    };
-    zone.addEventListener('touchstart', preventTouch, { passive: false });
-    zone.addEventListener('touchmove', preventTouch, { passive: false });
-    zone.addEventListener('touchend', preventTouch, { passive: false });
-
-    const handlePointerDown = (e: PointerEvent) => {
-      if (e.cancelable) e.preventDefault();
-      if (this.joystickPointerId !== null) return;
-      this.joystickPointerId = e.pointerId;
-      try {
-        zone.setPointerCapture(e.pointerId);
-      } catch {}
-
+    const updateCenter = () => {
       const rect = this.joystickBaseEl.getBoundingClientRect();
       this.joystickCenter = {
         x: rect.left + rect.width / 2,
@@ -762,31 +747,81 @@ export class TouchControls {
       if (measuredRadius > 20) {
         this.joystickRadius = measuredRadius;
       }
+    };
 
+    let isTouchingJoystick = false;
+
+    // Direct touch event handling (ensures zero latency and no pointer-cancel on all mobile browsers)
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+      const touch = e.targetTouches?.[0] || e.touches?.[0];
+      if (!touch) return;
+      isTouchingJoystick = true;
+      updateCenter();
       HapticFeedback.light();
-      this.updateJoystick(e.clientX, e.clientY);
+      this.updateJoystick(touch.clientX, touch.clientY);
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+      if (!isTouchingJoystick) return;
+      const touch = e.targetTouches?.[0] || e.touches?.[0];
+      if (!touch) return;
+      this.updateJoystick(touch.clientX, touch.clientY);
+    };
+
+    const onTouchEnd = (e?: TouchEvent) => {
+      if (e?.cancelable) e.preventDefault();
+      isTouchingJoystick = false;
+      if (this.isJoystickEngaged) {
+        this.isJoystickEngaged = false;
+        HapticFeedback.light();
+      }
+      this.joystickKnobEl.style.transform = 'translate(0px, 0px)';
+      this.touchInput.setAxes({ x: 0, y: 0 });
+    };
+
+    zone.addEventListener('touchstart', onTouchStart, { passive: false });
+    zone.addEventListener('touchmove', onTouchMove, { passive: false });
+    zone.addEventListener('touchend', onTouchEnd, { passive: false });
+    zone.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+    // Pointer event handling for desktop mouse, stylus, and test environments
+    const handlePointerDown = (e: PointerEvent) => {
+      if (isTouchingJoystick) return;
+      if (e.cancelable) e.preventDefault();
+      if (this.joystickPointerId !== null) return;
+      this.joystickPointerId = e.pointerId ?? 1;
+      try {
+        zone.setPointerCapture?.(this.joystickPointerId);
+      } catch {}
+
+      updateCenter();
+      HapticFeedback.light();
+      this.updateJoystick(e.clientX ?? 0, e.clientY ?? 0);
     };
 
     const handlePointerMove = (e: PointerEvent) => {
+      if (isTouchingJoystick) return;
       if (e.cancelable) e.preventDefault();
-      if (e.pointerId !== this.joystickPointerId) return;
-      this.updateJoystick(e.clientX, e.clientY);
+      if (this.joystickPointerId === null || e.pointerId !== this.joystickPointerId) return;
+      this.updateJoystick(e.clientX ?? 0, e.clientY ?? 0);
     };
 
     const handlePointerUp = (e: PointerEvent) => {
+      if (isTouchingJoystick) return;
       if (e.cancelable) e.preventDefault();
-      if (e.pointerId !== this.joystickPointerId) return;
-      this.joystickPointerId = null;
+      if (this.joystickPointerId === null || e.pointerId !== this.joystickPointerId) return;
       try {
-        zone.releasePointerCapture(e.pointerId);
+        zone.releasePointerCapture?.(this.joystickPointerId);
       } catch {}
+      this.joystickPointerId = null;
 
       if (this.isJoystickEngaged) {
         this.isJoystickEngaged = false;
         HapticFeedback.light();
       }
 
-      // Reset joystick knob with smooth center return
       this.joystickKnobEl.style.transform = 'translate(0px, 0px)';
       this.touchInput.setAxes({ x: 0, y: 0 });
     };
@@ -831,42 +866,72 @@ export class TouchControls {
   private setupThrottleEvents(): void {
     const track = this.container.querySelector('#touch-throttle-track') as HTMLElement;
 
-    // Prevent iOS Safari gesture recognition & fullscreen cancellation on touch
-    const preventTrackTouch = (e: TouchEvent) => {
-      if (e.cancelable) e.preventDefault();
-    };
-    track.addEventListener('touchstart', preventTrackTouch, { passive: false });
-    track.addEventListener('touchmove', preventTrackTouch, { passive: false });
-    track.addEventListener('touchend', preventTrackTouch, { passive: false });
-
-    const handlePointerDown = (e: PointerEvent) => {
-      if (e.cancelable) e.preventDefault();
-      if (this.throttlePointerId !== null) return;
-      this.throttlePointerId = e.pointerId;
-      try {
-        track.setPointerCapture(e.pointerId);
-      } catch {}
+    const updateMetrics = () => {
       const rect = this.throttleTrackEl.getBoundingClientRect();
       this.cachedThrottleTrackHeight = rect.height || 136;
       this.cachedThrottleTrackBottom = rect.bottom;
+    };
+
+    let isTouchingThrottle = false;
+
+    // Direct touch event handling (responsive across all mobile browsers with zero touch-gesture cancellation)
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+      const touch = e.targetTouches?.[0] || e.touches?.[0];
+      if (!touch) return;
+      isTouchingThrottle = true;
+      updateMetrics();
       HapticFeedback.light();
-      this.updateThrottleFromPointer(e.clientY);
+      this.updateThrottleFromPointer(touch.clientY);
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+      if (!isTouchingThrottle) return;
+      const touch = e.targetTouches?.[0] || e.touches?.[0];
+      if (!touch) return;
+      this.updateThrottleFromPointer(touch.clientY);
+    };
+
+    const handleTouchEnd = (e?: TouchEvent) => {
+      if (e?.cancelable) e.preventDefault();
+      isTouchingThrottle = false;
+    };
+
+    track.addEventListener('touchstart', handleTouchStart, { passive: false });
+    track.addEventListener('touchmove', handleTouchMove, { passive: false });
+    track.addEventListener('touchend', handleTouchEnd, { passive: false });
+    track.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+
+    // Pointer events for desktop mouse, stylus, and test environments
+    const handlePointerDown = (e: PointerEvent) => {
+      if (isTouchingThrottle) return;
+      if (e.cancelable) e.preventDefault();
+      if (this.throttlePointerId !== null) return;
+      this.throttlePointerId = e.pointerId ?? 1;
+      try {
+        track.setPointerCapture?.(this.throttlePointerId);
+      } catch {}
+      updateMetrics();
+      HapticFeedback.light();
+      this.updateThrottleFromPointer(e.clientY ?? 0);
     };
 
     const handlePointerMove = (e: PointerEvent) => {
+      if (isTouchingThrottle) return;
       if (e.cancelable) e.preventDefault();
-      if (e.pointerId !== this.throttlePointerId) return;
-      this.updateThrottleFromPointer(e.clientY);
+      if (this.throttlePointerId === null || e.pointerId !== this.throttlePointerId) return;
+      this.updateThrottleFromPointer(e.clientY ?? 0);
     };
 
     const handlePointerUp = (e: PointerEvent) => {
+      if (isTouchingThrottle) return;
       if (e.cancelable) e.preventDefault();
-      if (e.pointerId !== this.throttlePointerId) return;
-      this.throttlePointerId = null;
+      if (this.throttlePointerId === null || e.pointerId !== this.throttlePointerId) return;
       try {
-        track.releasePointerCapture(e.pointerId);
+        track.releasePointerCapture?.(this.throttlePointerId);
       } catch {}
-      // Cruise throttle holds position so fingers don't get tired
+      this.throttlePointerId = null;
     };
 
     track.addEventListener('pointerdown', handlePointerDown);
@@ -876,12 +941,15 @@ export class TouchControls {
 
     // Brake button
     const brakeBtn = this.container.querySelector('#touch-btn-brake') as HTMLElement;
-    brakeBtn.addEventListener('pointerdown', (e) => {
-      if (e.cancelable) e.preventDefault();
+    const triggerBrake = (e?: Event) => {
+      if (e?.cancelable) e.preventDefault();
       this.setThrottle(0);
       this.touchInput.triggerAction('pause');
       HapticFeedback.heavy();
-    });
+    };
+    brakeBtn.addEventListener('pointerdown', triggerBrake);
+    brakeBtn.addEventListener('touchstart', triggerBrake, { passive: false });
+    brakeBtn.addEventListener('click', triggerBrake);
   }
 
   private updateThrottleFromPointer(clientY: number): void {
@@ -939,8 +1007,8 @@ export class TouchControls {
 
   private setupActionEvents(): void {
     // SCAN / SENSOR / TRACTOR button: tap to scan, hold to continuously scan or tractor
-    this.scanBtnEl.addEventListener('pointerdown', (e) => {
-      if (e.cancelable) e.preventDefault();
+    const startScan = (e?: Event) => {
+      if (e?.cancelable) e.preventDefault();
       this.isHoldingTractor = false;
       this.scanBtnEl.style.transform = 'scale(0.95)';
       this.scanBtnEl.textContent = '📡 SCANNING...';
@@ -963,7 +1031,10 @@ export class TouchControls {
         this.touchInput.setActionState('tractor', true);
         HapticFeedback.medium();
       }, 350) as any;
-    });
+    };
+
+    this.scanBtnEl.addEventListener('pointerdown', startScan);
+    this.scanBtnEl.addEventListener('touchstart', startScan, { passive: false });
 
     const releaseScan = (e?: Event) => {
       if (e?.cancelable) e.preventDefault();
@@ -991,18 +1062,21 @@ export class TouchControls {
     this.scanBtnEl.addEventListener('pointerup', releaseScan);
     this.scanBtnEl.addEventListener('pointercancel', releaseScan);
     this.scanBtnEl.addEventListener('pointerleave', releaseScan);
+    this.scanBtnEl.addEventListener('touchend', releaseScan);
+    this.scanBtnEl.addEventListener('touchcancel', releaseScan);
 
     const bindFastTap = (el: HTMLElement | null, action: () => void) => {
       if (!el) return;
       let lastTrigger = 0;
-      const trigger = (e: Event) => {
-        const now = Date.now();
-        if (now - lastTrigger < 250) return;
+      const trigger = (e?: Event) => {
+        const now = performance.now();
+        if (lastTrigger > 0 && now - lastTrigger < 250) return;
         lastTrigger = now;
-        if (e.cancelable) e.preventDefault();
+        if (e?.cancelable) e.preventDefault();
         action();
       };
       el.addEventListener('pointerdown', trigger);
+      el.addEventListener('touchstart', trigger, { passive: false });
       el.addEventListener('click', trigger);
     };
 
@@ -1023,7 +1097,7 @@ export class TouchControls {
     let lastOrbitTrigger = 0;
     const triggerOrbit = (e?: Event) => {
       const now = performance.now();
-      if (now - lastOrbitTrigger < 350) return;
+      if (lastOrbitTrigger > 0 && now - lastOrbitTrigger < 350) return;
       lastOrbitTrigger = now;
       if (e?.cancelable) e.preventDefault();
       if (this.currentContext === 'surface') {
@@ -1047,18 +1121,22 @@ export class TouchControls {
     // Altitude controls (surface hover: continuous press-and-hold + tap support)
     const bindHoldAction = (el: HTMLElement | null, action: 'altitude_up' | 'altitude_down') => {
       if (!el) return;
-      el.addEventListener('pointerdown', (e) => {
-        if (e.cancelable) e.preventDefault();
+      const startHold = (e?: Event) => {
+        if (e?.cancelable) e.preventDefault();
         this.touchInput.setActionState(action, true);
         this.touchInput.triggerAction(action);
         HapticFeedback.light();
-      });
+      };
       const endHold = (e?: Event) => {
         if (e?.cancelable) e.preventDefault();
         this.touchInput.setActionState(action, false);
       };
+      el.addEventListener('pointerdown', startHold);
+      el.addEventListener('touchstart', startHold, { passive: false });
       el.addEventListener('pointerup', endHold);
+      el.addEventListener('touchend', endHold);
       el.addEventListener('pointercancel', endHold);
+      el.addEventListener('touchcancel', endHold);
       el.addEventListener('pointerleave', endHold);
     };
 
@@ -1084,34 +1162,29 @@ export class TouchControls {
     });
 
     // Emote Drawer Toggle & Close
-    this.container.querySelector('#touch-btn-emote-toggle')?.addEventListener('click', (e) => {
-      if (e.cancelable) e.preventDefault();
+    bindFastTap(this.container.querySelector('#touch-btn-emote-toggle'), () => {
       this.toggleEmoteDrawer();
       HapticFeedback.light();
     });
 
-    this.container.querySelector('#touch-btn-emote-close')?.addEventListener('click', (e) => {
-      if (e.cancelable) e.preventDefault();
+    bindFastTap(this.container.querySelector('#touch-btn-emote-close'), () => {
       this.closeEmoteDrawer();
     });
 
     // In-Flight Radio Emote Actions (Auto-collapse drawer upon transmit)
-    this.container.querySelector('#touch-btn-emote-wave')?.addEventListener('click', (e) => {
-      if (e.cancelable) e.preventDefault();
+    bindFastTap(this.container.querySelector('#touch-btn-emote-wave'), () => {
       this.onEmoteCallback?.('wave');
       this.closeEmoteDrawer();
       HapticFeedback.medium();
     });
 
-    this.container.querySelector('#touch-btn-emote-heart')?.addEventListener('click', (e) => {
-      if (e.cancelable) e.preventDefault();
+    bindFastTap(this.container.querySelector('#touch-btn-emote-heart'), () => {
       this.onEmoteCallback?.('heart');
       this.closeEmoteDrawer();
       HapticFeedback.medium();
     });
 
-    this.container.querySelector('#touch-btn-emote-peace')?.addEventListener('click', (e) => {
-      if (e.cancelable) e.preventDefault();
+    bindFastTap(this.container.querySelector('#touch-btn-emote-peace'), () => {
       this.onEmoteCallback?.('peace');
       this.closeEmoteDrawer();
       HapticFeedback.medium();

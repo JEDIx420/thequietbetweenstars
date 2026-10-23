@@ -195,6 +195,21 @@ describe('Alien Cities, Onboarding HUD, and Ship Interaction Suite', () => {
       expect(skipCalled).toBe(true);
       expect(storageMock.getItem('pilot_onboarding_completed_v1')).toBe('true');
     });
+
+    it('sets display none and pointer-events none when hidden so it never blocks touch controls', () => {
+      const hud = new PilotOnboardingHUD(parent);
+      hud.hide();
+      expect(hud.getVisible()).toBe(false);
+      const containerEl = (hud as any).container;
+      const cardEl = (hud as any).cardEl;
+      expect(containerEl.style.display).toBe('none');
+      expect(cardEl.style.pointerEvents).toBe('none');
+
+      hud.show();
+      expect(hud.getVisible()).toBe(true);
+      expect(containerEl.style.display).toBe('block');
+      expect(cardEl.style.pointerEvents).toBe('auto');
+    });
   });
 
   describe('3. SpaceInteractionController Interactive Comms', () => {

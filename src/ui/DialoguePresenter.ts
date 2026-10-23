@@ -140,10 +140,10 @@ export class DialoguePresenter {
       opacity: 0;
       transform: translateY(10px);
       transition: opacity 0.25s ease, transform 0.25s ease;
-      display: flex;
+      display: none;
       flex-direction: column;
       gap: 6px;
-      pointer-events: auto;
+      pointer-events: none;
     `;
 
     this.speakerEl = document.createElement('div');
@@ -360,6 +360,8 @@ export class DialoguePresenter {
       }, 4000);
     }
 
+    this.bubbleEl.style.display = 'flex';
+    this.bubbleEl.style.pointerEvents = 'auto';
     this.bubbleEl.style.opacity = '1';
     this.bubbleEl.style.transform = 'translateY(0)';
 
@@ -411,6 +413,8 @@ export class DialoguePresenter {
     this.textEl.textContent = line.text;
 
     // Fade in
+    this.bubbleEl.style.display = 'flex';
+    this.bubbleEl.style.pointerEvents = 'auto';
     this.bubbleEl.style.opacity = '1';
     this.bubbleEl.style.transform = 'translateY(0)';
 
@@ -433,6 +437,8 @@ export class DialoguePresenter {
       this.currentTimeout = null;
     }
     this.bubbleEl.style.opacity = '0';
+    this.bubbleEl.style.pointerEvents = 'none';
+    this.bubbleEl.style.display = 'none';
     this.bubbleEl.style.transform = 'translateY(10px)';
     this.choicesContainer.style.display = 'none';
     this.isDisplaying = false;

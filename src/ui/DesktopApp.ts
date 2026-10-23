@@ -343,17 +343,7 @@ export class DesktopApp {
     this.guidanceHud = new ShipComputerGuidanceHUD(this.container);
     this.guidanceHud.setCallbacks(
       () => {
-        this.tutorialDirector.skip();
-        this.guidanceHud.hide();
-        this.pilotOnboardingHUD?.dismiss();
-        try {
-          if (typeof window !== 'undefined' && window.localStorage) {
-            localStorage.setItem('tutorial_skipped_v1', 'true');
-            localStorage.setItem('pilot_onboarding_completed_v1', 'true');
-          }
-        } catch {}
-        this.saveCurrentJourney();
-        this.showHudNotice('TUTORIAL SKIPPED // FULL EXPLORATION ENGAGED');
+        this.handleSkipTutorial();
       },
       () => {
         this.tutorialDirector.skipStep();
@@ -441,16 +431,7 @@ export class DesktopApp {
 
     this.pilotOnboardingHUD = new PilotOnboardingHUD(this.container, false);
     this.pilotOnboardingHUD.setOnSkipCallback(() => {
-      this.tutorialDirector.skip();
-      this.guidanceHud.hide();
-      try {
-        if (typeof window !== 'undefined' && window.localStorage) {
-          localStorage.setItem('tutorial_skipped_v1', 'true');
-          localStorage.setItem('pilot_onboarding_completed_v1', 'true');
-        }
-      } catch {}
-      this.saveCurrentJourney();
-      this.showHudNotice('TUTORIAL SKIPPED // FULL EXPLORATION ENGAGED');
+      this.handleSkipTutorial();
     });
     this.alienCityModal = new AlienCityModal(this.container);
     this.alienCityModal.setPlayerState(this.playerState);
@@ -1726,6 +1707,32 @@ export class DesktopApp {
     this.showHudNotice('ORBIT DISENGAGED // CRUISE FLIGHT RESTORED');
   }
 
+  private hasShownSkipNotice = false;
+  private handleSkipTutorial(): void {
+    const wasAlreadySkipped =
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      (localStorage.getItem('tutorial_skipped_v1') === 'true' || localStorage.getItem('pilot_onboarding_completed_v1') === 'true');
+
+    this.tutorialDirector.skip();
+    this.guidanceHud.hide();
+    this.pilotOnboardingHUD?.dismiss();
+
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem('tutorial_skipped_v1', 'true');
+        localStorage.setItem('pilot_onboarding_completed_v1', 'true');
+      }
+    } catch {}
+
+    this.saveCurrentJourney();
+
+    if (!wasAlreadySkipped && !this.hasShownSkipNotice) {
+      this.hasShownSkipNotice = true;
+      this.showHudNotice('FULL EXPLORATION ENGAGED');
+    }
+  }
+
   private cacheHudElements(): void {
     this.hudSpeedEl = this.uiContainer.querySelector('#telemetry-speed');
     this.hudThrottleEl = this.uiContainer.querySelector('#telemetry-throttle');
@@ -1833,7 +1840,7 @@ export class DesktopApp {
       if (elapsed > 500 || dist > 15) return;
 
       const target = e.target as HTMLElement;
-      if (target && target.closest('button, a, input, .modal, #touch-joystick-base, #touch-throttle-track, #nav-radar-canvas, #touch-emote-drawer, #desktop-emote-drawer, .hud-panel')) {
+      if (target && target.closest('button, a, input, .modal, #touch-controls-overlay, #touch-controls-main, #touch-joystick-zone, #touch-throttle-zone, #touch-actions-cluster, #touch-joystick-base, #touch-throttle-track, #nav-radar-canvas, #touch-emote-drawer, #desktop-emote-drawer, .hud-panel')) {
         return;
       }
 
